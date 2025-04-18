@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'widgets/player.dart';
+import 'pages/home_page.dart';
+import 'pages/search_page.dart';
+import 'pages/library_page.dart';
+import 'pages/settings_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -12,7 +16,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Apple Music Clone',
+      title: 'Voxel Music Player',
       theme: ThemeData(
         colorScheme: ColorScheme.dark(
           primary: Colors.deepPurple.shade400,
@@ -98,29 +102,4 @@ class _MusicAppState extends State<MusicApp> {
       ),
     );
   }
-}
-
-// Placeholder pages
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
-  @override
-  Widget build(BuildContext context) => const Center(child: Text('Home', style: TextStyle(color: Colors.white)));
-}
-
-class LibraryPage extends StatelessWidget {
-  const LibraryPage({super.key});
-  @override
-  Widget build(BuildContext context) => const Center(child: Text('Library', style: TextStyle(color: Colors.white)));
-}
-
-class SearchPage extends StatelessWidget {
-  const SearchPage({super.key});
-  @override
-  Widget build(BuildContext context) => const Center(child: Text('Search', style: TextStyle(color: Colors.white)));
-}
-
-class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key});
-  @override
-  Widget build(BuildContext context) => const Center(child: Text('Settings', style: TextStyle(color: Colors.white)));
 }
