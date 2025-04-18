@@ -54,6 +54,7 @@ class _QueueListState extends State<QueueList> {
       _songs = List.generate(
         10,
         (index) => {
+          'id': '$index',  // Add unique id
           'title': 'Song ${index + 1}',
           'artist': 'Artist ${index + 1}',
         },
@@ -126,14 +127,12 @@ class _QueueListState extends State<QueueList> {
           Expanded(
             child: ReorderableListView.builder(
               itemCount: _songs.length,
-              onReorderStart: (index) {
-                HapticFeedback.mediumImpact();
-              },
+              onReorderStart: (index) => HapticFeedback.mediumImpact(),
               onReorder: _handleReorder,
               itemBuilder: (context, index) {
-                final currentSong = _songs[index];
+                final song = _songs[index];
                 return Dismissible(
-                  key: ValueKey('dismiss_${currentSong['title']}_$index'),
+                  key: ObjectKey(song),
                   background: Container(
                     color: Colors.red.shade400,
                     alignment: Alignment.centerRight,
@@ -141,29 +140,49 @@ class _QueueListState extends State<QueueList> {
                     child: const Icon(Icons.delete, color: Colors.white),
                   ),
                   direction: DismissDirection.endToStart,
-                  onDismissed: (direction) => _handleDismiss(index, currentSong),
-                  child: ReorderableDragStartListener(
-                    key: ValueKey('drag_${currentSong['title']}_$index'),
-                    index: index,
-                    child: ListTile(
-                      leading: Container(
-                        height: 40,
-                        width: 40,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(5),
-                          color: Colors.deepPurple.shade200,
+                  onDismissed: (_) {
+                    final deletedSong = Map<String, String>.from(song);
+                    final deletedIndex = index;
+                    setState(() => _songs.removeAt(index));
+                    _saveSongs();
+
+                    ScaffoldMessenger.of(context)
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(SnackBar(
+                        content: Text('Removed ${deletedSong['title']}'),
+                        backgroundColor: Colors.grey.shade900,
+                        behavior: SnackBarBehavior.floating,
+                        action: SnackBarAction(
+                          label: 'Undo',
+                          textColor: Colors.white,
+                          onPressed: () {
+                            setState(() => _songs.insert(deletedIndex, deletedSong));
+                            _saveSongs();
+                          },
                         ),
-                        child: const Icon(Icons.music_note),
+                      ));
+                  },
+                  child: ListTile(
+                    leading: Container(
+                      height: 40,
+                      width: 40,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(5),
+                        color: Colors.deepPurple.shade200,
                       ),
-                      title: Text(
-                        _songs[index]['title']!,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      subtitle: Text(
-                        _songs[index]['artist']!,
-                        style: TextStyle(color: Colors.grey.shade400),
-                      ),
-                      trailing: const Icon(
+                      child: const Icon(Icons.music_note),
+                    ),
+                    title: Text(
+                      song['title']!,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    subtitle: Text(
+                      song['artist']!,
+                      style: TextStyle(color: Colors.grey.shade400),
+                    ),
+                    trailing: ReorderableDragStartListener(
+                      index: index,
+                      child: const Icon(
                         Icons.drag_handle,
                         color: Colors.grey,
                       ),
