@@ -44,10 +44,16 @@ class AudioPlayerService with ChangeNotifier {
     final current = currentTrack;
     if (current == null) return;
 
+    final currentFile = File(current.id);
+    
     if (isLiked) {
       _likedTracks.remove(current.id);
+      _playlists['liked']?.removeWhere((file) => file.path == current.id);
     } else {
-      _likedTracks.add(current.id);
+      if (!(_playlists['liked']?.any((file) => file.path == current.id) ?? false)) {
+        _likedTracks.add(current.id);
+        _playlists['liked']?.add(currentFile);
+      }
     }
     notifyListeners();
   }
@@ -85,11 +91,10 @@ class AudioPlayerService with ChangeNotifier {
       final name = file.path.split('/').last;
       final title = name.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
       
-      // Load and wait for audio source to be ready
       final audioSource = AudioSource.file(
         file.path,
         tag: MediaItem(
-          id: file.path,
+          id: file.path, // Use file path as ID for consistent like tracking
           title: title,
           album: 'Local Music',
         ),
@@ -133,7 +138,7 @@ class AudioPlayerService with ChangeNotifier {
           AudioSource.file(
             file.path,
             tag: MediaItem(
-              id: file.path,
+              id: file.path, // Use file path as ID for consistent like tracking
               title: file.path.split('/').last,
               album: playlistId,
             ),
