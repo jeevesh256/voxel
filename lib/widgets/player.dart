@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
+import 'package:rxdart/rxdart.dart';
+import 'dart:math';
 import '../services/audio_service.dart';
 import 'queue.dart';
 
@@ -33,62 +35,69 @@ class MiniPlayer extends StatelessWidget {
           child: Container(
             height: 60,
             color: Colors.grey.shade900,
-            child: Row(
+            child: Column(
               children: [
-                const SizedBox(width: 10),
-                Container(
-                  height: 40,
-                  width: 40,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(5),
-                    color: Colors.deepPurple.shade200,
-                    image: metadata?.artUri != null 
-                      ? DecorationImage(image: NetworkImage(metadata!.artUri.toString()))
-                      : null,
-                  ),
-                  child: metadata?.artUri == null ? const Icon(Icons.music_note) : null,
-                ),
-                const SizedBox(width: 10),
                 Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(
-                        metadata?.title ?? 'No Track Playing',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
+                      const SizedBox(width: 10),
+                      Container(
+                        height: 40,
+                        width: 40,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(5),
+                          color: Colors.deepPurple.shade200,
+                          image: metadata?.artUri != null 
+                            ? DecorationImage(image: NetworkImage(metadata!.artUri.toString()))
+                            : null,
+                        ),
+                        child: metadata?.artUri == null ? const Icon(Icons.music_note) : null,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              metadata?.title ?? 'No Track Playing',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            Text(
+                              metadata?.artist ?? 'Unknown Artist',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.grey.shade400,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      Text(
-                        metadata?.artist ?? 'Unknown Artist',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.grey.shade400,
-                          fontSize: 12,
+                      IconButton(
+                        icon: Icon(
+                          audioService.isLiked ? Icons.favorite : Icons.favorite_border,
+                          color: audioService.isLiked ? Colors.deepPurple.shade400 : Colors.white,
                         ),
+                        onPressed: () => audioService.toggleLike(),
                       ),
+                      IconButton(
+                        icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
+                        color: Colors.white,
+                        onPressed: () => audioService.playPause(),
+                      ),
+                      const SizedBox(width: 10),
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: Icon(
-                    audioService.isLiked ? Icons.favorite : Icons.favorite_border,
-                    color: audioService.isLiked ? Colors.deepPurple.shade400 : Colors.white,
-                  ),
-                  onPressed: () => audioService.toggleLike(),
-                ),
-                IconButton(
-                  icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
-                  color: Colors.white,
-                  onPressed: () => audioService.playPause(),
-                ),
-                const SizedBox(width: 10),
+                _buildMiniProgressBar(context, audioService),
               ],
             ),
           ),
@@ -96,10 +105,42 @@ class MiniPlayer extends StatelessWidget {
       },
     );
   }
+
+  Widget _buildMiniProgressBar(BuildContext context, AudioPlayerService audioService) {
+    return StreamBuilder<(Duration, Duration?)>(
+      stream: Rx.combineLatest2(
+        audioService.player.positionStream,
+        audioService.player.durationStream,
+        (position, duration) => (position, duration),
+      ),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox(height: 2);
+        
+        final position = snapshot.data!.$1;
+        final duration = snapshot.data!.$2 ?? Duration.zero;
+        
+        if (duration == Duration.zero) return const SizedBox(height: 2);
+
+        return LinearProgressIndicator(
+          value: position.inMilliseconds / duration.inMilliseconds,
+          backgroundColor: Colors.grey.shade800,
+          valueColor: AlwaysStoppedAnimation(Colors.deepPurple.shade400),
+          minHeight: 2,
+        );
+      },
+    );
+  }
 }
 
-class FullScreenPlayer extends StatelessWidget {
+class FullScreenPlayer extends StatefulWidget {
   const FullScreenPlayer({super.key});
+
+  @override
+  State<FullScreenPlayer> createState() => _FullScreenPlayerState();
+}
+
+class _FullScreenPlayerState extends State<FullScreenPlayer> {
+  double? _dragValue;
 
   @override
   Widget build(BuildContext context) {
@@ -260,37 +301,54 @@ class FullScreenPlayer extends StatelessWidget {
   Widget _buildProgressBar(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
     
-    return StreamBuilder<Duration>(
-      stream: audioService.player.positionStream,
+    return StreamBuilder<(Duration, Duration?)>(
+      stream: Rx.combineLatest2(
+        audioService.player.positionStream,
+        audioService.player.durationStream,
+        (position, duration) => (position, duration),
+      ),
       builder: (context, snapshot) {
-        final position = snapshot.data ?? Duration.zero;
-        final duration = audioService.player.duration ?? Duration.zero;
+        if (!snapshot.hasData) return const SizedBox(height: 48);
         
-        // Ensure value is within bounds and convert to double
-        final maxValue = duration.inMilliseconds.toDouble();
-        final safeValue = position.inMilliseconds.toDouble().clamp(0.0, maxValue > 0 ? maxValue : 1.0);
+        final position = snapshot.data!.$1;
+        final duration = snapshot.data!.$2 ?? Duration.zero;
         
+        if (duration == Duration.zero) {
+          return const SizedBox(height: 48);
+        }
+
+        final value = min(
+          (_dragValue ?? position.inMilliseconds).toDouble(),
+          duration.inMilliseconds.toDouble(),
+        );
+
         return Column(
           children: [
             SliderTheme(
               data: SliderThemeData(
                 trackHeight: 2,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 8),
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
                 activeTrackColor: Colors.white,
                 inactiveTrackColor: Colors.grey.shade600,
                 thumbColor: Colors.white,
                 overlayColor: Colors.white.withOpacity(0.2),
               ),
               child: Slider(
-                value: safeValue,
+                value: value,
                 min: 0.0,
-                max: maxValue > 0 ? maxValue : 1.0,
-                onChanged: (value) {
-                  if (duration > Duration.zero) {
-                    audioService.player.seek(Duration(milliseconds: value.round()));
-                  }
-                },
+                max: duration.inMilliseconds.toDouble(),
+                onChanged: duration.inMilliseconds > 0
+                    ? (value) {
+                        setState(() => _dragValue = value);
+                      }
+                    : null,
+                onChangeEnd: duration.inMilliseconds > 0
+                    ? (value) {
+                        audioService.player.seek(Duration(milliseconds: value.round()));
+                        setState(() => _dragValue = null);
+                      }
+                    : null,
               ),
             ),
             Padding(
@@ -324,7 +382,7 @@ class FullScreenPlayer extends StatelessWidget {
     if (hours > 0) {
       return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
     }
-    return '${twoDigits(minutes)}:${twoDigits(seconds)}';
+    return '${minutes}:${twoDigits(seconds)}';
   }
 
   Widget _buildPlaybackControls(BuildContext context) {

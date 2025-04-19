@@ -22,6 +22,7 @@ class AudioPlayerService with ChangeNotifier {
 
   // Add missing getters
   Stream<Duration?> get durationStream => _player.durationStream;
+  Duration? get duration => _player.duration;
   List<MapEntry<String, List<File>>> get allPlaylists => _playlists.entries.toList();
 
   // Get current track metadata
@@ -84,24 +85,31 @@ class AudioPlayerService with ChangeNotifier {
       final name = file.path.split('/').last;
       final title = name.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
       
-      _currentMedia = MediaItem(
-        id: file.path,
-        title: title,
-        album: 'Local Music',
+      // Load and wait for audio source to be ready
+      final audioSource = AudioSource.file(
+        file.path,
+        tag: MediaItem(
+          id: file.path,
+          title: title,
+          album: 'Local Music',
+        ),
       );
 
-      await _player.setAudioSource(
-        AudioSource.file(
-          file.path,
-          tag: _currentMedia,
-        ),
-        preload: true,
-      );
-      
+      await _player.setAudioSource(audioSource);
+      // Wait for duration to be loaded
+      await _player.load();
       await _player.play();
       notifyListeners();
     } catch (e) {
       debugPrint('Error playing file: $e');
+    }
+  }
+
+  Future<void> seekToPosition(Duration position) async {
+    try {
+      await _player.seek(position);
+    } catch (e) {
+      debugPrint('Error seeking: $e');
     }
   }
 
@@ -171,6 +179,17 @@ class AudioPlayerService with ChangeNotifier {
       await player.play();
     }
     notifyListeners();
+  }
+
+  Future<void> seekTo(Duration position) async {
+    try {
+      if (_player.duration != null) {
+        await _player.seek(position);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error seeking: $e');
+    }
   }
 
   @override
