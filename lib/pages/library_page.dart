@@ -1,115 +1,166 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../services/audio_service.dart';
+import '../services/storage_service.dart';
+import '../models/playlist_model.dart';
+import '../services/playlist_handler.dart';
+import 'dart:io';
+import 'playlist_page.dart';
 
-class LibraryPage extends StatelessWidget {
+class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
 
   @override
+  State<LibraryPage> createState() => _LibraryPageState();
+}
+
+class _LibraryPageState extends State<LibraryPage> {
+  final StorageService _storageService = StorageService();
+  List<FileSystemEntity> _audioFiles = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAudioFiles();
+  }
+
+  Future<void> _loadAudioFiles() async {
+    try {
+      final entities = await _storageService.getAudioFiles();
+      final files = entities.whereType<File>().toList();
+
+      if (mounted) {
+        setState(() {
+          _audioFiles = files;
+          _isLoading = false;
+        });
+        // Load files into offline playlist
+        context.read<AudioPlayerService>().loadOfflineFiles(files);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  String _formatFileName(String path) {
+    final name = path.split('/').last;
+    return name.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          floating: true,
-          backgroundColor: Colors.black,
-          title: Text(
-            'Library',
-            style: TextStyle(
-              color: Colors.deepPurple.shade200,
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-            ),
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          bottom: TabBar(
+            tabs: const [
+              Tab(text: 'Playlists'),
+              Tab(text: 'Artists'),
+            ],
+            indicatorColor: Colors.deepPurple.shade400,
           ),
         ),
-        SliverToBoxAdapter(
-          child: _buildLikedSongsCard(),
+        body: TabBarView(
+          children: [
+            _buildPlaylistsView(),
+            _buildArtistsView(),
+          ],
         ),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) => _buildPlaylistItem(index),
-            childCount: 10,
-          ),
+      ),
+    );
+  }
+
+  Widget _buildPlaylistsView() {
+    final audioService = context.watch<AudioPlayerService>();
+    final playlists = audioService.allPlaylists;
+
+    return ListView(
+      children: [
+        _buildPlaylistTile(
+          title: 'Liked Songs',
+          icon: Icons.favorite,
+          playlistId: 'liked',
+          songs: playlists.firstWhere(
+            (e) => e.key == 'liked',
+            orElse: () => const MapEntry('liked', []),
+          ).value,
         ),
+        _buildPlaylistTile(
+          title: 'Offline',
+          icon: Icons.offline_pin,
+          playlistId: 'offline',
+          songs: playlists.firstWhere(
+            (e) => e.key == 'offline',
+            orElse: () => const MapEntry('offline', []),
+          ).value,
+        ),
+        const Divider(),
       ],
     );
   }
 
-  Widget _buildLikedSongsCard() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Container(
-        height: 150,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.deepPurple[400]!,
-              Colors.deepPurple[800]!,
-            ],
-          ),
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(10),
-            onTap: () {},
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.favorite_rounded,
-                    size: 50,
-                    color: Colors.white,
-                  ),
-                  const SizedBox(width: 16),
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        'Liked Songs',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        '0 songs',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+  Widget _buildPlaylistTile({
+    required String title,
+    required IconData icon,
+    required String playlistId,
+    required List<File> songs,
+  }) {
+    return ListTile(
+      leading: Icon(
+        icon,
+        color: Colors.deepPurple.shade400,
+      ),
+      title: Text(title),
+      subtitle: Text('${songs.length} songs'),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PlaylistPage(
+              playlistId: playlistId,
+              title: title,
+              icon: icon,
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildPlaylistItem(int index) {
-    return ListTile(
-      leading: Container(
-        width: 50,
-        height: 50,
-        decoration: BoxDecoration(
-          color: Colors.grey[900],
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(
-          Icons.queue_music,
-          color: Colors.grey[400],
-        ),
-      ),
-      title: Text('Playlist ${index + 1}'),
-      subtitle: const Text('0 songs'),
+  Widget _buildArtistsView() {
+    final artistMap = <String, List<File>>{};
+    
+    for (var file in _audioFiles.whereType<File>()) {
+      final name = file.path.split('/').last;
+      final artist = name.split(' - ').first;
+      artistMap.putIfAbsent(artist, () => []).add(file);
+    }
+
+    final sortedArtists = artistMap.keys.toList()..sort();
+
+    return ListView.builder(
+      itemCount: sortedArtists.length,
+      itemBuilder: (context, index) {
+        final artist = sortedArtists[index];
+        final songs = artistMap[artist]!;
+        
+        return ListTile(
+          leading: const Icon(Icons.person),
+          title: Text(artist),
+          subtitle: Text('${songs.length} songs'),
+          onTap: () => context.read<AudioPlayerService>().playFiles(songs),
+        );
+      },
     );
   }
 }
