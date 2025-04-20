@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
+import '../widgets/player.dart';
 import 'dart:io';
 
 class PlaylistPage extends StatelessWidget {
@@ -68,6 +69,50 @@ class PlaylistPage extends StatelessWidget {
                 );
               },
               childCount: songs.length,
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const MiniPlayer(),
+          Theme(
+            data: Theme.of(context).copyWith(
+              splashColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+            ),
+            child: BottomNavigationBar(
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: Colors.black,
+              selectedItemColor: Colors.deepPurple.shade400,
+              unselectedItemColor: Colors.grey,
+              currentIndex: 2, // Library tab
+              elevation: 0,
+              enableFeedback: false,
+              onTap: (index) {
+                if (index != 2) {
+                  Navigator.pop(context);
+                }
+              },
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.home),
+                  label: 'Home',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.search),
+                  label: 'Search',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.library_music),
+                  label: 'Library',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.settings),
+                  label: 'Settings',
+                ),
+              ],
             ),
           ),
         ],
