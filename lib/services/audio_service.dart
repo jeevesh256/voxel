@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'dart:io';
+import 'playlist_handler.dart';
 
 class AudioPlayerService with ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
@@ -9,6 +10,9 @@ class AudioPlayerService with ChangeNotifier {
     'liked': [],
     'offline': [],
   };
+
+  final PlaylistHandler _playlistHandler = PlaylistHandler();
+  String? _currentPlaylistId;
 
   MediaItem? _currentMedia;
   bool _isInitialized = false;
@@ -62,6 +66,7 @@ class AudioPlayerService with ChangeNotifier {
     try {
       await _player.setVolume(1.0);
       _setupPlayerListeners();
+      _playlistHandler.initializePlaylists();
       _isInitialized = true;
       notifyListeners();
     } catch (e) {
@@ -129,6 +134,7 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   Future<void> playPlaylist(String playlistId) async {
+    _currentPlaylistId = playlistId;
     final songs = _playlists[playlistId];
     if (songs == null || songs.isEmpty) return;
 
@@ -195,6 +201,11 @@ class AudioPlayerService with ChangeNotifier {
     } catch (e) {
       debugPrint('Error seeking: $e');
     }
+  }
+
+  String? get currentPlaylistName {
+    if (_currentPlaylistId == null) return null;
+    return _playlistHandler.getPlaylist(_currentPlaylistId!)?.name;
   }
 
   @override

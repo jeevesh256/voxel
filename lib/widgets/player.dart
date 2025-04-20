@@ -5,6 +5,7 @@ import 'package:rxdart/rxdart.dart';
 import 'dart:math';
 import '../services/audio_service.dart';
 import 'queue.dart';
+import 'lyrics.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -173,6 +174,9 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
   }
 
   Widget _buildHeader(BuildContext context) {
+    final audioService = context.watch<AudioPlayerService>();
+    final playlistName = audioService.currentPlaylistName;
+    
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 24, 12, 8),
       child: Row(
@@ -183,7 +187,30 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
             color: Colors.white.withOpacity(0.9),
             onPressed: () => Navigator.pop(context),
           ),
-          const Spacer(),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Playing from',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 12,
+                  ),
+                ),
+                Text(
+                  playlistName ?? 'Library',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.more_vert),
             iconSize: 32,
@@ -196,58 +223,41 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
   }
 
   Widget _buildAlbumArt() {
-    return Container(
-      width: 300,
-      height: 300,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(4),
-        color: Colors.deepPurple.shade200,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 15,
-            offset: const Offset(0, 10),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            color: Colors.deepPurple.shade200,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 15,
+                offset: const Offset(0, 10),
+              ),
+            ],
           ),
-        ],
+          child: const Icon(Icons.music_note, size: 80, color: Colors.white),
+        ),
       ),
-      child: const Icon(Icons.music_note, size: 80, color: Colors.white),
     );
   }
 
   Widget _buildControls(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            children: [
-              _buildSongInfo(context),
-              const SizedBox(height: 20),
-              _buildProgressBar(context),
-              const SizedBox(height: 20),
-              _buildPlaybackControls(context),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 12, right: 8),
-                  child: IconButton(
-                    icon: const Icon(Icons.queue_music),
-                    color: Colors.grey.shade400,
-                    iconSize: 24,
-                    onPressed: () {
-                      showModalBottomSheet(
-                        context: context,
-                        backgroundColor: Colors.grey.shade900,
-                        builder: (context) => const QueueList(),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildSongInfo(context),
+          const SizedBox(height: 20),
+          _buildProgressBar(context),
+          const SizedBox(height: 20),
+          _buildPlaybackControls(context),
+        ],
+      ),
     );
   }
 
@@ -333,6 +343,7 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                 inactiveTrackColor: Colors.grey.shade600,
                 thumbColor: Colors.white,
                 overlayColor: Colors.white.withOpacity(0.2),
+                trackShape: CustomTrackShape(),
               ),
               child: Slider(
                 value: value,
@@ -351,21 +362,18 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                     : null,
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _formatDuration(position),
-                    style: TextStyle(color: Colors.grey.shade400),
-                  ),
-                  Text(
-                    _formatDuration(duration),
-                    style: TextStyle(color: Colors.grey.shade400),
-                  ),
-                ],
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _formatDuration(position),
+                  style: TextStyle(color: Colors.grey.shade400),
+                ),
+                Text(
+                  _formatDuration(duration),
+                  style: TextStyle(color: Colors.grey.shade400),
+                ),
+              ],
             ),
           ],
         );
@@ -393,62 +401,113 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
       builder: (context, snapshot) {
         final playing = snapshot.data?.playing ?? false;
         
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        return Column(
           children: [
-            IconButton(
-              icon: Icon(
-                Icons.shuffle,
-                color: audioService.player.shuffleModeEnabled
-                    ? Colors.deepPurple.shade400
-                    : Colors.grey.shade400,
-              ),
-              iconSize: 24,
-              onPressed: () => audioService.player.setShuffleModeEnabled(
-                !audioService.player.shuffleModeEnabled,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  icon: Icon(
+                    Icons.shuffle,
+                    color: audioService.player.shuffleModeEnabled
+                        ? Colors.deepPurple.shade400
+                        : Colors.grey.shade400,
+                  ),
+                  iconSize: 28,
+                  onPressed: () => audioService.player.setShuffleModeEnabled(
+                    !audioService.player.shuffleModeEnabled,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.skip_previous),
+                  color: Colors.white,
+                  iconSize: 40,
+                  onPressed: () => audioService.player.seekToPrevious(),
+                ),
+                Container(
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white,
+                  ),
+                  child: IconButton(
+                    icon: Icon(playing ? Icons.pause : Icons.play_arrow),
+                    color: Colors.black,
+                    iconSize: 40,
+                    onPressed: () => audioService.playPause(),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.skip_next),
+                  color: Colors.white,
+                  iconSize: 40,
+                  onPressed: () => audioService.player.seekToNext(),
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.repeat,
+                    color: audioService.player.loopMode != LoopMode.off
+                        ? Colors.deepPurple.shade400
+                        : Colors.grey.shade400,
+                  ),
+                  iconSize: 28,
+                  onPressed: () {
+                    final modes = [LoopMode.off, LoopMode.all, LoopMode.one];
+                    final index = modes.indexOf(audioService.player.loopMode);
+                    audioService.player.setLoopMode(modes[(index + 1) % modes.length]);
+                  },
+                ),
+              ],
             ),
-            IconButton(
-              icon: const Icon(Icons.skip_previous),
-              color: Colors.white,
-              iconSize: 40,
-              onPressed: () => audioService.player.seekToPrevious(),
-            ),
-            Container(
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white,
-              ),
-              child: IconButton(
-                icon: Icon(playing ? Icons.pause : Icons.play_arrow),
-                color: Colors.black,
-                iconSize: 40,
-                onPressed: () => audioService.playPause(),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.skip_next),
-              color: Colors.white,
-              iconSize: 40,
-              onPressed: () => audioService.player.seekToNext(),
-            ),
-            IconButton(
-              icon: Icon(
-                Icons.repeat,
-                color: audioService.player.loopMode != LoopMode.off
-                    ? Colors.deepPurple.shade400
-                    : Colors.grey.shade400,
-              ),
-              iconSize: 24,
-              onPressed: () {
-                final modes = [LoopMode.off, LoopMode.all, LoopMode.one];
-                final index = modes.indexOf(audioService.player.loopMode);
-                audioService.player.setLoopMode(modes[(index + 1) % modes.length]);
-              },
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.lyrics),
+                  color: Colors.grey.shade400,
+                  iconSize: 28,
+                  onPressed: () {
+                    showModalBottomSheet(
+                      context: context,
+                      backgroundColor: Colors.grey.shade900,
+                      builder: (context) => const LyricsView(),
+                    );
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.queue_music),
+                  color: Colors.grey.shade400,
+                  iconSize: 28,
+                  onPressed: () {
+                    showModalBottomSheet(
+                      context: context,
+                      backgroundColor: Colors.grey.shade900,
+                      builder: (context) => const QueueList(),
+                    );
+                  },
+                ),
+              ],
             ),
           ],
         );
       },
     );
+  }
+}
+
+class CustomTrackShape extends RoundedRectSliderTrackShape {
+  @override
+  Rect getPreferredRect({
+    required RenderBox parentBox,
+    Offset offset = Offset.zero,
+    required SliderThemeData sliderTheme,
+    bool isEnabled = false,
+    bool isDiscrete = false,
+  }) {
+    final double trackHeight = sliderTheme.trackHeight!;
+    final double trackWidth = parentBox.size.width;
+    final double trackLeft = offset.dx;
+    final double trackTop = offset.dy + (parentBox.size.height - trackHeight) / 2;
+
+    return Rect.fromLTWH(trackLeft, trackTop, trackWidth, trackHeight);
   }
 }
