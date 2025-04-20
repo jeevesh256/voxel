@@ -22,7 +22,9 @@ class MiniPlayer extends StatelessWidget {
         (state, media) => (state, media),
       ),
       builder: (context, snapshot) {
-        if (!snapshot.hasData || snapshot.data?.$1.processingState == ProcessingState.idle) {
+        if (!snapshot.hasData || 
+            snapshot.data?.$1.processingState == ProcessingState.idle ||
+            snapshot.data?.$2 == null) {
           return const SizedBox.shrink();
         }
 

@@ -27,9 +27,13 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
     _playlistHandler.setQueueManager(this);
 
-    // Listen to player index changes
+    // Listen to player index changes and shuffle mode changes
     _player.currentIndexStream.listen((index) {
       if (index != null) notifyListeners();
+    });
+
+    _player.shuffleModeEnabledStream.listen((enabled) {
+      notifyListeners();
     });
   }
 
@@ -163,32 +167,21 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       final songsList = songs.map((file) => Song.fromFile(file)).toList();
       _playlistHandler.updateQueue(songsList);
 
-      final sources = songsList.map((song) => 
-        AudioSource.file(
-          song.filePath,
-          tag: MediaItem(
-            id: song.id,
-            title: song.title,
-            artist: song.artist,
-            album: playlistId,
+      _playlist = ConcatenatingAudioSource(
+        children: songsList.map((song) => 
+          AudioSource.file(
+            song.filePath,
+            tag: MediaItem(
+              id: song.id,
+              title: song.title,
+              artist: song.artist,
+              album: playlistId,
+            ),
           ),
-        ),
-      ).toList();
+        ).toList(),
+      );
 
-      _playlist = ConcatenatingAudioSource(children: sources);
       await _player.setAudioSource(_playlist, initialIndex: 0);
-      
-      // Enable looping by default
-      await _player.setLoopMode(LoopMode.all);
-      
-      // Listen for sequence end
-      _player.playerStateStream.listen((state) {
-        if (state.processingState == ProcessingState.completed) {
-          _player.seek(Duration.zero, index: 0);
-          _player.play();
-        }
-      });
-
       await _player.play();
     } catch (e) {
       debugPrint('Error playing playlist: $e');
@@ -298,7 +291,24 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
   @override
   Future<void> updateQueue(List<Song> songs) async {
-    // Existing updateQueue implementation
+    try {
+      final sources = songs.map((song) => 
+        AudioSource.file(
+          song.filePath,
+          tag: MediaItem(
+            id: song.id,
+            title: song.title,
+            artist: song.artist,
+          ),
+        ),
+      ).toList();
+
+      await _playlist.clear();
+      await _playlist.addAll(sources);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error updating queue: $e');
+    }
   }
 
   String? get currentPlaylistName {
@@ -315,57 +325,37 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     },
   ).distinct();
 
-  List<AudioSource>? _originalSequence;
-  int? _currentIndex;
-
   Future<void> toggleShuffle() async {
     try {
-      if (_playlist == null) return;
       final enabled = !_player.shuffleModeEnabled;
-
-      // Get current song and index
-      final currentIndex = _player.currentIndex;
-      final position = _player.position;
-
+      
       if (enabled) {
-        // Convert to explicit list of AudioSource
-        final sources = List<IndexedAudioSource>.from(_playlist.sequence);
+        // Get current track index and position
+        final currentIndex = _player.currentIndex;
+        final position = _player.position;
         
+        // Enable shuffle mode first
+        await _player.setShuffleModeEnabled(true);
+        
+        // If we have a current track, make sure it stays playing
         if (currentIndex != null) {
-          // Keep current song at current position
-          final currentSource = sources[currentIndex];
-          sources.removeAt(currentIndex);
-          sources.shuffle();
-          sources.insert(currentIndex, currentSource);
-        } else {
-          sources.shuffle();
+          // Get the shuffled index of the current track
+          final currentItem = _playlist.sequence[currentIndex];
+          final newIndex = _playlist.sequence.indexOf(currentItem);
+          
+          // Seek to the same position at the new shuffled index
+          await _player.seek(position, index: newIndex);
         }
-
-        // Update playlist with shuffled order
-        await _playlist.clear();
-        await _playlist.addAll(sources);
-
-        // Restore playback state
-        if (currentIndex != null) {
-          await _player.seek(position, index: currentIndex);
-        }
+      } else {
+        // Simply disable shuffle mode
+        await _player.setShuffleModeEnabled(false);
+        
+        // just_audio will automatically restore the original sequence
       }
-
-      await _player.setShuffleModeEnabled(enabled);
-      _updateQueueDisplay();
+      
       notifyListeners();
     } catch (e) {
       debugPrint('Error toggling shuffle: $e');
-    }
-  }
-
-  void _updateQueueDisplay() {
-    if (_playlist != null) {
-      final songs = _playlist.sequence
-          .map((source) => Song.fromFile(
-              File(((source as IndexedAudioSource).tag as MediaItem).id)))
-          .toList();
-      _playlistHandler.updateQueue(songs);
     }
   }
 
@@ -380,6 +370,12 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     } catch (e) {
       debugPrint('Error cycling repeat mode: $e');
     }
+  }
+
+  void _updateQueueDisplay() {
+    // No need to do anything special for now, as the UI automatically
+    // updates based on player state changes. This method is kept as a
+    // placeholder for future queue display logic if needed.
   }
 
   // Add getters for current states
