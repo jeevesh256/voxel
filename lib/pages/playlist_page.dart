@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'dart:io';
 
 class PlaylistPage extends StatelessWidget {
@@ -55,15 +56,37 @@ class PlaylistPage extends StatelessWidget {
             delegate: SliverChildBuilderDelegate(
               (context, index) {
                 final file = songs[index];
-                return ListTile(
-                  leading: const Icon(Icons.music_note),
-                  title: Text(
-                    file.path.split('/').last,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  onTap: () {
-                    audioService.playFile(file);
+                final name = file.path.split('/').last.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
+                
+                return StreamBuilder<MediaItem?>(
+                  stream: audioService.currentMediaStream,
+                  builder: (context, snapshot) {
+                    final isPlaying = snapshot.data?.id == file.path;
+                    
+                    return ListTile(
+                      leading: Container(
+                        height: 40,
+                        width: 40,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(5),
+                          color: Colors.deepPurple.shade200,
+                        ),
+                        child: isPlaying
+                          ? const Icon(Icons.play_circle, color: Colors.white)
+                          : const Icon(Icons.music_note),
+                      ),
+                      title: Text(
+                        name,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      subtitle: Text(
+                        'Unknown Artist',
+                        style: TextStyle(color: Colors.grey.shade400),
+                      ),
+                      onTap: () {
+                        audioService.playFile(file);
+                      },
+                    );
                   },
                 );
               },
