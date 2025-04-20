@@ -177,54 +177,75 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
     final audioService = context.watch<AudioPlayerService>();
     final playlistName = audioService.currentPlaylistName;
     
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 24, 12, 8),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.keyboard_arrow_down),
-            iconSize: 36,
-            color: Colors.white.withOpacity(0.9),
-            onPressed: () => Navigator.pop(context),
-          ),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Playing from',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
-                    fontSize: 12,
-                  ),
-                ),
-                Text(
-                  playlistName ?? 'Library',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
+    return Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 46),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 56, // Width for chevron button (48) + left padding (8)
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: IconButton(
+                    icon: const Icon(Icons.keyboard_arrow_down),
+                    iconSize: 36,
                     color: Colors.white.withOpacity(0.9),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
+                    onPressed: () => Navigator.pop(context),
                   ),
                 ),
-              ],
+              ),
+              Expanded(
+                child: Center(  // Added Center widget
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Playing from',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.7),
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        playlistName ?? 'Library',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.9),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 56), // Match left side width for symmetry
+            ],
+          ),
+        ),
+        Positioned(
+          top: 46,
+          right: -8,
+          child: Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: IconButton(
+              icon: const Icon(Icons.more_vert),
+              iconSize: 32,
+              color: Colors.white.withOpacity(0.9),
+              onPressed: () {},
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            iconSize: 32,
-            color: Colors.white.withOpacity(0.9),
-            onPressed: () {},
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildAlbumArt() {
+    final padding = const EdgeInsets.symmetric(horizontal: 24);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: padding,
       child: AspectRatio(
         aspectRatio: 1,
         child: Container(
