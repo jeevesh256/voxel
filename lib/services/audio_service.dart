@@ -1,17 +1,36 @@
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import '../models/song.dart';  // Add this import
+import '../services/playlist_handler.dart';  // Add this import
 import 'dart:io';
-import 'playlist_handler.dart';
+import 'package:provider/provider.dart';
+import 'queue_manager.dart';
+import 'audio_queue_manager.dart';
+import 'package:rxdart/rxdart.dart';
 
-class AudioPlayerService with ChangeNotifier {
+class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   final AudioPlayer _player = AudioPlayer();
   final Map<String, List<File>> _playlists = {
     'liked': [],
     'offline': [],
   };
+  final PlaylistHandler _playlistHandler;
 
-  final PlaylistHandler _playlistHandler = PlaylistHandler();
+  late final ConcatenatingAudioSource _playlist;
+
+  AudioPlayerService(this._playlistHandler) {
+    _playlist = ConcatenatingAudioSource(children: []);
+    _player.setAudioSource(_playlist);
+
+    _playlistHandler.setQueueManager(this);
+
+    // Listen to player index changes
+    _player.currentIndexStream.listen((index) {
+      if (index != null) notifyListeners();
+    });
+  }
+
   String? _currentPlaylistId;
 
   MediaItem? _currentMedia;
@@ -139,22 +158,24 @@ class AudioPlayerService with ChangeNotifier {
     if (songs == null || songs.isEmpty) return;
 
     try {
-      final playlist = ConcatenatingAudioSource(
-        children: songs.map((file) => 
-          AudioSource.file(
-            file.path,
-            tag: MediaItem(
-              id: file.path, // Use file path as ID for consistent like tracking
-              title: file.path.split('/').last,
-              album: playlistId,
-            ),
+      final songsList = songs.map((file) => Song.fromFile(file)).toList();
+      _playlistHandler.updateQueue(songsList);
+
+      await _playlist.clear();
+      await _playlist.addAll(
+        songsList.map((song) => AudioSource.file(
+          song.filePath,
+          tag: MediaItem(
+            id: song.id,
+            title: song.title,
+            artist: song.artist,
+            album: playlistId,
           ),
-        ).toList(),
+        )).toList(),
       );
 
-      await _player.setAudioSource(playlist);
+      await _player.seek(Duration.zero, index: 0);
       await _player.play();
-      notifyListeners();
     } catch (e) {
       debugPrint('Error playing playlist: $e');
     }
@@ -203,10 +224,110 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
+  Future<void> playQueueItem(int index) async {
+    try {
+      if (_playlist != null && index >= 0 && index < _playlist.length) {
+        await _player.seek(Duration.zero, index: index);
+        if (!_player.playing) {
+          await _player.play();
+        }
+      }
+    } catch (e) {
+      debugPrint('Error playing queue item: $e');
+    }
+  }
+
+  @override
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    try {
+      if (_playlist != null) {
+        final currentIndex = _player.currentIndex;
+        await _playlist.move(oldIndex, newIndex);
+        
+        if (currentIndex == oldIndex) {
+          await _player.seek(_player.position, index: newIndex);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error reordering queue: $e');
+    }
+  }
+
+  @override
+  Future<void> removeFromQueue(int index) async {
+    if (_playlist == null) return;
+    try {
+      await _playlist.removeAt(index);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error removing from queue: $e');
+    }
+  }
+
+  @override
+  Future<void> addToQueue(Song song) async {
+    if (_playlist == null) return;
+    try {
+      await _playlist.add(AudioSource.file(
+        song.filePath,
+        tag: MediaItem(
+          id: song.id,
+          title: song.title,
+          artist: song.artist,
+        ),
+      ));
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error adding to queue: $e');
+    }
+  }
+
+  @override
+  Future<void> updateQueue(List<Song> songs) async {
+    // Existing updateQueue implementation
+  }
+
   String? get currentPlaylistName {
     if (_currentPlaylistId == null) return null;
     return _playlistHandler.getPlaylist(_currentPlaylistId!)?.name;
   }
+
+  Stream<MediaItem?> get currentMediaStream => Rx.combineLatest2(
+    _player.currentIndexStream,
+    _player.sequenceStream,
+    (index, sequence) {
+      if (index == null || sequence == null || sequence.isEmpty) return null;
+      return sequence[index].tag as MediaItem?;
+    },
+  ).distinct();
+
+  Future<void> toggleShuffle() async {
+    try {
+      final enabled = !_player.shuffleModeEnabled;
+      await _player.setShuffleModeEnabled(enabled);
+      // Force a notification to update UI
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error toggling shuffle: $e');
+    }
+  }
+
+  Future<void> cycleRepeatMode() async {
+    try {
+      final modes = [LoopMode.off, LoopMode.all, LoopMode.one];
+      final currentIndex = modes.indexOf(_player.loopMode);
+      final nextMode = modes[(currentIndex + 1) % modes.length];
+      await _player.setLoopMode(nextMode);
+      // Force a notification to update UI
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error changing repeat mode: $e');
+    }
+  }
+
+  // Add getters for current states
+  bool get isShuffling => _player.shuffleModeEnabled;
+  LoopMode get loopMode => _player.loopMode;
 
   @override
   void dispose() {

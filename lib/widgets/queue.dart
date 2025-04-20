@@ -1,199 +1,162 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';  // Fixed import
-import 'dart:convert';
+import 'package:provider/provider.dart';
+import 'package:just_audio_background/just_audio_background.dart';
+import '../services/playlist_handler.dart';
+import '../models/song.dart';
+import '../services/audio_service.dart';
 
-class QueueList extends StatefulWidget {
+class QueueList extends StatelessWidget {
   const QueueList({super.key});
 
   @override
-  State<QueueList> createState() => _QueueListState();
-}
-
-class _QueueListState extends State<QueueList> {
-  List<Map<String, String>> _songs = [];
-  static const String _storageKey = 'queue_songs';
-  SharedPreferences? _prefs;  // Make nullable
-
-  @override
-  void initState() {
-    super.initState();
-    _initPrefs();
-  }
-
-  Future<void> _initPrefs() async {
-    try {
-      _prefs = await SharedPreferences.getInstance();
-      await _loadSongs();
-    } catch (e) {
-      debugPrint('Error initializing preferences: $e');
-      _setDefaultSongs();
-    }
-  }
-
-  Future<void> _loadSongs() async {
-    try {
-      final String? songsJson = _prefs?.getString(_storageKey);
-      if (songsJson != null) {
-        setState(() {
-          _songs = List<Map<String, String>>.from(
-            (json.decode(songsJson) as List).map((item) => Map<String, String>.from(item)),
-          );
-        });
-      } else {
-        _setDefaultSongs();
-      }
-    } catch (e) {
-      debugPrint('Error loading songs: $e');
-      _setDefaultSongs();
-    }
-  }
-
-  void _setDefaultSongs() {
-    setState(() {
-      _songs = List.generate(
-        10,
-        (index) => {
-          'id': '$index',  // Add unique id
-          'title': 'Song ${index + 1}',
-          'artist': 'Artist ${index + 1}',
-        },
-      );
-    });
-    _saveSongs();
-  }
-
-  Future<void> _saveSongs() async {
-    try {
-      await _prefs?.setString(_storageKey, json.encode(_songs));
-    } catch (e) {
-      debugPrint('Error saving songs: $e');
-    }
-  }
-
-  // Update onReorder to save changes
-  void _handleReorder(int oldIndex, int newIndex) {
-    setState(() {
-      if (newIndex > oldIndex) newIndex--;
-      final item = _songs.removeAt(oldIndex);
-      _songs.insert(newIndex, item);
-    });
-    _saveSongs();
-  }
-
-  // Update onDismissed to save changes
-  void _handleDismiss(int index, Map<String, String> deletedSong) {
-    setState(() {
-      _songs.removeAt(index);
-    });
-    _saveSongs();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Removed ${deletedSong['title']}'),
-        backgroundColor: Colors.grey.shade800,
-        behavior: SnackBarBehavior.floating,
-        action: SnackBarAction(
-          label: 'Undo',
-          textColor: Colors.white,
-          onPressed: () {
-            setState(() {
-              _songs.insert(index, deletedSong);
-            });
-            _saveSongs();
-          },
-        ),
-      ),
-    );
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.5,
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Playing Next',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Expanded(
-            child: ReorderableListView.builder(
-              itemCount: _songs.length,
-              onReorderStart: (index) => HapticFeedback.mediumImpact(),
-              onReorder: _handleReorder,
-              itemBuilder: (context, index) {
-                final song = _songs[index];
-                return Dismissible(
-                  key: ObjectKey(song),
-                  background: Container(
-                    color: Colors.red.shade400,
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 16),
-                    child: const Icon(Icons.delete, color: Colors.white),
-                  ),
-                  direction: DismissDirection.endToStart,
-                  onDismissed: (_) {
-                    final deletedSong = Map<String, String>.from(song);
-                    final deletedIndex = index;
-                    setState(() => _songs.removeAt(index));
-                    _saveSongs();
+    return Consumer<PlaylistHandler>(
+      builder: (context, playlistHandler, _) {
+        final songs = playlistHandler.queue;
+        final audioService = context.watch<AudioPlayerService>();
 
-                    ScaffoldMessenger.of(context)
-                      ..hideCurrentSnackBar()
-                      ..showSnackBar(SnackBar(
-                        content: Text('Removed ${deletedSong['title']}'),
-                        backgroundColor: Colors.grey.shade900,
-                        behavior: SnackBarBehavior.floating,
-                        action: SnackBarAction(
-                          label: 'Undo',
-                          textColor: Colors.white,
-                          onPressed: () {
-                            setState(() => _songs.insert(deletedIndex, deletedSong));
-                            _saveSongs();
-                          },
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.5,
+          padding: const EdgeInsets.all(20),
+          child: StreamBuilder<MediaItem?>(
+            stream: audioService.currentMediaStream,
+            builder: (context, snapshot) {
+              final currentSong = snapshot.data;
+              final currentIndex = currentSong != null 
+                ? songs.indexWhere((song) => song.id == currentSong.id) 
+                : -1;
+              
+              // Only show songs after the current song
+              final queueSongs = currentIndex != -1 && currentIndex < songs.length
+                ? songs.sublist(currentIndex + 1)
+                : [];
+              
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Up Next',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
                         ),
-                      ));
-                  },
-                  child: ListTile(
-                    leading: Container(
-                      height: 40,
-                      width: 40,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(5),
-                        color: Colors.deepPurple.shade200,
                       ),
-                      child: const Icon(Icons.music_note),
-                    ),
-                    title: Text(
-                      song['title']!,
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    subtitle: Text(
-                      song['artist']!,
-                      style: TextStyle(color: Colors.grey.shade400),
-                    ),
-                    trailing: ReorderableDragStartListener(
-                      index: index,
-                      child: const Icon(
-                        Icons.drag_handle,
-                        color: Colors.grey,
-                      ),
-                    ),
+                      const Spacer(),
+                      if (queueSongs.isNotEmpty)
+                        Text(
+                          '${queueSongs.length} tracks',
+                          style: TextStyle(
+                            color: Colors.grey.shade400,
+                            fontSize: 14,
+                          ),
+                        ),
+                    ],
                   ),
-                );
-              },
-            ),
+                  const SizedBox(height: 20),
+                  if (queueSongs.isEmpty)
+                    const Center(
+                      child: Text(
+                        'No songs in queue',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: ReorderableListView.builder(
+                        itemCount: queueSongs.length,
+                        onReorderStart: (index) => HapticFeedback.mediumImpact(),
+                        onReorder: (oldIndex, newIndex) {
+                          // Convert display indices to actual playlist indices
+                          final actualOldIndex = currentIndex + 1 + oldIndex;
+                          final actualNewIndex = currentIndex + 1 + 
+                            (newIndex > oldIndex ? newIndex : newIndex);
+                          playlistHandler.reorderQueue(actualOldIndex, actualNewIndex);
+                        },
+                        itemBuilder: (context, index) {
+                          final song = queueSongs[index];
+                          return Dismissible(
+                            key: ValueKey('dismissible_${song.id}'),
+                            background: Container(
+                              color: Colors.red.shade400,
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 16),
+                              child: const Icon(Icons.delete, color: Colors.white),
+                            ),
+                            direction: snapshot.data?.id == song.id ? DismissDirection.none : DismissDirection.endToStart,
+                            onDismissed: (_) {
+                              playlistHandler.removeFromQueue(index);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Removed ${song.title}'),
+                                  backgroundColor: Colors.grey.shade900,
+                                  behavior: SnackBarBehavior.floating,
+                                  action: SnackBarAction(
+                                    label: 'Undo',
+                                    textColor: Colors.white,
+                                    onPressed: () {
+                                      playlistHandler.addToQueue(song);
+                                    },
+                                  ),
+                                ),
+                              );
+                            },
+                            child: ListTile(
+                              leading: StreamBuilder<MediaItem?>(
+                                stream: audioService.currentMediaStream,
+                                builder: (context, snapshot) {
+                                  final isPlaying = snapshot.data?.id == song.id;
+                                  return Container(
+                                    height: 40,
+                                    width: 40,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(5),
+                                      color: Colors.deepPurple.shade200,
+                                    ),
+                                    child: isPlaying
+                                      ? const Icon(Icons.play_circle, color: Colors.white)
+                                      : const Icon(Icons.music_note),
+                                  );
+                                },
+                              ),
+                              title: Text(
+                                song.title,
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                              subtitle: Text(
+                                song.artist,
+                                style: TextStyle(color: Colors.grey.shade400),
+                              ),
+                              trailing: snapshot.data?.id == song.id ? null : ReorderableDragStartListener(
+                                index: index,
+                                child: const Icon(
+                                  Icons.drag_handle,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              onTap: () {
+                                final actualIndex = currentIndex + 1 + index;
+                                audioService.playQueueItem(actualIndex);
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
-        ],
-      ),
+        );
+      },
     );
+  }
+
+  int _getActualIndex(int displayIndex, int currentSongIndex) {
+    if (currentSongIndex == -1) return displayIndex;
+    return displayIndex >= currentSongIndex ? displayIndex + 1 : displayIndex;
   }
 }

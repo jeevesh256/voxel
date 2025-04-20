@@ -4,6 +4,7 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:provider/provider.dart';
 import 'services/audio_service.dart';
+import 'services/playlist_handler.dart';
 import 'widgets/player.dart';
 import 'pages/home_page.dart';
 import 'pages/search_page.dart';
@@ -12,7 +13,11 @@ import 'pages/settings_page.dart';
 import 'widgets/persistent_bottom_bar.dart';
 import 'widgets/persistent_overlay.dart';
 
-void main() {
+void main() async {
+  // Ensure Flutter bindings are initialized
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Create initializer widget to handle setup
   runApp(const MyInitializer());
 }
 
@@ -26,6 +31,8 @@ class MyInitializer extends StatefulWidget {
 class _MyInitializerState extends State<MyInitializer> {
   String? _error;
   bool _isLoading = true;
+  AudioPlayerService? _audioService;
+  PlaylistHandler? _playlistHandler;
 
   @override
   void initState() {
@@ -36,7 +43,6 @@ class _MyInitializerState extends State<MyInitializer> {
   Future<void> _initializeApp() async {
     try {
       debugPrint('Starting initialization...');
-      WidgetsFlutterBinding.ensureInitialized();
 
       // Initialize background playback
       await JustAudioBackground.init(
@@ -52,22 +58,18 @@ class _MyInitializerState extends State<MyInitializer> {
       await testPlayer.dispose();
       debugPrint('Basic audio test passed');
 
-      final audioService = AudioPlayerService();
-      await audioService.initialize();
-      debugPrint('AudioService initialized');
+      // Initialize services
+      final playlistHandler = PlaylistHandler();
+      final audioService = AudioPlayerService(playlistHandler);
 
       if (mounted) {
         setState(() {
+          _playlistHandler = playlistHandler;
+          _audioService = audioService;
           _isLoading = false;
         });
       }
 
-      runApp(
-        ChangeNotifierProvider.value(
-          value: audioService,
-          child: const MyApp(),
-        ),
-      );
     } catch (e, stack) {
       debugPrint('Initialization error: $e');
       debugPrint('Stack trace: $stack');
@@ -82,33 +84,49 @@ class _MyInitializerState extends State<MyInitializer> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: _isLoading
-              ? const CircularProgressIndicator()
-              : _error != null
-                  ? Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text(
-                            'Failed to initialize audio services',
-                            style: TextStyle(fontSize: 18),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            _error!,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.red),
-                          ),
-                        ],
-                      ),
-                    )
-                  : const SizedBox(),
+    if (_error != null) {
+      return MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Failed to initialize audio services',
+                    style: TextStyle(fontSize: 18),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
-      ),
+      );
+    }
+
+    if (_isLoading || _audioService == null || _playlistHandler == null) {
+      return const MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      );
+    }
+
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: _playlistHandler!),
+        ChangeNotifierProvider.value(value: _audioService!),
+      ],
+      child: const MyApp(),
     );
   }
 }

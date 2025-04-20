@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';  // Add this import at the top with other imports
 import 'package:provider/provider.dart';
 import 'package:rxdart/rxdart.dart';
 import 'dart:math';
@@ -14,15 +15,19 @@ class MiniPlayer extends StatelessWidget {
   Widget build(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
     
-    return StreamBuilder<PlayerState>(
-      stream: audioService.player.playerStateStream,
+    return StreamBuilder<(PlayerState, MediaItem?)>(
+      stream: Rx.combineLatest2(
+        audioService.player.playerStateStream,
+        audioService.currentMediaStream,
+        (state, media) => (state, media),
+      ),
       builder: (context, snapshot) {
-        if (!snapshot.hasData || snapshot.data?.processingState == ProcessingState.idle) {
+        if (!snapshot.hasData || snapshot.data?.$1.processingState == ProcessingState.idle) {
           return const SizedBox.shrink();
         }
 
-        final isPlaying = snapshot.data?.playing ?? false;
-        final metadata = audioService.currentTrack;
+        final isPlaying = snapshot.data?.$1.playing ?? false;
+        final metadata = snapshot.data?.$2;
 
         return GestureDetector(
           onTap: () {
@@ -289,43 +294,49 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
 
   Widget _buildSongInfo(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
-    final metadata = audioService.currentTrack;
     
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _formatTitle(metadata?.title),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+    return StreamBuilder<MediaItem?>(
+      stream: audioService.currentMediaStream,
+      builder: (context, snapshot) {
+        final metadata = snapshot.data;
+        
+        return Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _formatTitle(metadata?.title),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    metadata?.artist ?? 'Unknown Artist',
+                    style: TextStyle(
+                      color: Colors.grey.shade300,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                metadata?.artist ?? 'Unknown Artist',
-                style: TextStyle(
-                  color: Colors.grey.shade300,
-                  fontSize: 16,
-                ),
+            ),
+            IconButton(
+              icon: Icon(
+                audioService.isLiked ? Icons.favorite : Icons.favorite_border,
+                color: audioService.isLiked ? Colors.deepPurple.shade400 : Colors.white,
               ),
-            ],
-          ),
-        ),
-        IconButton(
-          icon: Icon(
-            audioService.isLiked ? Icons.favorite : Icons.favorite_border,
-            color: audioService.isLiked ? Colors.deepPurple.shade400 : Colors.white,
-          ),
-          onPressed: () => audioService.toggleLike(),
-        ),
-      ],
+              onPressed: () => audioService.toggleLike(),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -430,14 +441,12 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                 IconButton(
                   icon: Icon(
                     Icons.shuffle,
-                    color: audioService.player.shuffleModeEnabled
+                    color: audioService.isShuffling
                         ? Colors.deepPurple.shade400
                         : Colors.grey.shade400,
                   ),
                   iconSize: 28,
-                  onPressed: () => audioService.player.setShuffleModeEnabled(
-                    !audioService.player.shuffleModeEnabled,
-                  ),
+                  onPressed: () => audioService.toggleShuffle(),
                 ),
                 IconButton(
                   icon: const Icon(Icons.skip_previous),
@@ -465,17 +474,15 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                 ),
                 IconButton(
                   icon: Icon(
-                    Icons.repeat,
-                    color: audioService.player.loopMode != LoopMode.off
+                    audioService.loopMode == LoopMode.one
+                        ? Icons.repeat_one
+                        : Icons.repeat,
+                    color: audioService.loopMode != LoopMode.off
                         ? Colors.deepPurple.shade400
                         : Colors.grey.shade400,
                   ),
                   iconSize: 28,
-                  onPressed: () {
-                    final modes = [LoopMode.off, LoopMode.all, LoopMode.one];
-                    final index = modes.indexOf(audioService.player.loopMode);
-                    audioService.player.setLoopMode(modes[(index + 1) % modes.length]);
-                  },
+                  onPressed: () => audioService.cycleRepeatMode(),
                 ),
               ],
             ),
