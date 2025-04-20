@@ -161,14 +161,26 @@ class MyApp extends StatelessWidget {
 }
 
 class MusicApp extends StatefulWidget {
-  const MusicApp({super.key});
+  final int initialIndex;
+  
+  const MusicApp({
+    super.key,
+    this.initialIndex = 0,
+  });
 
   @override
   State<MusicApp> createState() => _MusicAppState();
 }
 
 class _MusicAppState extends State<MusicApp> {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
+  
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialIndex;
+  }
+
   final List<GlobalKey<NavigatorState>> _navigatorKeys = [
     GlobalKey<NavigatorState>(),
     GlobalKey<NavigatorState>(),

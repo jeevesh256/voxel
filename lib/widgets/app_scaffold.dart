@@ -36,9 +36,13 @@ class AppScaffold extends StatelessWidget {
               elevation: 0,
               enableFeedback: false,
               onTap: (index) {
-                if (index != selectedIndex) {
-                  Navigator.pop(context);
-                }
+                // Pop to root and navigate to selected tab
+                Navigator.of(context).pop();
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (context) => MusicApp(initialIndex: index),
+                  ),
+                );
               },
               items: const [
                 BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
