@@ -375,10 +375,10 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       final currentIndex = modes.indexOf(_player.loopMode);
       final nextMode = modes[(currentIndex + 1) % modes.length];
       await _player.setLoopMode(nextMode);
-      // Force a notification to update UI
+      _updateQueueDisplay();
       notifyListeners();
     } catch (e) {
-      debugPrint('Error changing repeat mode: $e');
+      debugPrint('Error cycling repeat mode: $e');
     }
   }
 
