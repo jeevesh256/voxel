@@ -9,6 +9,8 @@ import 'pages/home_page.dart';
 import 'pages/search_page.dart';
 import 'pages/library_page.dart';
 import 'pages/settings_page.dart';
+import 'widgets/persistent_bottom_bar.dart';
+import 'widgets/persistent_overlay.dart';
 
 void main() {
   runApp(const MyInitializer());
@@ -160,50 +162,14 @@ class _MusicAppState extends State<MusicApp> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _pages[_selectedIndex],
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const MiniPlayer(),
-          _buildNavigationBar(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavigationBar() {
-    return Theme(
-      data: Theme.of(context).copyWith(
-        splashColor: Colors.transparent,
-        highlightColor: Colors.transparent,
-      ),
-      child: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.black,
-        selectedItemColor: Colors.deepPurple.shade400,
-        unselectedItemColor: Colors.grey,
+      body: PersistentOverlay(
         currentIndex: _selectedIndex,
-        elevation: 0,
-        enableFeedback: false,
-        onTap: (index) => setState(() => _selectedIndex = index),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
+        onTabChanged: (index) => setState(() => _selectedIndex = index),
+        child: Navigator(
+          onGenerateRoute: (settings) => MaterialPageRoute(
+            builder: (context) => _pages[_selectedIndex],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search),
-            label: 'Search',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.library_music),
-            label: 'Library',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
-        ],
+        ),
       ),
     );
   }
