@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:just_audio/just_audio.dart';  // Add this import
 import 'package:just_audio_background/just_audio_background.dart';
 import '../services/playlist_handler.dart';
 import '../models/song.dart';
@@ -27,9 +28,11 @@ class QueueList extends StatelessWidget {
                 ? songs.indexWhere((song) => song.id == currentSong.id) 
                 : -1;
               
-              // Only show songs after the current song
-              final queueSongs = currentIndex != -1 && currentIndex < songs.length
-                ? songs.sublist(currentIndex + 1)
+              // Show remaining songs + all songs if in repeat mode
+              final queueSongs = currentIndex != -1
+                ? (audioService.loopMode != LoopMode.off && currentIndex == songs.length - 1)
+                    ? songs  // Show all songs when repeating and on last song
+                    : songs.sublist(currentIndex + 1)
                 : [];
               
               return Column(
@@ -71,9 +74,12 @@ class QueueList extends StatelessWidget {
                         onReorderStart: (index) => HapticFeedback.mediumImpact(),
                         onReorder: (oldIndex, newIndex) {
                           // Convert display indices to actual playlist indices
-                          final actualOldIndex = currentIndex + 1 + oldIndex;
-                          final actualNewIndex = currentIndex + 1 + 
-                            (newIndex > oldIndex ? newIndex : newIndex);
+                          final actualOldIndex = currentIndex == songs.length - 1
+                              ? oldIndex  // Use direct indices when showing full playlist
+                              : currentIndex + 1 + oldIndex;
+                          final actualNewIndex = currentIndex == songs.length - 1
+                              ? newIndex
+                              : currentIndex + 1 + (newIndex > oldIndex ? newIndex - 1 : newIndex);
                           playlistHandler.reorderQueue(actualOldIndex, actualNewIndex);
                         },
                         itemBuilder: (context, index) {
@@ -138,7 +144,9 @@ class QueueList extends StatelessWidget {
                                 ),
                               ),
                               onTap: () {
-                                final actualIndex = currentIndex + 1 + index;
+                                final actualIndex = currentIndex == songs.length - 1
+                                    ? index  // Use direct index when showing full playlist
+                                    : currentIndex + 1 + index;
                                 audioService.playQueueItem(actualIndex);
                               },
                             ),

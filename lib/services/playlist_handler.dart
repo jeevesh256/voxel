@@ -31,7 +31,7 @@ class PlaylistHandler extends ChangeNotifier {
   List<Song> get queue => List.unmodifiable(_queue);
 
   void updateQueue(List<Song> songs) {
-    _queue = List.from(songs);
+    _queue = songs;
     notifyListeners();
   }
 

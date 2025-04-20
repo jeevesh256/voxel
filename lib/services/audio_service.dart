@@ -8,6 +8,8 @@ import 'package:provider/provider.dart';
 import 'queue_manager.dart';
 import 'audio_queue_manager.dart';
 import 'package:rxdart/rxdart.dart';
+import 'dart:math' as math;
+import 'dart:math';
 
 class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   final AudioPlayer _player = AudioPlayer();
@@ -17,7 +19,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   };
   final PlaylistHandler _playlistHandler;
 
-  late final ConcatenatingAudioSource _playlist;
+  late ConcatenatingAudioSource _playlist;
 
   AudioPlayerService(this._playlistHandler) {
     _playlist = ConcatenatingAudioSource(children: []);
@@ -161,9 +163,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       final songsList = songs.map((file) => Song.fromFile(file)).toList();
       _playlistHandler.updateQueue(songsList);
 
-      await _playlist.clear();
-      await _playlist.addAll(
-        songsList.map((song) => AudioSource.file(
+      final sources = songsList.map((song) => 
+        AudioSource.file(
           song.filePath,
           tag: MediaItem(
             id: song.id,
@@ -171,10 +172,23 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
             artist: song.artist,
             album: playlistId,
           ),
-        )).toList(),
-      );
+        ),
+      ).toList();
 
-      await _player.seek(Duration.zero, index: 0);
+      _playlist = ConcatenatingAudioSource(children: sources);
+      await _player.setAudioSource(_playlist, initialIndex: 0);
+      
+      // Enable looping by default
+      await _player.setLoopMode(LoopMode.all);
+      
+      // Listen for sequence end
+      _player.playerStateStream.listen((state) {
+        if (state.processingState == ProcessingState.completed) {
+          _player.seek(Duration.zero, index: 0);
+          _player.play();
+        }
+      });
+
       await _player.play();
     } catch (e) {
       debugPrint('Error playing playlist: $e');
@@ -301,14 +315,57 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     },
   ).distinct();
 
+  List<AudioSource>? _originalSequence;
+  int? _currentIndex;
+
   Future<void> toggleShuffle() async {
     try {
+      if (_playlist == null) return;
       final enabled = !_player.shuffleModeEnabled;
+
+      // Get current song and index
+      final currentIndex = _player.currentIndex;
+      final position = _player.position;
+
+      if (enabled) {
+        // Convert to explicit list of AudioSource
+        final sources = List<IndexedAudioSource>.from(_playlist.sequence);
+        
+        if (currentIndex != null) {
+          // Keep current song at current position
+          final currentSource = sources[currentIndex];
+          sources.removeAt(currentIndex);
+          sources.shuffle();
+          sources.insert(currentIndex, currentSource);
+        } else {
+          sources.shuffle();
+        }
+
+        // Update playlist with shuffled order
+        await _playlist.clear();
+        await _playlist.addAll(sources);
+
+        // Restore playback state
+        if (currentIndex != null) {
+          await _player.seek(position, index: currentIndex);
+        }
+      }
+
       await _player.setShuffleModeEnabled(enabled);
-      // Force a notification to update UI
+      _updateQueueDisplay();
       notifyListeners();
     } catch (e) {
       debugPrint('Error toggling shuffle: $e');
+    }
+  }
+
+  void _updateQueueDisplay() {
+    if (_playlist != null) {
+      final songs = _playlist.sequence
+          .map((source) => Song.fromFile(
+              File(((source as IndexedAudioSource).tag as MediaItem).id)))
+          .toList();
+      _playlistHandler.updateQueue(songs);
     }
   }
 
