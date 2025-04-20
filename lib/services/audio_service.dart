@@ -10,6 +10,7 @@ import 'audio_queue_manager.dart';
 import 'package:rxdart/rxdart.dart';
 import 'dart:math' as math;
 import 'dart:math';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   final AudioPlayer _player = AudioPlayer();
@@ -18,6 +19,9 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     'offline': [],
   };
   final PlaylistHandler _playlistHandler;
+  final Set<String> _likedTracks = {};
+  static const String _likedTracksKey = 'liked_tracks';
+  late SharedPreferences _prefs;
 
   late ConcatenatingAudioSource _playlist;
 
@@ -26,6 +30,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     _player.setAudioSource(_playlist);
 
     _playlistHandler.setQueueManager(this);
+    _loadLikedTracks();
 
     // Listen to player index changes and shuffle mode changes
     _player.currentIndexStream.listen((index) {
@@ -41,9 +46,6 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
   MediaItem? _currentMedia;
   bool _isInitialized = false;
-
-  // Track liked status
-  final Set<String> _likedTracks = {};
 
   AudioPlayer get player => _player;
   MediaItem? get currentMedia => _currentMedia;
@@ -68,8 +70,22 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     return _likedTracks.contains(current.id);
   }
 
+  Future<void> _loadLikedTracks() async {
+    _prefs = await SharedPreferences.getInstance();
+    final likedTracks = _prefs.getStringList(_likedTracksKey) ?? [];
+    _likedTracks.addAll(likedTracks);
+    
+    // Sync liked tracks with playlist
+    _playlists['liked'] = likedTracks.map((path) => File(path)).toList();
+    notifyListeners();
+  }
+
+  Future<void> _saveLikedTracks() async {
+    await _prefs.setStringList(_likedTracksKey, _likedTracks.toList());
+  }
+
   // Toggle like status for current track
-  void toggleLike() {
+  Future<void> toggleLike() async {
     final current = currentTrack;
     if (current == null) return;
 
@@ -84,6 +100,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
         _playlists['liked']?.add(currentFile);
       }
     }
+    await _saveLikedTracks();
     notifyListeners();
   }
 
