@@ -1,11 +1,12 @@
 package com.example.voxel
 
+import android.content.Context
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugins.GeneratedPluginRegistrant
+import com.ryanheise.audioservice.AudioServicePlugin
 
 class MainActivity: FlutterActivity() {
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        GeneratedPluginRegistrant.registerWith(flutterEngine)
+    override fun provideFlutterEngine(context: Context): FlutterEngine {
+        return AudioServicePlugin.getFlutterEngine(context)
     }
 }
