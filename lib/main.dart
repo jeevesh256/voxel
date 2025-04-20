@@ -169,6 +169,12 @@ class MusicApp extends StatefulWidget {
 
 class _MusicAppState extends State<MusicApp> {
   int _selectedIndex = 0;
+  final List<GlobalKey<NavigatorState>> _navigatorKeys = [
+    GlobalKey<NavigatorState>(),
+    GlobalKey<NavigatorState>(),
+    GlobalKey<NavigatorState>(),
+    GlobalKey<NavigatorState>(),
+  ];
 
   final List<Widget> _pages = [
     const HomePage(),
@@ -177,15 +183,38 @@ class _MusicAppState extends State<MusicApp> {
     const SettingsPage(),
   ];
 
+  Future<bool> _onWillPop() async {
+    final currentNavigator = _navigatorKeys[_selectedIndex].currentState;
+    
+    // If we can pop the current navigator, do that first
+    if (currentNavigator?.canPop() ?? false) {
+      currentNavigator?.pop();
+      return false;
+    }
+    
+    // If we're already on the home tab, allow the app to close
+    // Otherwise, switch to home tab
+    if (_selectedIndex == 0) {
+      return true; // Exit app when on home tab
+    } else {
+      setState(() => _selectedIndex = 0);
+      return false; // Don't exit app, just switched tabs
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: PersistentOverlay(
-        currentIndex: _selectedIndex,
-        onTabChanged: (index) => setState(() => _selectedIndex = index),
-        child: Navigator(
-          onGenerateRoute: (settings) => MaterialPageRoute(
-            builder: (context) => _pages[_selectedIndex],
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        body: PersistentOverlay(
+          currentIndex: _selectedIndex,
+          onTabChanged: (index) => setState(() => _selectedIndex = index),
+          child: Navigator(
+            key: _navigatorKeys[_selectedIndex],
+            onGenerateRoute: (settings) => MaterialPageRoute(
+              builder: (context) => _pages[_selectedIndex],
+            ),
           ),
         ),
       ),
