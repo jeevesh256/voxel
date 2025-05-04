@@ -84,7 +84,7 @@ class PlaylistPage extends StatelessWidget {
                         style: TextStyle(color: Colors.grey.shade400),
                       ),
                       onTap: () {
-                        audioService.playFile(file);
+                        audioService.playFileInContext(file, songs);
                       },
                     );
                   },

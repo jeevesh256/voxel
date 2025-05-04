@@ -261,6 +261,34 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     }
   }
 
+  Future<void> playFileInContext(File file, List<File> playlistFiles) async {
+    if (playlistFiles.isEmpty) return;
+    try {
+      final songsList = playlistFiles.map((f) => Song.fromFile(f)).toList();
+      _playlistHandler.updateQueue(songsList);
+      
+      _playlist = ConcatenatingAudioSource(
+        children: songsList.map((song) => 
+          AudioSource.file(
+            song.filePath,
+            tag: MediaItem(
+              id: song.id,
+              title: song.title,
+              artist: song.artist,
+            ),
+          ),
+        ).toList(),
+      );
+
+      final selectedIndex = playlistFiles.indexOf(file);
+      await _player.setAudioSource(_playlist, initialIndex: selectedIndex);
+      await _player.play();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error playing file in context: $e');
+    }
+  }
+
   @override
   Future<void> reorderQueue(int oldIndex, int newIndex) async {
     try {
