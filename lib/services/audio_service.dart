@@ -264,6 +264,17 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   Future<void> playFileInContext(File file, List<File> playlistFiles) async {
     if (playlistFiles.isEmpty) return;
     try {
+      // Set current playlist by comparing contents exactly
+      for (var entry in _playlists.entries) {
+        if (listEquals(entry.value, playlistFiles)) {
+          _currentPlaylistId = entry.key;
+          break;
+        }
+      }
+
+      // If playlist not found, assume it's the offline playlist
+      _currentPlaylistId ??= 'offline';
+
       final songsList = playlistFiles.map((f) => Song.fromFile(f)).toList();
       _playlistHandler.updateQueue(songsList);
       
@@ -275,6 +286,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
               id: song.id,
               title: song.title,
               artist: song.artist,
+              album: _currentPlaylistId, // Use the identified playlist ID
             ),
           ),
         ).toList(),
@@ -358,7 +370,15 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
   String? get currentPlaylistName {
     if (_currentPlaylistId == null) return null;
-    return _playlistHandler.getPlaylist(_currentPlaylistId!)?.name;
+    
+    // Map playlist IDs to display names
+    final playlistNames = {
+      'liked': 'Liked Songs',
+      'offline': 'Offline',
+      // Add other playlist mappings here
+    };
+    
+    return playlistNames[_currentPlaylistId] ?? 'Library';
   }
 
   Stream<MediaItem?> get currentMediaStream => Rx.combineLatest2(
