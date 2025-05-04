@@ -93,6 +93,15 @@ class PlaylistPage extends StatelessWidget {
               childCount: songs.length,
             ),
           ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).padding.bottom + // Device bottom padding
+                        kBottomNavigationBarHeight + // Navigation bar height (usually 56)
+                        60.0, // Mini player height
+              ),
+            ),
+          ),
         ],
       ),
     );
