@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
-import 'package:audio_session/audio_session.dart';
 import 'package:provider/provider.dart';
 import 'services/audio_service.dart';
+import 'models/settings_model.dart';
+import 'models/favourite_radios_model.dart';
 import 'services/playlist_handler.dart';
-import 'widgets/player.dart';
 import 'pages/home_page.dart';
 import 'pages/search_page.dart';
 import 'pages/library_page.dart';
 import 'pages/settings_page.dart';
-import 'widgets/persistent_bottom_bar.dart';
 import 'widgets/persistent_overlay.dart';
 
 void main() async {
@@ -125,6 +124,8 @@ class _MyInitializerState extends State<MyInitializer> {
       providers: [
         ChangeNotifierProvider.value(value: _playlistHandler!),
         ChangeNotifierProvider.value(value: _audioService!),
+        ChangeNotifierProvider(create: (_) => SettingsModel()),
+        ChangeNotifierProvider(create: (_) => FavouriteRadiosModel()),
       ],
       child: const MyApp(),
     );
@@ -192,7 +193,7 @@ class _MusicAppState extends State<MusicApp> {
     const HomePage(),
     const SearchPage(),
     const LibraryPage(),
-    const SettingsPage(),
+    SettingsPage(),
   ];
 
   Future<bool> _onWillPop() async {

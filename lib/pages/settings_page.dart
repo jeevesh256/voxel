@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-
+import 'package:provider/provider.dart';
+import '../models/settings_model.dart';
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key});
+  // Removed language preferences
 
   @override
   Widget build(BuildContext context) {
@@ -31,6 +32,18 @@ class SettingsPage extends StatelessWidget {
           _buildSection(
             'Other',
             [
+              Builder(
+                builder: (context) {
+                  final settings = Provider.of<SettingsModel>(context);
+                  return SwitchListTile(
+                    title: const Text('Show Non-Music Genres'),
+                    value: settings.showNonMusicGenres,
+                    onChanged: (value) {
+                      settings.setShowNonMusicGenres(value);
+                    },
+                  );
+                },
+              ),
               ListTile(
                 title: const Text('About'),
                 trailing: const Icon(Icons.arrow_forward_ios, size: 16),

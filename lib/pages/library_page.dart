@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
 import '../services/storage_service.dart';
 import '../models/playlist_model.dart';
+import '../models/favourite_radios_model.dart';
+import '../models/radio_station.dart';
 import '../services/playlist_handler.dart';
 import 'dart:io';
 import 'playlist_page.dart';
@@ -57,7 +59,7 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           backgroundColor: Colors.transparent,
@@ -66,6 +68,7 @@ class _LibraryPageState extends State<LibraryPage> {
             tabs: const [
               Tab(text: 'Playlists'),
               Tab(text: 'Artists'),
+              Tab(text: 'Favourite Radios'),
             ],
             indicatorColor: Colors.deepPurple.shade400,
           ),
@@ -74,9 +77,62 @@ class _LibraryPageState extends State<LibraryPage> {
           children: [
             _buildPlaylistsView(),
             _buildArtistsView(),
+            _buildFavouriteRadiosView(),
           ],
         ),
       ),
+    );
+  // ...existing code...
+  }
+
+  Widget _buildFavouriteRadiosView() {
+    final audioService = Provider.of<AudioPlayerService>(context);
+    final radios = audioService.getPlaylistRadios('favourite_radios');
+    if (radios.isEmpty) {
+      return Center(
+        child: Text('No favourite radios yet', style: TextStyle(color: Colors.grey[400], fontSize: 16)),
+      );
+    }
+    return ListView.builder(
+      itemCount: radios.length,
+      itemBuilder: (context, index) {
+        final radio = radios[index];
+        final hasArt = radio.artworkUrl.isNotEmpty;
+        return ListTile(
+          leading: hasArt
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    radio.artworkUrl,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 48,
+                      height: 48,
+                      color: Colors.deepPurple.shade200,
+                      child: const Icon(Icons.radio, color: Colors.white, size: 24),
+                    ),
+                  ),
+                )
+              : Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.deepPurple.shade200,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.radio, color: Colors.white, size: 24),
+                ),
+          title: Text(radio.name),
+          subtitle: Text(radio.genre),
+          trailing: IconButton(
+            icon: Icon(Icons.favorite, color: Colors.deepPurple.shade400),
+            onPressed: () => audioService.removeRadioFromPlaylist('favourite_radios', radio),
+          ),
+          onTap: () => audioService.playRadioStation(radio),
+        );
+      },
     );
   }
 

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:rxdart/rxdart.dart';
 import 'dart:math';
 import '../services/audio_service.dart';
+import '../models/radio_station.dart';
 import 'queue.dart';
 import 'lyrics.dart';
 
@@ -28,6 +29,8 @@ class MiniPlayer extends StatelessWidget {
           return const SizedBox.shrink();
         }
 
+        final isRadio = audioService.isRadioPlaying;
+        final radio = audioService.currentRadioStation;
         final isPlaying = snapshot.data?.$1.playing ?? false;
         final metadata = snapshot.data?.$2;
 
@@ -55,11 +58,15 @@ class MiniPlayer extends StatelessWidget {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(5),
                           color: Colors.deepPurple.shade200,
-                          image: metadata?.artUri != null 
-                            ? DecorationImage(image: NetworkImage(metadata!.artUri.toString()))
-                            : null,
+                          image: isRadio && radio != null
+                            ? DecorationImage(image: NetworkImage(radio.artworkUrl))
+                            : metadata?.artUri != null 
+                              ? DecorationImage(image: NetworkImage(metadata!.artUri.toString()))
+                              : null,
                         ),
-                        child: metadata?.artUri == null ? const Icon(Icons.music_note) : null,
+                        child: (!isRadio && metadata?.artUri == null)
+                          ? const Icon(Icons.music_note)
+                          : null,
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -68,7 +75,9 @@ class MiniPlayer extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              metadata?.title ?? 'No Track Playing',
+                              isRadio && radio != null
+                                ? radio.name
+                                : metadata?.title ?? 'No Track Playing',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -78,7 +87,9 @@ class MiniPlayer extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              metadata?.artist ?? 'Unknown Artist',
+                              isRadio && radio != null
+                                ? radio.genre
+                                : metadata?.artist ?? 'Unknown Artist',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -91,10 +102,24 @@ class MiniPlayer extends StatelessWidget {
                       ),
                       IconButton(
                         icon: Icon(
-                          audioService.isLiked ? Icons.favorite : Icons.favorite_border,
-                          color: audioService.isLiked ? Colors.deepPurple.shade400 : Colors.white,
+                          isRadio && radio != null && audioService.isRadioLiked(radio)
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                          color: isRadio && radio != null && audioService.isRadioLiked(radio)
+                              ? Colors.deepPurple.shade400
+                              : Colors.white,
                         ),
-                        onPressed: () => audioService.toggleLike(),
+                        onPressed: () {
+                          if (isRadio && radio != null) {
+                            if (audioService.isRadioLiked(radio)) {
+                              audioService.removeRadioFromPlaylist('favourite_radios', radio);
+                            } else {
+                              audioService.addRadioToPlaylist('favourite_radios', radio);
+                            }
+                          } else {
+                            audioService.toggleLike();
+                          }
+                        },
                       ),
                       IconButton(
                         icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
@@ -166,15 +191,17 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
         ),
       ),
       child: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(context),
-            const Spacer(flex: 2),
-            _buildAlbumArt(),
-            const Spacer(flex: 3),
-            _buildControls(context),
-            const SizedBox(height: 40),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              _buildHeader(context),
+              const SizedBox(height: 24),
+              _buildAlbumArt(),
+              const SizedBox(height: 32),
+              _buildControls(context),
+              const SizedBox(height: 40),
+            ],
+          ),
         ),
       ),
     );
@@ -250,6 +277,10 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
   }
 
   Widget _buildAlbumArt() {
+    final audioService = context.watch<AudioPlayerService>();
+    final isRadio = audioService.isRadioPlaying;
+    final radio = audioService.currentRadioStation;
+    final metadata = audioService.currentMedia;
     final padding = const EdgeInsets.symmetric(horizontal: 24);
     return Padding(
       padding: padding,
@@ -266,8 +297,15 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                 offset: const Offset(0, 10),
               ),
             ],
+            image: isRadio && radio != null
+              ? DecorationImage(image: NetworkImage(radio.artworkUrl), fit: BoxFit.cover)
+              : metadata?.artUri != null
+                ? DecorationImage(image: NetworkImage(metadata!.artUri.toString()), fit: BoxFit.cover)
+                : null,
           ),
-          child: const Icon(Icons.music_note, size: 80, color: Colors.white),
+          child: (!isRadio && metadata?.artUri == null)
+            ? const Icon(Icons.music_note, size: 80, color: Colors.white)
+            : null,
         ),
       ),
     );
@@ -296,6 +334,8 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
 
   Widget _buildSongInfo(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
+    final isRadio = audioService.isRadioPlaying;
+    final radio = audioService.currentRadioStation;
     
     return StreamBuilder<MediaItem?>(
       stream: audioService.currentMediaStream,
@@ -309,7 +349,9 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _formatTitle(metadata?.title),
+                    isRadio && radio != null
+                      ? radio.name
+                      : _formatTitle(audioService.currentMedia?.title),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 22,
@@ -320,7 +362,9 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    metadata?.artist ?? 'Unknown Artist',
+                    isRadio && radio != null
+                      ? radio.genre
+                      : audioService.currentMedia?.artist ?? 'Unknown Artist',
                     style: TextStyle(
                       color: Colors.grey.shade300,
                       fontSize: 16,
@@ -329,13 +373,14 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                 ],
               ),
             ),
-            IconButton(
-              icon: Icon(
-                audioService.isLiked ? Icons.favorite : Icons.favorite_border,
-                color: audioService.isLiked ? Colors.deepPurple.shade400 : Colors.white,
+            if (!isRadio)
+              IconButton(
+                icon: Icon(
+                  audioService.isLiked ? Icons.favorite : Icons.favorite_border,
+                  color: audioService.isLiked ? Colors.deepPurple.shade400 : Colors.white,
+                ),
+                onPressed: () => audioService.toggleLike(),
               ),
-              onPressed: () => audioService.toggleLike(),
-            ),
           ],
         );
       },
@@ -344,6 +389,7 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
 
   Widget _buildProgressBar(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
+    final isRadio = audioService.isRadioPlaying;
     
     return StreamBuilder<(Duration, Duration?)>(
       stream: Rx.combineLatest2(
@@ -429,12 +475,12 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
 
   Widget _buildPlaybackControls(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
+    final isRadio = audioService.isRadioPlaying;
     
     return StreamBuilder<PlayerState>(
       stream: audioService.player.playerStateStream,
       builder: (context, snapshot) {
         final playing = snapshot.data?.playing ?? false;
-        
         return Column(
           children: [
             Row(
@@ -448,13 +494,13 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                         : Colors.grey.shade400,
                   ),
                   iconSize: 28,
-                  onPressed: () => audioService.toggleShuffle(),
+                  onPressed: isRadio ? null : () => audioService.toggleShuffle(),
                 ),
                 IconButton(
                   icon: const Icon(Icons.skip_previous),
                   color: Colors.white,
                   iconSize: 40,
-                  onPressed: () => audioService.player.seekToPrevious(),
+                  onPressed: isRadio ? null : () => audioService.player.seekToPrevious(),
                 ),
                 Container(
                   decoration: const BoxDecoration(
@@ -472,7 +518,7 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                   icon: const Icon(Icons.skip_next),
                   color: Colors.white,
                   iconSize: 40,
-                  onPressed: () => audioService.player.seekToNext(),
+                  onPressed: isRadio ? null : () => audioService.player.seekToNext(),
                 ),
                 IconButton(
                   icon: Icon(
@@ -484,7 +530,7 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                         : Colors.grey.shade400,
                   ),
                   iconSize: 28,
-                  onPressed: () => audioService.cycleRepeatMode(),
+                  onPressed: isRadio ? null : () => audioService.cycleRepeatMode(),
                 ),
               ],
             ),

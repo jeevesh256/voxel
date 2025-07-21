@@ -3,6 +3,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import '../models/song.dart';  // Add this import
 import '../services/playlist_handler.dart';  // Add this import
+import '../models/radio_station.dart';
 import 'dart:io';
 import 'package:provider/provider.dart';
 import 'queue_manager.dart';
@@ -11,6 +12,8 @@ import 'package:rxdart/rxdart.dart';
 import 'dart:math' as math;
 import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+
 
 class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   final AudioPlayer _player = AudioPlayer();
@@ -18,9 +21,14 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     'liked': [],
     'offline': [],
   };
+  final Map<String, List<RadioStation>> _radioPlaylists = {
+    'favourite_radios': [],
+  };
   final PlaylistHandler _playlistHandler;
   final Set<String> _likedTracks = {};
+  final Set<String> _likedRadios = {};
   static const String _likedTracksKey = 'liked_tracks';
+  static const String _likedRadiosKey = 'liked_radios';
   late SharedPreferences _prefs;
 
   late ConcatenatingAudioSource _playlist;
@@ -47,6 +55,9 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   MediaItem? _currentMedia;
   bool _isInitialized = false;
 
+  RadioStation? _currentRadioStation;
+  RadioStation? get currentRadioStation => _currentRadioStation;
+
   AudioPlayer get player => _player;
   MediaItem? get currentMedia => _currentMedia;
   bool get isPlaying => _player.playing;
@@ -70,18 +81,70 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     return _likedTracks.contains(current.id);
   }
 
+
   Future<void> _loadLikedTracks() async {
     _prefs = await SharedPreferences.getInstance();
     final likedTracks = _prefs.getStringList(_likedTracksKey) ?? [];
     _likedTracks.addAll(likedTracks);
-    
-    // Sync liked tracks with playlist
     _playlists['liked'] = likedTracks.map((path) => File(path)).toList();
+
+    // Load liked radios (persisted as JSON)
+    final likedRadiosJson = _prefs.getStringList(_likedRadiosKey) ?? [];
+    _radioPlaylists['favourite_radios'] = likedRadiosJson
+        .map((jsonStr) {
+          try {
+            return RadioStation.fromJson(Map<String, dynamic>.from(
+              jsonDecode(jsonStr),
+            ));
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<RadioStation>()
+        .toList();
+    _likedRadios.clear();
+    _likedRadios.addAll(_radioPlaylists['favourite_radios']?.map((r) => r.id) ?? []);
     notifyListeners();
   }
 
+
   Future<void> _saveLikedTracks() async {
     await _prefs.setStringList(_likedTracksKey, _likedTracks.toList());
+  }
+
+  Future<void> _saveLikedRadios() async {
+    // Save as JSON
+    final radios = _radioPlaylists['favourite_radios'] ?? [];
+    final jsonList = radios.map((r) => jsonEncode(r.toJson())).toList();
+    await _prefs.setStringList(_likedRadiosKey, jsonList);
+  }
+  // RadioStation playlist logic
+  List<RadioStation> getPlaylistRadios(String playlistId) {
+    return _radioPlaylists[playlistId] ?? [];
+  }
+
+  void addRadioToPlaylist(String playlistId, RadioStation station) {
+    final radios = _radioPlaylists.putIfAbsent(playlistId, () => []);
+    if (!radios.any((r) => r.id == station.id)) {
+      radios.add(station);
+      _likedRadios.add(station.id);
+      _saveLikedRadios();
+      notifyListeners();
+    }
+  }
+
+  void removeRadioFromPlaylist(String playlistId, RadioStation station) {
+    final radios = _radioPlaylists[playlistId];
+    if (radios != null) {
+      radios.removeWhere((r) => r.id == station.id);
+      _likedRadios.remove(station.id);
+      _saveLikedRadios();
+      notifyListeners();
+    }
+  }
+
+  bool isRadioLiked(RadioStation station) {
+    return _likedRadios.contains(station.id);
   }
 
   // Toggle like status for current track
@@ -447,8 +510,32 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   bool get isShuffling => _player.shuffleModeEnabled;
   LoopMode get loopMode => _player.loopMode;
 
+  Future<void> playRadioStation(RadioStation station) async {
+    try {
+      _currentRadioStation = station;
+      _currentPlaylistId = null;
+      _currentMedia = null;
+      await _player.setAudioSource(AudioSource.uri(Uri.parse(station.streamUrl),
+        tag: MediaItem(
+          id: station.id,
+          title: station.name,
+          artist: station.genre,
+          artUri: Uri.parse(station.artworkUrl),
+          album: 'Radio',
+        ),
+      ));
+      await _player.play();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error playing radio: $e');
+    }
+  }
+
+  bool get isRadioPlaying => _currentRadioStation != null;
+
   @override
   void dispose() {
+    _currentRadioStation = null;
     _player.dispose();
     super.dispose();
   }
