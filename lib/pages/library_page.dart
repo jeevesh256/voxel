@@ -86,7 +86,7 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Widget _buildFavouriteRadiosView() {
-    final audioService = Provider.of<AudioPlayerService>(context);
+    final audioService = context.watch<AudioPlayerService>();
     final radios = audioService.getPlaylistRadios('favourite_radios');
     if (radios.isEmpty) {
       return Center(
@@ -128,7 +128,10 @@ class _LibraryPageState extends State<LibraryPage> {
           subtitle: Text(radio.genre),
           trailing: IconButton(
             icon: Icon(Icons.favorite, color: Colors.deepPurple.shade400),
-            onPressed: () => audioService.removeRadioFromPlaylist('favourite_radios', radio),
+            onPressed: () {
+              // Only remove from favourite radios, never liked songs
+              audioService.removeRadioFromPlaylist('favourite_radios', radio);
+            },
           ),
           onTap: () => audioService.playRadioStation(radio),
         );
@@ -139,17 +142,18 @@ class _LibraryPageState extends State<LibraryPage> {
   Widget _buildPlaylistsView() {
     final audioService = context.watch<AudioPlayerService>();
     final playlists = audioService.allPlaylists;
-
+    // Show liked songs in stack order (newest first)
+    final likedSongs = List<File>.from(playlists.firstWhere(
+      (e) => e.key == 'liked',
+      orElse: () => const MapEntry('liked', []),
+    ).value.reversed);
     return ListView(
       children: [
         _buildPlaylistTile(
           title: 'Liked Songs',
           icon: Icons.favorite,
           playlistId: 'liked',
-          songs: playlists.firstWhere(
-            (e) => e.key == 'liked',
-            orElse: () => const MapEntry('liked', []),
-          ).value,
+          songs: likedSongs,
         ),
         _buildPlaylistTile(
           title: 'Offline',

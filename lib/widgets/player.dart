@@ -34,6 +34,11 @@ class MiniPlayer extends StatelessWidget {
         final isPlaying = snapshot.data?.$1.playing ?? false;
         final metadata = snapshot.data?.$2;
 
+        // Determine liked state for current item
+        final isLiked = !isRadio
+            ? audioService.isLiked
+            : isRadio && radio != null && audioService.getPlaylistRadios('favourite_radios').any((r) => r.id == radio.id);
+
         return GestureDetector(
           onTap: () {
             showModalBottomSheet(
@@ -74,27 +79,45 @@ class MiniPlayer extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              isRadio && radio != null
-                                ? radio.name
-                                : metadata?.title ?? 'No Track Playing',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
+                            SizedBox(
+                              height: 18,
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 300),
+                                  child: Text(
+                                    isRadio && radio != null
+                                      ? radio.name
+                                      : metadata?.title ?? 'No Track Playing',
+                                    key: ValueKey(isRadio && radio != null ? radio.name : metadata?.title ?? 'No Track Playing'),
+                                    maxLines: 1,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
-                            Text(
-                              isRadio && radio != null
-                                ? radio.genre
-                                : metadata?.artist ?? 'Unknown Artist',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.grey.shade400,
-                                fontSize: 12,
+                            SizedBox(
+                              height: 16,
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 300),
+                                  child: Text(
+                                    isRadio && radio != null
+                                      ? radio.genre
+                                      : metadata?.artist ?? 'Unknown Artist',
+                                    key: ValueKey(isRadio && radio != null ? radio.genre : metadata?.artist ?? 'Unknown Artist'),
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      color: Colors.grey.shade400,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           ],
@@ -102,21 +125,19 @@ class MiniPlayer extends StatelessWidget {
                       ),
                       IconButton(
                         icon: Icon(
-                          isRadio && radio != null && audioService.isRadioLiked(radio)
-                              ? Icons.favorite
-                              : Icons.favorite_border,
-                          color: isRadio && radio != null && audioService.isRadioLiked(radio)
-                              ? Colors.deepPurple.shade400
-                              : Colors.white,
+                          isLiked ? Icons.favorite : Icons.favorite_border,
+                          color: isLiked ? Colors.deepPurple.shade400 : Colors.white,
                         ),
                         onPressed: () {
                           if (isRadio && radio != null) {
-                            if (audioService.isRadioLiked(radio)) {
+                            // Only update favourite_radios for radios
+                            if (audioService.getPlaylistRadios('favourite_radios').any((r) => r.id == radio.id)) {
                               audioService.removeRadioFromPlaylist('favourite_radios', radio);
                             } else {
                               audioService.addRadioToPlaylist('favourite_radios', radio);
                             }
                           } else {
+                            // Only update liked songs for songs
                             audioService.toggleLike();
                           }
                         },
@@ -151,8 +172,17 @@ class MiniPlayer extends StatelessWidget {
         
         final position = snapshot.data!.$1;
         final duration = snapshot.data!.$2 ?? Duration.zero;
+        final isRadio = audioService.isRadioPlaying;
         
-        if (duration == Duration.zero) return const SizedBox(height: 2);
+        // For radio streams, show a filled progress bar to indicate live streaming
+        if (isRadio || duration == Duration.zero) {
+          return LinearProgressIndicator(
+            value: 1.0, // Always full for radio streams
+            backgroundColor: Colors.grey.shade800,
+            valueColor: AlwaysStoppedAnimation(Colors.deepPurple.shade400),
+            minHeight: 2,
+          );
+        }
 
         return LinearProgressIndicator(
           value: position.inMilliseconds / duration.inMilliseconds,
@@ -282,6 +312,23 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
     final radio = audioService.currentRadioStation;
     final metadata = audioService.currentMedia;
     final padding = const EdgeInsets.symmetric(horizontal: 24);
+    Widget artWidget;
+    if ((isRadio && radio != null && radio.artworkUrl.isNotEmpty) || (metadata?.artUri != null && metadata!.artUri.toString().isNotEmpty)) {
+      final imageUrl = isRadio && radio != null ? radio.artworkUrl : metadata!.artUri.toString();
+      artWidget = AnimatedSwitcher(
+        duration: const Duration(milliseconds: 400),
+        child: FadeInImage.assetNetwork(
+          key: ValueKey(imageUrl),
+          placeholder: 'assets/placeholder.png', // Add a placeholder image to your assets
+          image: imageUrl,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+        ),
+      );
+    } else {
+      artWidget = const Icon(Icons.music_note, size: 80, color: Colors.white);
+    }
     return Padding(
       padding: padding,
       child: AspectRatio(
@@ -297,15 +344,8 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                 offset: const Offset(0, 10),
               ),
             ],
-            image: isRadio && radio != null
-              ? DecorationImage(image: NetworkImage(radio.artworkUrl), fit: BoxFit.cover)
-              : metadata?.artUri != null
-                ? DecorationImage(image: NetworkImage(metadata!.artUri.toString()), fit: BoxFit.cover)
-                : null,
           ),
-          child: (!isRadio && metadata?.artUri == null)
-            ? const Icon(Icons.music_note, size: 80, color: Colors.white)
-            : null,
+          child: artWidget,
         ),
       ),
     );
@@ -341,38 +381,76 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
       stream: audioService.currentMediaStream,
       builder: (context, snapshot) {
         final metadata = snapshot.data;
-        
         return Row(
           children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    isRadio && radio != null
-                      ? radio.name
-                      : _formatTitle(audioService.currentMedia?.title),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
+                  SizedBox(
+                    height: 26,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: Text(
+                          isRadio && radio != null
+                            ? (metadata?.title ?? radio.name)
+                            : _formatTitle(metadata?.title),
+                          key: ValueKey(isRadio && radio != null ? (metadata?.title ?? radio.name) : _formatTitle(metadata?.title)),
+                          maxLines: 1,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    isRadio && radio != null
-                      ? radio.genre
-                      : audioService.currentMedia?.artist ?? 'Unknown Artist',
-                    style: TextStyle(
-                      color: Colors.grey.shade300,
-                      fontSize: 16,
+                  SizedBox(
+                    height: 20,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: Text(
+                          isRadio && radio != null
+                            ? (metadata?.artist ?? radio.genre)
+                            : metadata?.artist ?? 'Unknown Artist',
+                          key: ValueKey(isRadio && radio != null ? (metadata?.artist ?? radio.genre) : metadata?.artist ?? 'Unknown Artist'),
+                          maxLines: 1,
+                          style: TextStyle(
+                            color: Colors.grey.shade300,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
+            if (isRadio && radio != null)
+              IconButton(
+                icon: Icon(
+                  audioService.getPlaylistRadios('favourite_radios').any((r) => r.id == radio.id)
+                      ? Icons.favorite
+                      : Icons.favorite_border,
+                  color: audioService.getPlaylistRadios('favourite_radios').any((r) => r.id == radio.id)
+                      ? Colors.deepPurple.shade400
+                      : Colors.white,
+                ),
+                onPressed: () {
+                  final isFav = audioService.getPlaylistRadios('favourite_radios').any((r) => r.id == radio.id);
+                  if (isFav) {
+                    audioService.removeRadioFromPlaylist('favourite_radios', radio);
+                  } else {
+                    audioService.addRadioToPlaylist('favourite_radios', radio);
+                  }
+                },
+              ),
             if (!isRadio)
               IconButton(
                 icon: Icon(
@@ -403,8 +481,58 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
         final position = snapshot.data!.$1;
         final duration = snapshot.data!.$2 ?? Duration.zero;
         
-        if (duration == Duration.zero) {
-          return const SizedBox(height: 48);
+        // For radio streams, show a full progress bar with "Live Radio Stream" text overlaid in the center
+        if (isRadio || duration == Duration.zero) {
+          return Column(
+            children: [
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Full width progress bar
+                  SliderTheme(
+                    data: SliderThemeData(
+                      trackHeight: 1.5,
+                      thumbShape: SliderComponentShape.noThumb,
+                      overlayShape: SliderComponentShape.noOverlay,
+                      activeTrackColor: Colors.white,
+                      inactiveTrackColor: Colors.white,
+                    ),
+                    child: Slider(
+                      value: 1.0, // Always full for radio
+                      min: 0.0,
+                      max: 1.0,
+                      onChanged: null, // Disabled for radio
+                    ),
+                  ),
+                  // Center text with background shape
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.85),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Live Radio Stream',
+                      style: TextStyle(
+                        color: Colors.grey.shade300,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    'LIVE',
+                    style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                  ),
+                ],
+              ),
+            ],
+          );
         }
 
         final value = min(
@@ -489,9 +617,11 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                 IconButton(
                   icon: Icon(
                     Icons.shuffle,
-                    color: audioService.isShuffling
-                        ? Colors.deepPurple.shade400
-                        : Colors.grey.shade400,
+                    color: isRadio 
+                        ? Colors.grey.shade600
+                        : audioService.isShuffling
+                            ? Colors.deepPurple.shade400
+                            : Colors.grey.shade400,
                   ),
                   iconSize: 28,
                   onPressed: isRadio ? null : () => audioService.toggleShuffle(),
@@ -525,9 +655,11 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                     audioService.loopMode == LoopMode.one
                         ? Icons.repeat_one
                         : Icons.repeat,
-                    color: audioService.loopMode != LoopMode.off
-                        ? Colors.deepPurple.shade400
-                        : Colors.grey.shade400,
+                    color: isRadio
+                        ? Colors.grey.shade600
+                        : audioService.loopMode != LoopMode.off
+                            ? Colors.deepPurple.shade400
+                            : Colors.grey.shade400,
                   ),
                   iconSize: 28,
                   onPressed: isRadio ? null : () => audioService.cycleRepeatMode(),
@@ -553,7 +685,7 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                   icon: const Icon(Icons.queue_music),
                   color: Colors.grey.shade400,
                   iconSize: 28,
-                  onPressed: () {
+                  onPressed: isRadio ? null : () {
                     showModalBottomSheet(
                       context: context,
                       backgroundColor: Colors.grey.shade900,

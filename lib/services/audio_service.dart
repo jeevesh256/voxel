@@ -16,6 +16,31 @@ import 'dart:convert';
 
 
 class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
+  /// Returns the type of current media: 'radio', 'song', or null
+  String? getCurrentMediaType() {
+    final current = currentTrack;
+    if (current == null) return null;
+    
+    // Use isRadioPlaying which checks _currentRadioStation instead of allRadios
+    if (isRadioPlaying || _currentRadioStation != null) return 'radio';
+    return 'song';
+  }
+  /// Add the current radio to favourite radios (if not already there)
+  void likeCurrentRadio() {
+    final current = currentTrack;
+    if (current == null) return;
+    final allRadios = getPlaylistRadios('all_radios');
+    final emptyRadio = RadioStation(id: '', name: '', streamUrl: '', genre: '', artworkUrl: '', country: '');
+    final matchedRadio = allRadios.firstWhere(
+      (r) => r.id == current.id || r.streamUrl == current.id || r.streamUrl == current.title,
+      orElse: () => emptyRadio,
+    );
+    if (matchedRadio.id.isNotEmpty && !isRadioLiked(matchedRadio)) {
+      addRadioToPlaylist('favourite_radios', matchedRadio);
+    }
+  }
+  // Global list of all radios in the app
+  List<RadioStation> allRadios = [];
   final AudioPlayer _player = AudioPlayer();
   final Map<String, List<File>> _playlists = {
     'liked': [],
@@ -25,7 +50,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     'favourite_radios': [],
   };
   final PlaylistHandler _playlistHandler;
-  final Set<String> _likedTracks = {};
+final List<String> _likedTracks = [];
   final Set<String> _likedRadios = {};
   static const String _likedTracksKey = 'liked_tracks';
   static const String _likedRadiosKey = 'liked_radios';
@@ -78,6 +103,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   bool get isLiked {
     final current = currentTrack;
     if (current == null) return false;
+    final type = getCurrentMediaType();
+    if (type != 'song') return false;
     return _likedTracks.contains(current.id);
   }
 
@@ -85,6 +112,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   Future<void> _loadLikedTracks() async {
     _prefs = await SharedPreferences.getInstance();
     final likedTracks = _prefs.getStringList(_likedTracksKey) ?? [];
+    _likedTracks.clear();
     _likedTracks.addAll(likedTracks);
     _playlists['liked'] = likedTracks.map((path) => File(path)).toList();
 
@@ -109,7 +137,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
 
   Future<void> _saveLikedTracks() async {
-    await _prefs.setStringList(_likedTracksKey, _likedTracks.toList());
+    await _prefs.setStringList(_likedTracksKey, _likedTracks);
   }
 
   Future<void> _saveLikedRadios() async {
@@ -120,24 +148,34 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   }
   // RadioStation playlist logic
   List<RadioStation> getPlaylistRadios(String playlistId) {
+    if (playlistId == 'all_radios') {
+      // Return the global list of all radios
+      return allRadios;
+    }
     return _radioPlaylists[playlistId] ?? [];
   }
 
   void addRadioToPlaylist(String playlistId, RadioStation station) {
+    debugPrint('Adding radio ${station.name} (${station.id}) to playlist $playlistId');
     final radios = _radioPlaylists.putIfAbsent(playlistId, () => []);
     if (!radios.any((r) => r.id == station.id)) {
       radios.add(station);
       _likedRadios.add(station.id);
+      debugPrint('Radio added successfully. Total favourite radios: ${radios.length}');
       _saveLikedRadios();
       notifyListeners();
+    } else {
+      debugPrint('Radio already exists in playlist');
     }
   }
 
   void removeRadioFromPlaylist(String playlistId, RadioStation station) {
+    debugPrint('Removing radio ${station.name} (${station.id}) from playlist $playlistId');
     final radios = _radioPlaylists[playlistId];
     if (radios != null) {
       radios.removeWhere((r) => r.id == station.id);
       _likedRadios.remove(station.id);
+      debugPrint('Radio removed successfully. Total favourite radios: ${radios.length}');
       _saveLikedRadios();
       notifyListeners();
     }
@@ -151,16 +189,20 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   Future<void> toggleLike() async {
     final current = currentTrack;
     if (current == null) return;
-
+    final type = getCurrentMediaType();
+    if (type != 'song') {
+      // Only handle songs here
+      return;
+    }
+    // Song logic only
     final currentFile = File(current.id);
-    
     if (isLiked) {
       _likedTracks.remove(current.id);
       _playlists['liked']?.removeWhere((file) => file.path == current.id);
     } else {
       if (!(_playlists['liked']?.any((file) => file.path == current.id) ?? false)) {
-        _likedTracks.add(current.id);
-        _playlists['liked']?.add(currentFile);
+        _likedTracks.insert(0, current.id); // Insert at start for stack order
+        _playlists['liked']?.insert(0, currentFile); // Insert at start for stack order
       }
     }
     await _saveLikedTracks();
@@ -191,6 +233,11 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     _player.sequenceStateStream.listen((state) {
       if (state?.currentSource?.tag != null) {
         _currentMedia = state!.currentSource!.tag as MediaItem;
+        // Only clear _currentRadioStation if the album is not 'Radio'
+        // _currentRadioStation is set properly in playRadioStation()
+        if (_currentMedia?.album != 'Radio') {
+          _currentRadioStation = null;
+        }
         notifyListeners();
       }
     });
@@ -198,6 +245,9 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
   Future<void> playFile(File file) async {
     try {
+      // Clear radio station when playing a song
+      _currentRadioStation = null;
+      
       final name = file.path.split('/').last;
       final title = name.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
       
@@ -239,6 +289,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   }
 
   Future<void> playPlaylist(String playlistId) async {
+    // Clear radio station when playing a playlist
+    _currentRadioStation = null;
     _currentPlaylistId = playlistId;
     final songs = _playlists[playlistId];
     if (songs == null || songs.isEmpty) return;
@@ -271,6 +323,9 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   Future<void> playFiles(List<File> files) async {
     if (files.isEmpty) return;
     try {
+      // Clear radio station when playing files
+      _currentRadioStation = null;
+      
       final playlist = ConcatenatingAudioSource(
         children: files.map((file) => 
           AudioSource.file(
@@ -327,6 +382,9 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   Future<void> playFileInContext(File file, List<File> playlistFiles) async {
     if (playlistFiles.isEmpty) return;
     try {
+      // Clear radio station when playing songs
+      _currentRadioStation = null;
+      
       // Set current playlist by comparing contents exactly
       for (var entry in _playlists.entries) {
         if (listEquals(entry.value, playlistFiles)) {
@@ -531,7 +589,10 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     }
   }
 
-  bool get isRadioPlaying => _currentRadioStation != null;
+  // isRadioPlaying now checks if currentRadioStation is set
+  bool get isRadioPlaying {
+    return _currentRadioStation != null;
+  }
 
   @override
   void dispose() {

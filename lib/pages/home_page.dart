@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../models/radio_station.dart';
 import 'all_stations_page.dart';
 import '../models/settings_model.dart';
-import '../models/playlist_model.dart';
 import '../services/audio_service.dart';
 import '../services/radio_browser_service.dart';
 
@@ -16,8 +15,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // Helper to get audioService for radios
-  AudioPlayerService get audioService => Provider.of<AudioPlayerService>(context, listen: false);
+  // Removed direct getter for audioService. Use context.watch or context.read everywhere.
 
   // List all radios in the top section, with a "See All" button
   Widget _buildRadioStationRow() {
@@ -26,8 +24,6 @@ class _HomePageState extends State<HomePage> {
       return streamUrl.startsWith('https://') || streamUrl.startsWith('http://');
     }).toList();
     final topStations = validStations.take(10).toList();
-    final audioService = Provider.of<AudioPlayerService>(context);
-    final favRadios = audioService.getPlaylistRadios('favourite_radios');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -40,9 +36,8 @@ class _HomePageState extends State<HomePage> {
             itemBuilder: (context, index) {
               final station = topStations[index];
               final hasArt = station.artworkUrl.isNotEmpty;
-              final isFav = favRadios.any((r) => r.id == station.id);
               return GestureDetector(
-                onTap: () => audioService.playRadioStation(station),
+                onTap: () => context.read<AudioPlayerService>().playRadioStation(station),
                 child: Container(
                   width: 200,
                   margin: const EdgeInsets.only(right: 16),
@@ -73,24 +68,6 @@ class _HomePageState extends State<HomePage> {
                                     color: Colors.deepPurple.shade200,
                                     child: const Icon(Icons.radio, color: Colors.white, size: 60),
                                   ),
-                          ),
-                          Positioned(
-                            top: 8,
-                            right: 8,
-                            child: GestureDetector(
-                              onTap: () {
-                                if (isFav) {
-                                  audioService.removeRadioFromPlaylist('favourite_radios', station);
-                                } else {
-                                  audioService.addRadioToPlaylist('favourite_radios', station);
-                                }
-                              },
-                              child: Icon(
-                                isFav ? Icons.favorite : Icons.favorite_border,
-                                color: isFav ? Colors.deepPurple.shade400 : Colors.white,
-                                size: 28,
-                              ),
-                            ),
                           ),
                           Positioned.fill(
                             child: Container(
@@ -167,7 +144,7 @@ class _HomePageState extends State<HomePage> {
       final streamUrl = station.streamUrl;
       return streamUrl.startsWith('https://') || streamUrl.startsWith('http://');
     }).toList();
-    final settings = Provider.of<SettingsModel>(context);
+    final settings = context.watch<SettingsModel>();
     final musicGenres = [
       'Pop', 'Rock', 'Jazz', 'Classical', 'Hip-Hop', 'Dance', 'Electronic', 'Country', 'Reggae', 'Blues',
       'Soul', 'Folk', 'Metal', 'Alternative', 'R&B', 'Latin', 'Oldies', 'Top 40'
@@ -196,7 +173,7 @@ class _HomePageState extends State<HomePage> {
           final station = stations.first;
           final hasArt = station.artworkUrl.isNotEmpty;
           return GestureDetector(
-            onTap: () => audioService.playRadioStation(station),
+            onTap: () => context.read<AudioPlayerService>().playRadioStation(station),
             child: Container(
               width: 200,
               margin: const EdgeInsets.only(right: 16),
@@ -276,8 +253,7 @@ class _HomePageState extends State<HomePage> {
   }
   // Removed unused _selectedGenre
   List<RadioStation> _stations = [];
-  // Removed unused _genres and _loadingGenres
-  bool _loadingStations = false;
+  // Removed unused _genres, _loadingGenres, and _loadingStations
   final RadioBrowserService _radioService = RadioBrowserService();
 
   @override
@@ -296,7 +272,6 @@ class _HomePageState extends State<HomePage> {
 
     setState(() {
       _stations = stations;
-      _loadingStations = false;
     });
   }
 
@@ -306,6 +281,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    // Use context.watch everywhere for consistency
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
