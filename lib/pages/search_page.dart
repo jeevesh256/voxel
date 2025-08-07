@@ -63,19 +63,31 @@ class _SearchPageState extends State<SearchPage> {
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Container(
-              height: 45,
               decoration: BoxDecoration(
                 color: Colors.grey[900],
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: TextField(
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                ),
                 decoration: InputDecoration(
                   hintText: 'Artists, Songs, Radio Stations, and More',
-                  hintStyle: TextStyle(color: Colors.grey[600]),
-                  prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                  hintStyle: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 16,
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    color: Colors.grey,
+                    size: 20,
+                  ),
                   border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 16,
+                  ),
                 ),
                 onChanged: (value) {
                   setState(() => _query = value);

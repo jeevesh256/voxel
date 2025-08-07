@@ -2,12 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
 import '../services/storage_service.dart';
-import '../models/playlist_model.dart';
-import '../models/favourite_radios_model.dart';
-import '../models/radio_station.dart';
-import '../services/playlist_handler.dart';
 import 'dart:io';
 import 'playlist_page.dart';
+import 'favourite_radios_page.dart';
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
@@ -19,8 +16,6 @@ class LibraryPage extends StatefulWidget {
 class _LibraryPageState extends State<LibraryPage> {
   final StorageService _storageService = StorageService();
   List<FileSystemEntity> _audioFiles = [];
-  bool _isLoading = true;
-  String? _error;
 
   @override
   void initState() {
@@ -36,24 +31,16 @@ class _LibraryPageState extends State<LibraryPage> {
       if (mounted) {
         setState(() {
           _audioFiles = files;
-          _isLoading = false;
         });
         // Load files into offline playlist
         context.read<AudioPlayerService>().loadOfflineFiles(files);
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _isLoading = false;
-        });
+        // Error handling - could show a snackbar or error message
+        debugPrint('Error loading audio files: $e');
       }
     }
-  }
-
-  String _formatFileName(String path) {
-    final name = path.split('/').last;
-    return name.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
   }
 
   @override
@@ -86,56 +73,204 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Widget _buildFavouriteRadiosView() {
-    final audioService = context.watch<AudioPlayerService>();
-    final radios = audioService.getPlaylistRadios('favourite_radios');
-    if (radios.isEmpty) {
-      return Center(
-        child: Text('No favourite radios yet', style: TextStyle(color: Colors.grey[400], fontSize: 16)),
-      );
-    }
-    return ListView.builder(
-      itemCount: radios.length,
-      itemBuilder: (context, index) {
-        final radio = radios[index];
-        final hasArt = radio.artworkUrl.isNotEmpty;
-        return ListTile(
-          leading: hasArt
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    radio.artworkUrl,
-                    width: 48,
-                    height: 48,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      width: 48,
-                      height: 48,
-                      color: Colors.deepPurple.shade200,
-                      child: const Icon(Icons.radio, color: Colors.white, size: 24),
-                    ),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Consumer<AudioPlayerService>(
+        builder: (context, audioService, child) {
+          final radios = audioService.getPlaylistRadios('favourite_radios');
+          
+          if (radios.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.radio,
+                    size: 64,
+                    color: Colors.grey[600],
                   ),
-                )
-              : Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.deepPurple.shade200,
-                    borderRadius: BorderRadius.circular(8),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No favourite radios yet',
+                    style: TextStyle(color: Colors.grey[400], fontSize: 16),
                   ),
-                  child: const Icon(Icons.radio, color: Colors.white, size: 24),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Add stations to your favourites by tapping the heart icon',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return Column(
+            children: [
+              // Header with view all button (only if needed)
+              if (radios.length > 5)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '${radios.length} stations',
+                        style: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 16,
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const FavouriteRadiosPage(),
+                            ),
+                          );
+                        },
+                        icon: Icon(
+                          Icons.arrow_forward,
+                          color: Colors.deepPurple.shade400,
+                          size: 16,
+                        ),
+                        label: Text(
+                          'View All',
+                          style: TextStyle(
+                            color: Colors.deepPurple.shade400,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-          title: Text(radio.name),
-          subtitle: Text(radio.genre),
-          trailing: IconButton(
-            icon: Icon(Icons.favorite, color: Colors.deepPurple.shade400),
-            onPressed: () {
-              // Only remove from favourite radios, never liked songs
-              audioService.removeRadioFromPlaylist('favourite_radios', radio);
-            },
-          ),
-          onTap: () => audioService.playRadioStation(radio),
-        );
-      },
+              // Show first 3-5 radios or all if less than 6
+              Expanded(
+                child: ListView.builder(
+                  itemCount: radios.length > 5 ? 5 : radios.length,
+                  itemBuilder: (context, index) {
+                    final radio = radios[index];
+                    final hasArt = radio.artworkUrl.isNotEmpty;
+                    return Card(
+                      color: Colors.grey[900],
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: hasArt
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  radio.artworkUrl,
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 48,
+                                    height: 48,
+                                    color: Colors.deepPurple.shade200,
+                                    child: const Icon(Icons.radio, color: Colors.white, size: 24),
+                                  ),
+                                ),
+                              )
+                            : Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: Colors.deepPurple.shade200,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.radio, color: Colors.white, size: 24),
+                              ),
+                        title: Text(
+                          radio.name,
+                          style: const TextStyle(color: Colors.white),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                radio.genre,
+                                style: TextStyle(color: Colors.grey[400]),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (radio.country.isNotEmpty) ...[
+                              Text(
+                                ' • ',
+                                style: TextStyle(color: Colors.grey[400]),
+                              ),
+                              Flexible(
+                                child: Text(
+                                  radio.country,
+                                  style: TextStyle(color: Colors.grey[400]),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        trailing: IconButton(
+                          icon: Icon(
+                            Icons.favorite,
+                            color: Colors.deepPurple.shade400,
+                            size: 20,
+                          ),
+                          tooltip: 'Remove from favourites',
+                          onPressed: () {
+                            // Show confirmation dialog for better UX
+                            showDialog(
+                              context: context,
+                              builder: (BuildContext context) {
+                                return AlertDialog(
+                                  backgroundColor: Colors.grey[900],
+                                  title: Text(
+                                    'Remove from favourites?',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                  content: Text(
+                                    'Remove "${radio.name}" from your favourite radios?',
+                                    style: TextStyle(color: Colors.grey[300]),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.of(context).pop(),
+                                      child: Text(
+                                        'Cancel',
+                                        style: TextStyle(color: Colors.grey[400]),
+                                      ),
+                                    ),
+                                    TextButton(
+                                      onPressed: () {
+                                        audioService.removeRadioFromPlaylist('favourite_radios', radio);
+                                        Navigator.of(context).pop();
+                                      },
+                                      child: Text(
+                                        'Remove',
+                                        style: TextStyle(color: Colors.deepPurple.shade400),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                          },
+                        ),
+                        onTap: () => audioService.playRadioStation(radio),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              // Add spacing for mini player
+              const SizedBox(height: 80),
+            ],
+          );
+        },
+      ),
     );
   }
 
