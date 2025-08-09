@@ -296,9 +296,11 @@ class _HomePageState extends State<HomePage> {
     await genresFuture;
     final stations = await stationsFuture;
 
-    setState(() {
-      _stations = stations;
-    });
+    if (mounted) {
+      setState(() {
+        _stations = stations;
+      });
+    }
   }
 
   // Removed unused _fetchStations

@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:just_audio/just_audio.dart';  // Add this import
 import 'package:just_audio_background/just_audio_background.dart';
 import '../services/playlist_handler.dart';
-import '../models/song.dart';
 import '../services/audio_service.dart';
+import '../models/song.dart';
 
 class QueueList extends StatelessWidget {
   const QueueList({super.key});
@@ -14,7 +14,8 @@ class QueueList extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<PlaylistHandler>(
       builder: (context, playlistHandler, _) {
-        final songs = playlistHandler.queue;
+        final songs = playlistHandler.queue; // Current session queue
+        final originalPlaylist = playlistHandler.originalPlaylist; // Original playlist for repeat
         final audioService = context.watch<AudioPlayerService>();
 
         return Container(
@@ -28,12 +29,29 @@ class QueueList extends StatelessWidget {
                 ? songs.indexWhere((song) => song.id == currentSong.id) 
                 : -1;
               
-              // Show remaining songs + all songs if in repeat mode
-              final queueSongs = currentIndex != -1
-                ? (audioService.loopMode != LoopMode.off && currentIndex == songs.length - 1)
-                    ? songs  // Show all songs when repeating and on last song
-                    : songs.sublist(currentIndex + 1)
-                : [];
+              // Get the queue (songs after current song) - Spotify style
+              List<Song> queueSongs = [];
+              
+              if (currentIndex != -1) {
+                if (audioService.loopMode == LoopMode.one) {
+                  // Repeat song: no queue, just the same song repeating
+                  queueSongs = [];
+                } else if (audioService.loopMode == LoopMode.all) {
+                  // Repeat playlist: show remaining + original playlist if on last song
+                  if (currentIndex < songs.length - 1) {
+                    // Still have songs after current in session
+                    queueSongs = songs.sublist(currentIndex + 1);
+                  } else {
+                    // On last song, show original playlist starting from beginning
+                    queueSongs = List.from(originalPlaylist);
+                  }
+                } else {
+                  // Repeat off: only show remaining songs in current session
+                  if (currentIndex < songs.length - 1) {
+                    queueSongs = songs.sublist(currentIndex + 1);
+                  }
+                }
+              }
               
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -49,22 +67,57 @@ class QueueList extends StatelessWidget {
                         ),
                       ),
                       const Spacer(),
-                      if (queueSongs.isNotEmpty)
+                      if (queueSongs.isNotEmpty) ...[
+                        if (audioService.loopMode == LoopMode.all)
+                          Icon(
+                            Icons.repeat,
+                            color: Colors.deepPurple.shade400,
+                            size: 16,
+                          )
+                        else if (audioService.loopMode == LoopMode.one)
+                          Icon(
+                            Icons.repeat_one,
+                            color: Colors.deepPurple.shade400,
+                            size: 16,
+                          ),
+                        if (audioService.loopMode != LoopMode.off)
+                          const SizedBox(width: 4),
                         Text(
-                          '${queueSongs.length} tracks',
+                          '${queueSongs.length} ${queueSongs.length == 1 ? 'track' : 'tracks'}',
                           style: TextStyle(
                             color: Colors.grey.shade400,
                             fontSize: 14,
                           ),
                         ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 20),
                   if (queueSongs.isEmpty)
-                    const Center(
-                      child: Text(
-                        'No songs in queue',
-                        style: TextStyle(color: Colors.grey),
+                    Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              audioService.loopMode == LoopMode.one 
+                                ? Icons.repeat_one 
+                                : Icons.queue_music,
+                              color: Colors.grey.shade600,
+                              size: 48,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              audioService.loopMode == LoopMode.one
+                                ? 'Current song on repeat'
+                                : 'No more songs in queue',
+                              style: TextStyle(
+                                color: Colors.grey.shade400,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     )
                   else
@@ -73,14 +126,24 @@ class QueueList extends StatelessWidget {
                         itemCount: queueSongs.length,
                         onReorderStart: (index) => HapticFeedback.mediumImpact(),
                         onReorder: (oldIndex, newIndex) {
-                          // Convert display indices to actual playlist indices
-                          final actualOldIndex = currentIndex == songs.length - 1
-                              ? oldIndex  // Use direct indices when showing full playlist
-                              : currentIndex + 1 + oldIndex;
-                          final actualNewIndex = currentIndex == songs.length - 1
-                              ? newIndex
-                              : currentIndex + 1 + (newIndex > oldIndex ? newIndex - 1 : newIndex);
-                          playlistHandler.reorderQueue(actualOldIndex, actualNewIndex);
+                          // Calculate actual indices based on queue state
+                          int getActualIndex(int displayIndex) {
+                            if (audioService.loopMode == LoopMode.all && currentIndex == songs.length - 1) {
+                              // Showing original playlist from beginning - need to map to current session
+                              final originalSong = originalPlaylist[displayIndex];
+                              return songs.indexWhere((song) => song.id == originalSong.id);
+                            } else {
+                              // Showing remaining songs after current in session
+                              return currentIndex + 1 + displayIndex;
+                            }
+                          }
+                          
+                          final actualOldIndex = getActualIndex(oldIndex);
+                          final actualNewIndex = getActualIndex(newIndex > oldIndex ? newIndex - 1 : newIndex);
+                          
+                          if (actualOldIndex != -1 && actualNewIndex != -1) {
+                            playlistHandler.reorderQueue(actualOldIndex, actualNewIndex);
+                          }
                         },
                         itemBuilder: (context, index) {
                           final song = queueSongs[index];
@@ -92,23 +155,37 @@ class QueueList extends StatelessWidget {
                               padding: const EdgeInsets.only(right: 16),
                               child: const Icon(Icons.delete, color: Colors.white),
                             ),
-                            direction: snapshot.data?.id == song.id ? DismissDirection.none : DismissDirection.endToStart,
+                            direction: () {
+                              // Check if this song can be dismissed
+                              if (snapshot.data?.id == song.id) {
+                                return DismissDirection.none; // Can't dismiss currently playing
+                              }
+                              
+                              // If showing original playlist in repeat mode, check if song exists in current session
+                              if (audioService.loopMode == LoopMode.all && currentIndex == songs.length - 1) {
+                                final originalSong = originalPlaylist[index];
+                                final existsInSession = songs.any((song) => song.id == originalSong.id);
+                                return existsInSession ? DismissDirection.endToStart : DismissDirection.none;
+                              }
+                              
+                              return DismissDirection.endToStart;
+                            }(),
                             onDismissed: (_) {
-                              playlistHandler.removeFromQueue(index);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Removed ${song.title}'),
-                                  backgroundColor: Colors.grey.shade900,
-                                  behavior: SnackBarBehavior.floating,
-                                  action: SnackBarAction(
-                                    label: 'Undo',
-                                    textColor: Colors.white,
-                                    onPressed: () {
-                                      playlistHandler.addToQueue(song);
-                                    },
-                                  ),
-                                ),
-                              );
+                              // Calculate actual index in the current session
+                              int actualIndex;
+                              if (audioService.loopMode == LoopMode.all && currentIndex == songs.length - 1) {
+                                // Showing original playlist - find song in current session
+                                final originalSong = originalPlaylist[index];
+                                actualIndex = songs.indexWhere((song) => song.id == originalSong.id);
+                              } else {
+                                // Showing remaining songs after current
+                                actualIndex = currentIndex + 1 + index;
+                              }
+                              
+                              // Remove from session only (keeps original playlist intact for repeat)
+                              if (actualIndex != -1) {
+                                playlistHandler.removeFromSession(actualIndex);
+                              }
                             },
                             child: ListTile(
                               leading: StreamBuilder<MediaItem?>(
@@ -136,18 +213,33 @@ class QueueList extends StatelessWidget {
                                 song.artist,
                                 style: TextStyle(color: Colors.grey.shade400),
                               ),
-                              trailing: snapshot.data?.id == song.id ? null : ReorderableDragStartListener(
-                                index: index,
-                                child: const Icon(
-                                  Icons.drag_handle,
-                                  color: Colors.grey,
-                                ),
-                              ),
+                              trailing: snapshot.data?.id == song.id 
+                                ? Icon(
+                                    Icons.play_circle,
+                                    color: Colors.deepPurple.shade400,
+                                  )
+                                : ReorderableDragStartListener(
+                                    index: index,
+                                    child: const Icon(
+                                      Icons.drag_handle,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
                               onTap: () {
-                                final actualIndex = currentIndex == songs.length - 1
-                                    ? index  // Use direct index when showing full playlist
-                                    : currentIndex + 1 + index;
-                                audioService.playQueueItem(actualIndex);
+                                // Calculate actual index in the current session
+                                int actualIndex;
+                                if (audioService.loopMode == LoopMode.all && currentIndex == songs.length - 1) {
+                                  // Showing original playlist - find song in current session
+                                  final originalSong = originalPlaylist[index];
+                                  actualIndex = songs.indexWhere((song) => song.id == originalSong.id);
+                                } else {
+                                  // Showing remaining songs after current
+                                  actualIndex = currentIndex + 1 + index;
+                                }
+                                
+                                if (actualIndex != -1) {
+                                  audioService.playQueueItem(actualIndex);
+                                }
                               },
                             ),
                           );
@@ -161,10 +253,5 @@ class QueueList extends StatelessWidget {
         );
       },
     );
-  }
-
-  int _getActualIndex(int displayIndex, int currentSongIndex) {
-    if (currentSongIndex == -1) return displayIndex;
-    return displayIndex >= currentSongIndex ? displayIndex + 1 : displayIndex;
   }
 }

@@ -4,13 +4,10 @@ import 'package:just_audio_background/just_audio_background.dart';
 import '../models/song.dart';  // Add this import
 import '../services/playlist_handler.dart';  // Add this import
 import '../models/radio_station.dart';
+import '../models/custom_playlist.dart';
 import 'dart:io';
-import 'package:provider/provider.dart';
-import 'queue_manager.dart';
 import 'audio_queue_manager.dart';
 import 'package:rxdart/rxdart.dart';
-import 'dart:math' as math;
-import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
@@ -52,8 +49,10 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   final PlaylistHandler _playlistHandler;
 final List<String> _likedTracks = [];
   final Set<String> _likedRadios = {};
+  final Map<String, CustomPlaylist> _customPlaylists = {};
   static const String _likedTracksKey = 'liked_tracks';
   static const String _likedRadiosKey = 'liked_radios';
+  static const String _customPlaylistsKey = 'custom_playlists';
   late SharedPreferences _prefs;
 
   late ConcatenatingAudioSource _playlist;
@@ -90,7 +89,11 @@ final List<String> _likedTracks = [];
   // Add missing getters
   Stream<Duration?> get durationStream => _player.durationStream;
   Duration? get duration => _player.duration;
-  List<MapEntry<String, List<File>>> get allPlaylists => _playlists.entries.toList();
+  List<MapEntry<String, List<File>>> get allPlaylists {
+    final allPlaylistEntries = <MapEntry<String, List<File>>>[];
+    allPlaylistEntries.addAll(_playlists.entries);
+    return allPlaylistEntries;
+  }
 
   // Get current track metadata
   MediaItem? get currentTrack {
@@ -130,8 +133,14 @@ final List<String> _likedTracks = [];
         })
         .whereType<RadioStation>()
         .toList();
+    
+    // Update liked radios set
     _likedRadios.clear();
     _likedRadios.addAll(_radioPlaylists['favourite_radios']?.map((r) => r.id) ?? []);
+    
+    // Load custom playlists
+    await _loadCustomPlaylists();
+    
     notifyListeners();
   }
 
@@ -468,6 +477,23 @@ final List<String> _likedTracks = [];
   }
 
   @override
+  Future<void> insertAtQueue(Song song, int index) async {
+    try {
+      await _playlist.insert(index, AudioSource.file(
+        song.filePath,
+        tag: MediaItem(
+          id: song.id,
+          title: song.title,
+          artist: song.artist,
+        ),
+      ));
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error inserting to queue: $e');
+    }
+  }
+
+  @override
   Future<void> updateQueue(List<Song> songs) async {
     try {
       final sources = songs.map((song) => 
@@ -592,6 +618,135 @@ final List<String> _likedTracks = [];
   // isRadioPlaying now checks if currentRadioStation is set
   bool get isRadioPlaying {
     return _currentRadioStation != null;
+  }
+
+  // Custom Playlist Management
+  List<CustomPlaylist> get customPlaylists => _customPlaylists.values.toList();
+
+  Future<CustomPlaylist> createCustomPlaylist(String name, {String? artworkPath, int? artworkColor}) async {
+    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    final playlist = CustomPlaylist(
+      id: id,
+      name: name,
+      artworkPath: artworkPath,
+      artworkColor: artworkColor,
+      songPaths: [],
+      createdAt: DateTime.now(),
+      modifiedAt: DateTime.now(),
+    );
+    
+    _customPlaylists[id] = playlist;
+    await _saveCustomPlaylists();
+    notifyListeners();
+    return playlist;
+  }
+
+  Future<void> deleteCustomPlaylist(String playlistId) async {
+    _customPlaylists.remove(playlistId);
+    _playlists.remove(playlistId);
+    await _saveCustomPlaylists();
+    notifyListeners();
+  }
+
+  Future<void> updateCustomPlaylist(String playlistId, {String? name, String? artworkPath}) async {
+    final playlist = _customPlaylists[playlistId];
+    if (playlist != null) {
+      _customPlaylists[playlistId] = playlist.copyWith(
+        name: name,
+        artworkPath: artworkPath,
+        modifiedAt: DateTime.now(),
+      );
+      await _saveCustomPlaylists();
+      notifyListeners();
+    }
+  }
+
+  Future<void> addSongToCustomPlaylist(String playlistId, File song) async {
+    final playlist = _customPlaylists[playlistId];
+    if (playlist != null) {
+      final updatedSongPaths = List<String>.from(playlist.songPaths);
+      if (!updatedSongPaths.contains(song.path)) {
+        updatedSongPaths.add(song.path);
+        _customPlaylists[playlistId] = playlist.copyWith(
+          songPaths: updatedSongPaths,
+          modifiedAt: DateTime.now(),
+        );
+        
+        // Update the runtime playlist
+        _playlists[playlistId] = updatedSongPaths.map((path) => File(path)).toList();
+        
+        await _saveCustomPlaylists();
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> removeSongFromCustomPlaylist(String playlistId, File song) async {
+    final playlist = _customPlaylists[playlistId];
+    if (playlist != null) {
+      final updatedSongPaths = List<String>.from(playlist.songPaths);
+      updatedSongPaths.remove(song.path);
+      _customPlaylists[playlistId] = playlist.copyWith(
+        songPaths: updatedSongPaths,
+        modifiedAt: DateTime.now(),
+      );
+      
+      // Update the runtime playlist
+      _playlists[playlistId] = updatedSongPaths.map((path) => File(path)).toList();
+      
+      await _saveCustomPlaylists();
+      notifyListeners();
+    }
+  }
+
+  Future<void> reorderSongsInCustomPlaylist(String playlistId, int oldIndex, int newIndex) async {
+    final playlist = _customPlaylists[playlistId];
+    if (playlist != null) {
+      final updatedSongPaths = List<String>.from(playlist.songPaths);
+      if (oldIndex < newIndex) {
+        newIndex -= 1;
+      }
+      final item = updatedSongPaths.removeAt(oldIndex);
+      updatedSongPaths.insert(newIndex, item);
+      
+      _customPlaylists[playlistId] = playlist.copyWith(
+        songPaths: updatedSongPaths,
+        modifiedAt: DateTime.now(),
+      );
+      
+      // Update the runtime playlist
+      _playlists[playlistId] = updatedSongPaths.map((path) => File(path)).toList();
+      
+      await _saveCustomPlaylists();
+      notifyListeners();
+    }
+  }
+
+  CustomPlaylist? getCustomPlaylist(String playlistId) {
+    return _customPlaylists[playlistId];
+  }
+
+  Future<void> _loadCustomPlaylists() async {
+    final playlistsJson = _prefs.getStringList(_customPlaylistsKey) ?? [];
+    _customPlaylists.clear();
+    
+    for (final json in playlistsJson) {
+      try {
+        final playlist = CustomPlaylist.fromJson(jsonDecode(json));
+        _customPlaylists[playlist.id] = playlist;
+        // Load songs into runtime playlists
+        _playlists[playlist.id] = playlist.songPaths.map((path) => File(path)).toList();
+      } catch (e) {
+        debugPrint('Error loading custom playlist: $e');
+      }
+    }
+  }
+
+  Future<void> _saveCustomPlaylists() async {
+    final playlistsJson = _customPlaylists.values
+        .map((playlist) => jsonEncode(playlist.toJson()))
+        .toList();
+    await _prefs.setStringList(_customPlaylistsKey, playlistsJson);
   }
 
   @override

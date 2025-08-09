@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/song.dart';
-import '../models/playlist.dart';
 import 'audio_queue_manager.dart';
 
 class Playlist {
@@ -21,6 +20,7 @@ class Playlist {
 class PlaylistHandler extends ChangeNotifier {
   AudioQueueManager? _queueManager;
   List<Song> _queue = [];
+  List<Song> _originalPlaylist = []; // Keep track of original playlist for repeat
   final Map<String, Playlist> _playlists = {};
 
   void setQueueManager(AudioQueueManager manager) {
@@ -29,9 +29,11 @@ class PlaylistHandler extends ChangeNotifier {
 
   // Queue getters and methods
   List<Song> get queue => List.unmodifiable(_queue);
+  List<Song> get originalPlaylist => List.unmodifiable(_originalPlaylist);
 
   void updateQueue(List<Song> songs) {
     _queue = songs;
+    _originalPlaylist = List.from(songs); // Store original for repeat
     notifyListeners();
   }
 
@@ -59,6 +61,24 @@ class PlaylistHandler extends ChangeNotifier {
     if (_queueManager != null) {
       await _queueManager!.addToQueue(song);
       _queue.add(song);
+      notifyListeners();
+    }
+  }
+
+  Future<void> insertAtQueue(Song song, int index) async {
+    if (_queueManager != null && index >= 0 && index <= _queue.length) {
+      await _queueManager!.insertAtQueue(song, index);
+      _queue.insert(index, song);
+      notifyListeners();
+    }
+  }
+
+  // Session-only queue management (doesn't affect original playlist)
+  Future<void> removeFromSession(int index) async {
+    if (_queueManager != null && index >= 0 && index < _queue.length) {
+      await _queueManager!.removeFromQueue(index);
+      // Update current session queue but keep original playlist intact
+      _queue.removeAt(index);
       notifyListeners();
     }
   }

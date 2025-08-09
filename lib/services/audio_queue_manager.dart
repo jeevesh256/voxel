@@ -5,5 +5,6 @@ abstract class AudioQueueManager {
   Future<void> reorderQueue(int oldIndex, int newIndex);
   Future<void> removeFromQueue(int index);
   Future<void> addToQueue(Song song);
+  Future<void> insertAtQueue(Song song, int index);
   Future<void> updateQueue(List<Song> songs);
 }

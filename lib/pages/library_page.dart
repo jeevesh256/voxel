@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
 import '../services/storage_service.dart';
+import '../widgets/create_playlist_dialog.dart';
 import 'dart:io';
 import 'playlist_page.dart';
 import 'favourite_radios_page.dart';
@@ -277,13 +278,17 @@ class _LibraryPageState extends State<LibraryPage> {
   Widget _buildPlaylistsView() {
     final audioService = context.watch<AudioPlayerService>();
     final playlists = audioService.allPlaylists;
+    final customPlaylists = audioService.customPlaylists;
+    
     // Show liked songs in stack order (newest first)
     final likedSongs = List<File>.from(playlists.firstWhere(
       (e) => e.key == 'liked',
       orElse: () => const MapEntry('liked', []),
     ).value.reversed);
+    
     return ListView(
       children: [
+        // Default playlists
         _buildPlaylistTile(
           title: 'Liked Songs',
           icon: Icons.favorite,
@@ -300,8 +305,209 @@ class _LibraryPageState extends State<LibraryPage> {
           ).value,
         ),
         const Divider(),
+        // Custom playlists
+        ...customPlaylists.map((playlist) => _buildCustomPlaylistTile(playlist)),
+        // Create new playlist button at the bottom
+        ListTile(
+          leading: Icon(
+            Icons.add,
+            color: Colors.deepPurple.shade400,
+          ),
+          title: const Text(
+            'Create Playlist',
+            style: TextStyle(color: Colors.white),
+          ),
+          onTap: _showCreatePlaylistDialog,
+        ),
+        const SizedBox(height: 100), // Extra space for mini player
       ],
     );
+  }
+
+  Future<void> _showCreatePlaylistDialog() async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => const CreatePlaylistDialog(),
+    );
+    
+    if (result != null) {
+      final audioService = context.read<AudioPlayerService>();
+      await audioService.createCustomPlaylist(
+        result['name'],
+        artworkPath: result['artworkPath'],
+        artworkColor: result['color'],
+      );
+    }
+  }
+
+  Widget _buildCustomPlaylistTile(dynamic playlist) {
+    final audioService = context.watch<AudioPlayerService>();
+    final songs = audioService.getPlaylistSongs(playlist.id);
+    
+    return ListTile(
+      leading: playlist.artworkPath != null
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.file(
+                File(playlist.artworkPath!),
+                width: 40,
+                height: 40,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => playlist.artworkColor != null
+                    ? Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Color(playlist.artworkColor!),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.queue_music,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      )
+                    : Icon(
+                        Icons.queue_music,
+                        color: Colors.deepPurple.shade400,
+                      ),
+              ),
+            )
+          : playlist.artworkColor != null
+              ? Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Color(playlist.artworkColor!),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.queue_music,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                )
+              : Icon(
+                  Icons.queue_music,
+                  color: Colors.deepPurple.shade400,
+                ),
+      title: Text(
+        playlist.name,
+        style: const TextStyle(color: Colors.white),
+      ),
+      subtitle: Text(
+        '${songs.length} songs',
+        style: TextStyle(color: Colors.grey[400]),
+      ),
+      trailing: PopupMenuButton(
+        color: Colors.grey[900],
+        icon: Icon(Icons.more_vert, color: Colors.grey[400]),
+        itemBuilder: (context) => [
+          PopupMenuItem(
+            child: Row(
+              children: [
+                Icon(Icons.edit, color: Colors.deepPurple.shade400),
+                const SizedBox(width: 8),
+                const Text('Rename', style: TextStyle(color: Colors.white)),
+              ],
+            ),
+            onTap: () => _showRenamePlaylistDialog(playlist),
+          ),
+          PopupMenuItem(
+            child: Row(
+              children: [
+                Icon(Icons.delete, color: Colors.red.shade400),
+                const SizedBox(width: 8),
+                const Text('Delete', style: TextStyle(color: Colors.white)),
+              ],
+            ),
+            onTap: () => _showDeletePlaylistDialog(playlist),
+          ),
+        ],
+      ),
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => PlaylistPage(
+              playlistId: playlist.id,
+              title: playlist.name,
+              icon: Icons.queue_music,
+              allowReorder: true,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showRenamePlaylistDialog(dynamic playlist) async {
+    final controller = TextEditingController(text: playlist.name);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text('Rename Playlist', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: controller,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            labelText: 'Playlist Name',
+            labelStyle: TextStyle(color: Colors.grey[400]),
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.grey[600]!),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.deepPurple.shade400),
+            ),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: Text('Rename', style: TextStyle(color: Colors.deepPurple.shade400)),
+          ),
+        ],
+      ),
+    );
+    
+    if (result != null && result.isNotEmpty && result != playlist.name) {
+      final audioService = context.read<AudioPlayerService>();
+      await audioService.updateCustomPlaylist(playlist.id, name: result);
+    }
+  }
+
+  Future<void> _showDeletePlaylistDialog(dynamic playlist) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text('Delete Playlist?', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Are you sure you want to delete "${playlist.name}"? This action cannot be undone.',
+          style: TextStyle(color: Colors.grey[300]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('Delete', style: TextStyle(color: Colors.red.shade400)),
+          ),
+        ],
+      ),
+    );
+    
+    if (result == true) {
+      final audioService = context.read<AudioPlayerService>();
+      await audioService.deleteCustomPlaylist(playlist.id);
+    }
   }
 
   Widget _buildPlaylistTile({
