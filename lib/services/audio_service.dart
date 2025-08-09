@@ -289,7 +289,25 @@ final List<String> _likedTracks = [];
 
   // Add missing methods
   Future<void> loadOfflineFiles(List<File> files) async {
-    _playlists['offline'] = files;
+    // Sort files by modification time (recently added first)
+    final sortedFiles = List<File>.from(files);
+    sortedFiles.sort((a, b) {
+      try {
+        return b.statSync().modified.compareTo(a.statSync().modified);
+      } catch (e) {
+        // If we can't get modification time, maintain original order
+        return 0;
+      }
+    });
+    
+    _playlists['offline'] = sortedFiles;
+    
+    // If currently playing offline, update the queue
+    if (_currentPlaylistId == 'offline') {
+      final songsList = sortedFiles.map((file) => Song.fromFile(file)).toList();
+      _playlistHandler.updateQueue(songsList, playlistContext: 'offline');
+    }
+    
     notifyListeners();
   }
 
@@ -306,7 +324,7 @@ final List<String> _likedTracks = [];
 
     try {
       final songsList = songs.map((file) => Song.fromFile(file)).toList();
-      _playlistHandler.updateQueue(songsList);
+      _playlistHandler.updateQueue(songsList, playlistContext: playlistId);
 
       _playlist = ConcatenatingAudioSource(
         children: songsList.map((song) => 
@@ -322,10 +340,47 @@ final List<String> _likedTracks = [];
         ).toList(),
       );
 
+      // Ensure shuffle is disabled when playing playlist in order
+      await _player.setShuffleModeEnabled(false);
       await _player.setAudioSource(_playlist, initialIndex: 0);
       await _player.play();
     } catch (e) {
       debugPrint('Error playing playlist: $e');
+    }
+  }
+
+  Future<void> playFilteredPlaylist(String playlistId, List<File> filteredSongs, {int initialIndex = 0}) async {
+    if (filteredSongs.isEmpty) return;
+    
+    try {
+      // Clear radio station when playing a playlist
+      _currentRadioStation = null;
+      _currentPlaylistId = playlistId;
+
+      final songsList = filteredSongs.map((f) => Song.fromFile(f)).toList();
+      _playlistHandler.updateQueue(songsList, playlistContext: playlistId);
+      
+      _playlist = ConcatenatingAudioSource(
+        children: songsList.map((song) => 
+          AudioSource.file(
+            song.filePath,
+            tag: MediaItem(
+              id: song.id,
+              title: song.title,
+              artist: song.artist,
+              album: playlistId,
+            ),
+          ),
+        ).toList(),
+      );
+
+      // Ensure shuffle is disabled when playing playlist in order
+      await _player.setShuffleModeEnabled(false);
+      await _player.setAudioSource(_playlist, initialIndex: initialIndex);
+      await _player.play();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error playing filtered playlist: $e');
     }
   }
 
@@ -406,7 +461,7 @@ final List<String> _likedTracks = [];
       _currentPlaylistId ??= 'offline';
 
       final songsList = playlistFiles.map((f) => Song.fromFile(f)).toList();
-      _playlistHandler.updateQueue(songsList);
+      _playlistHandler.updateQueue(songsList, playlistContext: _currentPlaylistId);
       
       _playlist = ConcatenatingAudioSource(
         children: songsList.map((song) => 
@@ -423,6 +478,43 @@ final List<String> _likedTracks = [];
       );
 
       final selectedIndex = playlistFiles.indexOf(file);
+      // Ensure shuffle is disabled when playing from playlist
+      await _player.setShuffleModeEnabled(false);
+      await _player.setAudioSource(_playlist, initialIndex: selectedIndex);
+      await _player.play();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error playing file in context: $e');
+    }
+  }
+
+  Future<void> playFileInContextWithPlaylistId(File file, List<File> playlistFiles, String playlistId) async {
+    if (playlistFiles.isEmpty) return;
+    try {
+      // Clear radio station when playing songs
+      _currentRadioStation = null;
+      _currentPlaylistId = playlistId;
+
+      final songsList = playlistFiles.map((f) => Song.fromFile(f)).toList();
+      _playlistHandler.updateQueue(songsList, playlistContext: _currentPlaylistId);
+      
+      _playlist = ConcatenatingAudioSource(
+        children: songsList.map((song) => 
+          AudioSource.file(
+            song.filePath,
+            tag: MediaItem(
+              id: song.id,
+              title: song.title,
+              artist: song.artist,
+              album: _currentPlaylistId,
+            ),
+          ),
+        ).toList(),
+      );
+
+      final selectedIndex = playlistFiles.indexOf(file);
+      // Ensure shuffle is disabled when playing from playlist
+      await _player.setShuffleModeEnabled(false);
       await _player.setAudioSource(_playlist, initialIndex: selectedIndex);
       await _player.play();
       notifyListeners();
@@ -432,21 +524,6 @@ final List<String> _likedTracks = [];
   }
 
   @override
-  Future<void> reorderQueue(int oldIndex, int newIndex) async {
-    try {
-      if (_playlist != null) {
-        final currentIndex = _player.currentIndex;
-        await _playlist.move(oldIndex, newIndex);
-        
-        if (currentIndex == oldIndex) {
-          await _player.seek(_player.position, index: newIndex);
-        }
-      }
-    } catch (e) {
-      debugPrint('Error reordering queue: $e');
-    }
-  }
-
   @override
   Future<void> removeFromQueue(int index) async {
     if (_playlist == null) return;
@@ -503,6 +580,7 @@ final List<String> _likedTracks = [];
             id: song.id,
             title: song.title,
             artist: song.artist,
+            album: _currentPlaylistId, // Preserve playlist context
           ),
         ),
       ).toList();
@@ -512,6 +590,20 @@ final List<String> _likedTracks = [];
       notifyListeners();
     } catch (e) {
       debugPrint('Error updating queue: $e');
+    }
+  }
+
+  @override
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    try {
+      final currentIndex = _player.currentIndex;
+      await _playlist.move(oldIndex, newIndex);
+      
+      if (currentIndex == oldIndex) {
+        await _player.seek(_player.position, index: newIndex);
+      }
+    } catch (e) {
+      debugPrint('Error reordering queue: $e');
     }
   }
 
@@ -528,6 +620,8 @@ final List<String> _likedTracks = [];
     return playlistNames[_currentPlaylistId] ?? 'Library';
   }
 
+  String? get currentPlaylistId => _currentPlaylistId;
+
   Stream<MediaItem?> get currentMediaStream => Rx.combineLatest2(
     _player.currentIndexStream,
     _player.sequenceStream,
@@ -535,7 +629,7 @@ final List<String> _likedTracks = [];
       if (index == null || sequence == null || sequence.isEmpty) return null;
       return sequence[index].tag as MediaItem?;
     },
-  ).distinct();
+  ).distinct().asBroadcastStream();
 
   Future<void> toggleShuffle() async {
     try {
@@ -666,7 +760,7 @@ final List<String> _likedTracks = [];
     if (playlist != null) {
       final updatedSongPaths = List<String>.from(playlist.songPaths);
       if (!updatedSongPaths.contains(song.path)) {
-        updatedSongPaths.add(song.path);
+        updatedSongPaths.insert(0, song.path); // Insert at start for recently added order
         _customPlaylists[playlistId] = playlist.copyWith(
           songPaths: updatedSongPaths,
           modifiedAt: DateTime.now(),
@@ -686,29 +780,6 @@ final List<String> _likedTracks = [];
     if (playlist != null) {
       final updatedSongPaths = List<String>.from(playlist.songPaths);
       updatedSongPaths.remove(song.path);
-      _customPlaylists[playlistId] = playlist.copyWith(
-        songPaths: updatedSongPaths,
-        modifiedAt: DateTime.now(),
-      );
-      
-      // Update the runtime playlist
-      _playlists[playlistId] = updatedSongPaths.map((path) => File(path)).toList();
-      
-      await _saveCustomPlaylists();
-      notifyListeners();
-    }
-  }
-
-  Future<void> reorderSongsInCustomPlaylist(String playlistId, int oldIndex, int newIndex) async {
-    final playlist = _customPlaylists[playlistId];
-    if (playlist != null) {
-      final updatedSongPaths = List<String>.from(playlist.songPaths);
-      if (oldIndex < newIndex) {
-        newIndex -= 1;
-      }
-      final item = updatedSongPaths.removeAt(oldIndex);
-      updatedSongPaths.insert(newIndex, item);
-      
       _customPlaylists[playlistId] = playlist.copyWith(
         songPaths: updatedSongPaths,
         modifiedAt: DateTime.now(),

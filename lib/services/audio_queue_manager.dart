@@ -1,4 +1,3 @@
-import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 
 abstract class AudioQueueManager {

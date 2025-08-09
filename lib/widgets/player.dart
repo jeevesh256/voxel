@@ -21,7 +21,7 @@ class MiniPlayer extends StatelessWidget {
         audioService.player.playerStateStream,
         audioService.currentMediaStream,
         (state, media) => (state, media),
-      ),
+      ).asBroadcastStream(),
       builder: (context, snapshot) {
         if (!snapshot.hasData || 
             snapshot.data?.$1.processingState == ProcessingState.idle ||
@@ -166,7 +166,7 @@ class MiniPlayer extends StatelessWidget {
         audioService.player.positionStream,
         audioService.player.durationStream,
         (position, duration) => (position, duration),
-      ),
+      ).asBroadcastStream(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SizedBox(height: 2);
         
@@ -474,7 +474,7 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
         audioService.player.positionStream,
         audioService.player.durationStream,
         (position, duration) => (position, duration),
-      ),
+      ).asBroadcastStream(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SizedBox(height: 48);
         

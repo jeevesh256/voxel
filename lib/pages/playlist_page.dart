@@ -86,6 +86,13 @@ class _PlaylistPageState extends State<PlaylistPage> {
   Future<void> _showAddToPlaylistDialog(File song) async {
     final audioService = context.read<AudioPlayerService>();
     final customPlaylists = audioService.customPlaylists;
+    final currentCustomPlaylist = audioService.getCustomPlaylist(widget.playlistId);
+    
+    // Determine the color to use
+    Color dialogColor = Colors.deepPurple.shade400; // Default color
+    if (currentCustomPlaylist?.artworkColor != null) {
+      dialogColor = Color(currentCustomPlaylist!.artworkColor!);
+    }
     
     showDialog(
       context: context,
@@ -97,7 +104,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
           children: [
             // Create new playlist option
             ListTile(
-              leading: Icon(Icons.add, color: Colors.deepPurple.shade400),
+              leading: Icon(Icons.add, color: dialogColor),
               title: const Text('Create New Playlist', style: TextStyle(color: Colors.white)),
               subtitle: Text('Create a new playlist with this song', style: TextStyle(color: Colors.grey[400])),
               onTap: () async {
@@ -201,7 +208,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Created "${result['name']}" and added song'),
-            backgroundColor: Colors.deepPurple.shade400,
+            backgroundColor: result['color'] != null ? Color(result['color']) : Colors.deepPurple.shade400,
           ),
         );
       });
@@ -214,6 +221,18 @@ class _PlaylistPageState extends State<PlaylistPage> {
     final allSongs = audioService.getPlaylistSongs(widget.playlistId);
     final songs = _getFilteredAndSortedSongs(allSongs);
     final isCustomPlaylist = audioService.getCustomPlaylist(widget.playlistId) != null;
+    final customPlaylist = audioService.getCustomPlaylist(widget.playlistId);
+    
+    // Determine the color to use for the playlist
+    Color playlistColor = Colors.deepPurple.shade400; // Default color
+    if (customPlaylist?.artworkColor != null) {
+      playlistColor = Color(customPlaylist!.artworkColor!);
+    }
+    
+    // Create subtle variations for different UI elements
+    final playlistColorSubtle = playlistColor.withOpacity(0.7);
+    final playlistColorVerySubtle = playlistColor.withOpacity(0.3);
+    final playlistColorFaint = playlistColor.withOpacity(0.15);
 
     return Scaffold(
       body: CustomScrollView(
@@ -221,15 +240,25 @@ class _PlaylistPageState extends State<PlaylistPage> {
           SliverAppBar(
             expandedHeight: 200,
             pinned: true,
+            backgroundColor: playlistColorFaint,
             flexibleSpace: FlexibleSpaceBar(
               title: Text(widget.title),
               background: Container(
-                color: Colors.deepPurple.shade400,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      playlistColorSubtle,
+                      playlistColorFaint,
+                    ],
+                  ),
+                ),
                 child: Center(
                   child: Icon(
                     widget.icon,
                     size: 64,
-                    color: Colors.white,
+                    color: Colors.white.withOpacity(0.9),
                   ),
                 ),
               ),
@@ -312,7 +341,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                         padding: const EdgeInsets.all(12),
                         child: Icon(
                           Icons.sort,
-                          color: Colors.deepPurple.shade400,
+                          color: playlistColor,
                           size: 20,
                         ),
                       ),
@@ -324,7 +353,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                             children: [
                               Icon(
                                 Icons.sort_by_alpha,
-                                color: _sortOption == SortOption.name ? Colors.deepPurple.shade400 : Colors.grey,
+                                color: _sortOption == SortOption.name ? playlistColorSubtle : Colors.grey,
                                 size: 20,
                               ),
                               const SizedBox(width: 12),
@@ -332,17 +361,17 @@ class _PlaylistPageState extends State<PlaylistPage> {
                                 child: Text(
                                   'Name',
                                   style: TextStyle(
-                                    color: _sortOption == SortOption.name ? Colors.deepPurple.shade400 : Colors.white,
+                                    color: _sortOption == SortOption.name ? playlistColorSubtle : Colors.white,
                                     fontWeight: _sortOption == SortOption.name ? FontWeight.w500 : FontWeight.normal,
                                   ),
                                 ),
                               ),
-                              if (_sortOption == SortOption.name)
-                                Icon(
-                                  _isAscending ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                                  size: 20,
-                                  color: Colors.deepPurple.shade400,
-                                ),
+                if (_sortOption == SortOption.name)
+                Icon(
+                  _isAscending ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                  size: 20,
+                  color: playlistColorSubtle,
+                ),
                             ],
                           ),
                         ),
@@ -352,7 +381,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                             children: [
                               Icon(
                                 Icons.schedule,
-                                color: _sortOption == SortOption.dateAdded ? Colors.deepPurple.shade400 : Colors.grey,
+                                color: _sortOption == SortOption.dateAdded ? playlistColorSubtle : Colors.grey,
                                 size: 20,
                               ),
                               const SizedBox(width: 12),
@@ -360,17 +389,17 @@ class _PlaylistPageState extends State<PlaylistPage> {
                                 child: Text(
                                   'Date Added',
                                   style: TextStyle(
-                                    color: _sortOption == SortOption.dateAdded ? Colors.deepPurple.shade400 : Colors.white,
+                                    color: _sortOption == SortOption.dateAdded ? playlistColorSubtle : Colors.white,
                                     fontWeight: _sortOption == SortOption.dateAdded ? FontWeight.w500 : FontWeight.normal,
                                   ),
                                 ),
                               ),
-                              if (_sortOption == SortOption.dateAdded)
-                                Icon(
-                                  _isAscending ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                                  size: 20,
-                                  color: Colors.deepPurple.shade400,
-                                ),
+                if (_sortOption == SortOption.dateAdded)
+                Icon(
+                  _isAscending ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                  size: 20,
+                  color: playlistColorSubtle,
+                ),
                             ],
                           ),
                         ),
@@ -380,7 +409,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                             children: [
                               Icon(
                                 Icons.person_outline,
-                                color: _sortOption == SortOption.artist ? Colors.deepPurple.shade400 : Colors.grey,
+                                color: _sortOption == SortOption.artist ? playlistColorSubtle : Colors.grey,
                                 size: 20,
                               ),
                               const SizedBox(width: 12),
@@ -388,17 +417,17 @@ class _PlaylistPageState extends State<PlaylistPage> {
                                 child: Text(
                                   'Artist',
                                   style: TextStyle(
-                                    color: _sortOption == SortOption.artist ? Colors.deepPurple.shade400 : Colors.white,
+                                    color: _sortOption == SortOption.artist ? playlistColorSubtle : Colors.white,
                                     fontWeight: _sortOption == SortOption.artist ? FontWeight.w500 : FontWeight.normal,
                                   ),
                                 ),
                               ),
-                              if (_sortOption == SortOption.artist)
-                                Icon(
-                                  _isAscending ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                                  size: 20,
-                                  color: Colors.deepPurple.shade400,
-                                ),
+                if (_sortOption == SortOption.artist)
+                Icon(
+                  _isAscending ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                  size: 20,
+                  color: playlistColorSubtle,
+                ),
                             ],
                           ),
                         ),
@@ -426,10 +455,11 @@ class _PlaylistPageState extends State<PlaylistPage> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: songs.isEmpty ? null : () {
-                    audioService.playPlaylist(widget.playlistId);
+                    // Play the filtered and sorted songs that the user actually sees
+                    audioService.playFilteredPlaylist(widget.playlistId, songs);
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.deepPurple.shade400,
+                    backgroundColor: playlistColorSubtle,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
@@ -443,103 +473,90 @@ class _PlaylistPageState extends State<PlaylistPage> {
           ),
           // Songs List
           if (isCustomPlaylist && !_isSearching && _searchQuery.isEmpty)
-            SliverReorderableList(
-              itemCount: songs.length,
-              onReorder: (oldIndex, newIndex) {
-                audioService.reorderSongsInCustomPlaylist(widget.playlistId, oldIndex, newIndex);
-              },
-              itemBuilder: (context, index) {
-                final file = songs[index];
-                final name = file.path.split('/').last.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
-                
-                return StreamBuilder<MediaItem?>(
-                  key: ValueKey(file.path),
-                  stream: audioService.currentMediaStream,
-                  builder: (context, snapshot) {
-                    final isPlaying = snapshot.data?.id == file.path;
-                    
-                    return ListTile(
-                      leading: Container(
-                        height: 40,
-                        width: 40,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(5),
-                          color: Colors.deepPurple.shade200,
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final file = songs[index];
+                  final name = file.path.split('/').last.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
+                  
+                  return StreamBuilder<MediaItem?>(
+                    key: ValueKey(file.path),
+                    stream: audioService.currentMediaStream,
+                    builder: (context, snapshot) {
+                      final isPlaying = snapshot.data?.id == file.path;
+                      
+                      return ListTile(
+                        leading: Container(
+                          height: 40,
+                          width: 40,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(5),
+                            color: Colors.deepPurple.shade200,
+                          ),
+                          child: isPlaying
+                            ? const Icon(Icons.play_circle, color: Colors.white)
+                            : const Icon(Icons.music_note),
                         ),
-                        child: isPlaying
-                          ? const Icon(Icons.play_circle, color: Colors.white)
-                          : const Icon(Icons.music_note),
-                      ),
-                      title: Text(
-                        name,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      subtitle: Text(
-                        'Unknown Artist',
-                        style: TextStyle(color: Colors.grey.shade400),
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          PopupMenuButton<String>(
-                            color: Colors.grey[900],
-                            icon: Icon(Icons.more_vert, color: Colors.grey[400]),
-                            tooltip: 'More options',
-                            onSelected: (String value) {
-                              switch (value) {
-                                case 'add_to_playlist':
-                                  _showAddToPlaylistDialog(file);
-                                  break;
-                                case 'remove_from_playlist':
-                                  audioService.removeSongFromCustomPlaylist(widget.playlistId, file);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: const Text('Removed from playlist'),
-                                      backgroundColor: Colors.red.shade400,
-                                    ),
-                                  );
-                                  break;
-                              }
-                            },
-                            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                              PopupMenuItem<String>(
-                                value: 'add_to_playlist',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.playlist_add, color: Colors.deepPurple.shade400),
-                                    const SizedBox(width: 8),
-                                    const Text('Add to playlist', style: TextStyle(color: Colors.white)),
-                                  ],
-                                ),
+                        title: Text(
+                          name,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        subtitle: Text(
+                          'Unknown Artist',
+                          style: TextStyle(color: Colors.grey.shade400),
+                        ),
+                        trailing: PopupMenuButton<String>(
+                          color: Colors.grey[900],
+                          icon: Icon(Icons.more_vert, color: Colors.grey[400]),
+                          tooltip: 'More options',
+                          onSelected: (String value) {
+                            switch (value) {
+                              case 'add_to_playlist':
+                                _showAddToPlaylistDialog(file);
+                                break;
+                              case 'remove_from_playlist':
+                                audioService.removeSongFromCustomPlaylist(widget.playlistId, file);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text('Removed from playlist'),
+                                    backgroundColor: Colors.red.shade400,
+                                  ),
+                                );
+                                break;
+                            }
+                          },
+                          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                            PopupMenuItem<String>(
+                              value: 'add_to_playlist',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.playlist_add, color: playlistColorSubtle),
+                                  const SizedBox(width: 8),
+                                  const Text('Add to playlist', style: TextStyle(color: Colors.white)),
+                                ],
                               ),
-                              PopupMenuItem<String>(
-                                value: 'remove_from_playlist',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.remove, color: Colors.red.shade400),
-                                    const SizedBox(width: 8),
-                                    const Text('Remove from playlist', style: TextStyle(color: Colors.white)),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          ReorderableDragStartListener(
-                            index: index,
-                            child: Icon(
-                              Icons.drag_handle,
-                              color: Colors.grey[400],
                             ),
-                          ),
-                        ],
-                      ),
-                      onTap: () {
-                        audioService.playFileInContext(file, allSongs);
-                      },
-                    );
-                  },
-                );
-              },
+                            PopupMenuItem<String>(
+                              value: 'remove_from_playlist',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.remove, color: Colors.red.shade400),
+                                  const SizedBox(width: 8),
+                                  const Text('Remove from playlist', style: TextStyle(color: Colors.white)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        onTap: () {
+                          audioService.playFileInContextWithPlaylistId(file, songs, widget.playlistId);
+                        },
+                      );
+                    },
+                  );
+                },
+                childCount: songs.length,
+              ),
             )
           else
             SliverList(
@@ -598,7 +615,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                               value: 'add_to_playlist',
                               child: Row(
                                 children: [
-                                  Icon(Icons.playlist_add, color: Colors.deepPurple.shade400),
+                                  Icon(Icons.playlist_add, color: playlistColorSubtle),
                                   const SizedBox(width: 8),
                                   const Text('Add to playlist', style: TextStyle(color: Colors.white)),
                                 ],
@@ -618,7 +635,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                           ],
                         ),
                         onTap: () {
-                          audioService.playFileInContext(file, allSongs);
+                          audioService.playFileInContextWithPlaylistId(file, songs, widget.playlistId);
                         },
                       );
                     },

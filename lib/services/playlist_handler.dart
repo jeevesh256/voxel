@@ -20,7 +20,6 @@ class Playlist {
 class PlaylistHandler extends ChangeNotifier {
   AudioQueueManager? _queueManager;
   List<Song> _queue = [];
-  List<Song> _originalPlaylist = []; // Keep track of original playlist for repeat
   final Map<String, Playlist> _playlists = {};
 
   void setQueueManager(AudioQueueManager manager) {
@@ -29,11 +28,14 @@ class PlaylistHandler extends ChangeNotifier {
 
   // Queue getters and methods
   List<Song> get queue => List.unmodifiable(_queue);
-  List<Song> get originalPlaylist => List.unmodifiable(_originalPlaylist);
 
-  void updateQueue(List<Song> songs) {
+  // Get the current queue - for Spotify-like behavior, this should match the playlist order
+  List<Song> getEffectiveQueue(String? playlistId) {
+    return queue; // The queue should always reflect the current playlist order
+  }
+
+  void updateQueue(List<Song> songs, {String? playlistContext}) {
     _queue = songs;
-    _originalPlaylist = List.from(songs); // Store original for repeat
     notifyListeners();
   }
 
@@ -41,18 +43,6 @@ class PlaylistHandler extends ChangeNotifier {
     if (_queueManager != null && index >= 0 && index < _queue.length) {
       await _queueManager!.removeFromQueue(index);
       _queue.removeAt(index);
-      notifyListeners();
-    }
-  }
-
-  Future<void> reorderQueue(int oldIndex, int newIndex) async {
-    if (_queueManager != null && oldIndex < _queue.length && newIndex <= _queue.length) {
-      if (newIndex > oldIndex) newIndex--;
-      
-      final song = _queue.removeAt(oldIndex);
-      _queue.insert(newIndex, song);
-      
-      await _queueManager!.reorderQueue(oldIndex, newIndex);
       notifyListeners();
     }
   }
@@ -73,13 +63,30 @@ class PlaylistHandler extends ChangeNotifier {
     }
   }
 
-  // Session-only queue management (doesn't affect original playlist)
-  Future<void> removeFromSession(int index) async {
-    if (_queueManager != null && index >= 0 && index < _queue.length) {
-      await _queueManager!.removeFromQueue(index);
-      // Update current session queue but keep original playlist intact
-      _queue.removeAt(index);
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    // Validate indices
+    if (oldIndex < 0 || oldIndex >= _queue.length || 
+        newIndex < 0 || newIndex > _queue.length ||
+        oldIndex == newIndex) {
+      return;
+    }
+    
+    // Adjust newIndex for list operations
+    if (newIndex > oldIndex) newIndex--;
+
+    try {
+      final song = _queue.removeAt(oldIndex);
+      _queue.insert(newIndex, song);
+
+      // Update the audio player queue to reflect the new order
+      if (_queueManager != null) {
+        await _queueManager!.reorderQueue(oldIndex, newIndex);
+      }
+
       notifyListeners();
+    } catch (e) {
+      // If reordering fails, try to restore the original state
+      debugPrint('Error reordering queue: $e');
     }
   }
 
@@ -104,4 +111,17 @@ class PlaylistHandler extends ChangeNotifier {
 
   Playlist? getPlaylist(String id) => _playlists[id];
   List<Playlist> get allPlaylists => _playlists.values.toList();
+
+  Future<void> removeFromSession(int index) async {
+    if (index >= 0 && index < _queue.length) {
+      _queue.removeAt(index);
+
+      // Update the audio player queue
+      if (_queueManager != null) {
+        await _queueManager!.removeFromQueue(index);
+      }
+
+      notifyListeners();
+    }
+  }
 }
