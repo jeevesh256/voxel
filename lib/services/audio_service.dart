@@ -47,7 +47,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     'favourite_radios': [],
   };
   final PlaylistHandler _playlistHandler;
-final List<String> _likedTracks = [];
+  final List<String> _likedTracks = [];
   final Set<String> _likedRadios = {};
   final Map<String, CustomPlaylist> _customPlaylists = {};
   static const String _likedTracksKey = 'liked_tracks';
@@ -56,6 +56,36 @@ final List<String> _likedTracks = [];
   late SharedPreferences _prefs;
 
   late ConcatenatingAudioSource _playlist;
+  
+  // Spotify-style dual queue system
+  final List<Song> _nextUpQueue = []; // Manually added songs (higher priority)
+  bool _isCustomShuffling = false; // Our custom shuffle state
+  List<Song> _originalPlaylistSongs = []; // Original playlist order for shuffle/unshuffle
+  
+  // Getters for queue system
+  List<Song> get nextUpQueue => List.unmodifiable(_nextUpQueue);
+  
+  // Custom shuffle getter (replaces just_audio's shuffle)
+  bool get isShuffling => _isCustomShuffling;
+  
+  // Clean up played next up songs
+  void _cleanupPlayedNextUpSongs() {
+    if (_nextUpQueue.isEmpty) return;
+    
+    final currentIndex = _player.currentIndex ?? 0;
+    final sequence = _player.sequence;
+    if (sequence == null || sequence.isEmpty) return;
+    
+    // Remove songs from next up queue that have already been played
+    // (songs before current index that were marked as "Next Up")
+    for (int i = 0; i < currentIndex && i < sequence.length; i++) {
+      final mediaItem = sequence[i].tag as MediaItem?;
+      if (mediaItem?.album == 'Next Up') {
+        // Find and remove this song from the next up queue
+        _nextUpQueue.removeWhere((song) => song.id == mediaItem!.id);
+      }
+    }
+  }
 
   AudioPlayerService(this._playlistHandler) {
     _playlist = ConcatenatingAudioSource(children: []);
@@ -77,7 +107,6 @@ final List<String> _likedTracks = [];
   String? _currentPlaylistId;
 
   MediaItem? _currentMedia;
-  bool _isInitialized = false;
 
   RadioStation? _currentRadioStation;
   RadioStation? get currentRadioStation => _currentRadioStation;
@@ -223,7 +252,6 @@ final List<String> _likedTracks = [];
       await _player.setVolume(1.0);
       _setupPlayerListeners();
       _playlistHandler.initializePlaylists();
-      _isInitialized = true;
       notifyListeners();
     } catch (e) {
       debugPrint('Error initializing: $e');
@@ -247,6 +275,10 @@ final List<String> _likedTracks = [];
         if (_currentMedia?.album != 'Radio') {
           _currentRadioStation = null;
         }
+        
+        // Clean up played next up songs
+        _cleanupPlayedNextUpSongs();
+        
         notifyListeners();
       }
     });
@@ -432,7 +464,7 @@ final List<String> _likedTracks = [];
 
   Future<void> playQueueItem(int index) async {
     try {
-      if (_playlist != null && index >= 0 && index < _playlist.length) {
+      if (index >= 0 && index < _playlist.length) {
         await _player.seek(Duration.zero, index: index);
         if (!_player.playing) {
           await _player.play();
@@ -524,11 +556,20 @@ final List<String> _likedTracks = [];
   }
 
   @override
-  @override
   Future<void> removeFromQueue(int index) async {
-    if (_playlist == null) return;
     try {
+      // Remove from the concatenated source
       await _playlist.removeAt(index);
+      
+      // Also remove from next up queue if it's a manually added song
+      final currentIndex = _player.currentIndex ?? 0;
+      if (index > currentIndex && index <= currentIndex + _nextUpQueue.length) {
+        final nextUpIndex = index - currentIndex - 1;
+        if (nextUpIndex >= 0 && nextUpIndex < _nextUpQueue.length) {
+          _nextUpQueue.removeAt(nextUpIndex);
+        }
+      }
+      
       notifyListeners();
     } catch (e) {
       debugPrint('Error removing from queue: $e');
@@ -537,16 +578,28 @@ final List<String> _likedTracks = [];
 
   @override
   Future<void> addToQueue(Song song) async {
-    if (_playlist == null) return;
     try {
-      await _playlist.add(AudioSource.file(
+      // Add to next up queue and audio source
+      _nextUpQueue.add(song);
+      
+      // Get current index to insert after current song
+      final currentIndex = _player.currentIndex ?? 0;
+      final insertIndex = currentIndex + 1;
+
+      // Create audio source for the song with special marker for manually added
+      final audioSource = AudioSource.file(
         song.filePath,
         tag: MediaItem(
           id: song.id,
           title: song.title,
           artist: song.artist,
+          album: 'Next Up', // Special marker for manually added songs
         ),
-      ));
+      );
+
+      // Insert the song right after the current song in the audio player
+      await _playlist.insert(insertIndex, audioSource);
+      
       notifyListeners();
     } catch (e) {
       debugPrint('Error adding to queue: $e');
@@ -556,12 +609,16 @@ final List<String> _likedTracks = [];
   @override
   Future<void> insertAtQueue(Song song, int index) async {
     try {
+      // Add to next up queue
+      _nextUpQueue.insert(index - (_player.currentIndex ?? 0) - 1, song);
+
       await _playlist.insert(index, AudioSource.file(
         song.filePath,
         tag: MediaItem(
           id: song.id,
           title: song.title,
           artist: song.artist,
+          album: 'Next Up', // Special marker for manually added songs
         ),
       ));
       notifyListeners();
@@ -597,11 +654,33 @@ final List<String> _likedTracks = [];
   Future<void> reorderQueue(int oldIndex, int newIndex) async {
     try {
       final currentIndex = _player.currentIndex;
+      
+      // Check if we're reordering within the Next Up section
+      final nextUpStartIndex = (currentIndex ?? 0) + 1;
+      final nextUpEndIndex = nextUpStartIndex + _nextUpQueue.length;
+      
+      if (oldIndex >= nextUpStartIndex && oldIndex < nextUpEndIndex &&
+          newIndex >= nextUpStartIndex && newIndex < nextUpEndIndex) {
+        // Reordering within Next Up - update our Next Up queue
+        final nextUpOldIndex = oldIndex - nextUpStartIndex;
+        final nextUpNewIndex = newIndex - nextUpStartIndex;
+        
+        if (nextUpOldIndex >= 0 && nextUpOldIndex < _nextUpQueue.length &&
+            nextUpNewIndex >= 0 && nextUpNewIndex < _nextUpQueue.length) {
+          // Update the Next Up queue data structure
+          final song = _nextUpQueue.removeAt(nextUpOldIndex);
+          _nextUpQueue.insert(nextUpNewIndex, song);
+        }
+      }
+      
+      // Update the audio playlist
       await _playlist.move(oldIndex, newIndex);
       
       if (currentIndex == oldIndex) {
         await _player.seek(_player.position, index: newIndex);
       }
+      
+      notifyListeners();
     } catch (e) {
       debugPrint('Error reordering queue: $e');
     }
@@ -633,35 +712,120 @@ final List<String> _likedTracks = [];
 
   Future<void> toggleShuffle() async {
     try {
-      final enabled = !_player.shuffleModeEnabled;
+      _isCustomShuffling = !_isCustomShuffling;
       
-      if (enabled) {
-        // Get current track index and position
-        final currentIndex = _player.currentIndex;
-        final position = _player.position;
-        
-        // Enable shuffle mode first
-        await _player.setShuffleModeEnabled(true);
-        
-        // If we have a current track, make sure it stays playing
-        if (currentIndex != null) {
-          // Get the shuffled index of the current track
-          final currentItem = _playlist.sequence[currentIndex];
-          final newIndex = _playlist.sequence.indexOf(currentItem);
-          
-          // Seek to the same position at the new shuffled index
-          await _player.seek(position, index: newIndex);
-        }
-      } else {
-        // Simply disable shuffle mode
-        await _player.setShuffleModeEnabled(false);
-        
-        // just_audio will automatically restore the original sequence
-      }
+      // Always disable just_audio's built-in shuffle to prevent conflicts
+      await _player.setShuffleModeEnabled(false);
+      
+      // Rebuild the queue with our custom shuffle logic
+      await _rebuildQueueWithCustomShuffle();
       
       notifyListeners();
     } catch (e) {
-      debugPrint('Error toggling shuffle: $e');
+      debugPrint('Error toggling custom shuffle: $e');
+    }
+  }
+  
+  Future<void> _rebuildQueueWithCustomShuffle() async {
+    try {
+      final currentIndex = _player.currentIndex ?? 0;
+      final currentPosition = _player.position;
+      final sequence = _player.sequence;
+      
+      if (sequence == null || sequence.isEmpty) return;
+      
+      // Create lists to hold indices instead of AudioSources
+      List<int> nextUpIndices = [];
+      List<int> laterIndices = [];
+      
+      // Separate Next Up and Later songs by index
+      for (int i = currentIndex + 1; i < sequence.length; i++) {
+        final mediaItem = sequence[i].tag as MediaItem?;
+        
+        if (mediaItem?.album == 'Next Up') {
+          nextUpIndices.add(i);
+        } else {
+          laterIndices.add(i);
+        }
+      }
+      
+      // Store original order for later songs if we don't have it
+      if (_originalPlaylistSongs.isEmpty && laterIndices.isNotEmpty) {
+        _originalPlaylistSongs = laterIndices.map((index) {
+          final mediaItem = sequence[index].tag as MediaItem?;
+          return Song(
+            id: mediaItem!.id,
+            title: mediaItem.title,
+            artist: mediaItem.artist ?? 'Unknown Artist',
+            filePath: mediaItem.id,
+          );
+        }).toList();
+      }
+      
+      // Apply shuffle only to Later song indices
+      if (_isCustomShuffling && laterIndices.isNotEmpty) {
+        laterIndices.shuffle();
+      }
+      
+      // Create new sources list
+      List<UriAudioSource> newSources = [];
+      
+      // Add current song
+      final currentMediaItem = sequence[currentIndex].tag as MediaItem?;
+      if (currentMediaItem != null) {
+        newSources.add(AudioSource.file(
+          currentMediaItem.id,
+          tag: currentMediaItem,
+        ));
+      }
+      
+      // Add Next Up songs (in original order)
+      for (int index in nextUpIndices) {
+        final mediaItem = sequence[index].tag as MediaItem?;
+        if (mediaItem != null) {
+          newSources.add(AudioSource.file(
+            mediaItem.id,
+            tag: mediaItem,
+          ));
+        }
+      }
+      
+      // Add Later songs (shuffled or original order)
+      if (_isCustomShuffling) {
+        // Use shuffled indices
+        for (int index in laterIndices) {
+          final mediaItem = sequence[index].tag as MediaItem?;
+          if (mediaItem != null) {
+            newSources.add(AudioSource.file(
+              mediaItem.id,
+              tag: mediaItem,
+            ));
+          }
+        }
+      } else {
+        // Restore original order from stored songs
+        for (Song song in _originalPlaylistSongs) {
+          newSources.add(AudioSource.file(
+            song.filePath,
+            tag: MediaItem(
+              id: song.id,
+              title: song.title,
+              artist: song.artist,
+              album: _currentPlaylistId ?? 'Local Music',
+            ),
+          ));
+        }
+      }
+      
+      // Update the playlist
+      await _playlist.clear();
+      await _playlist.addAll(newSources);
+      
+      // Seek back to current position at index 0
+      await _player.seek(currentPosition, index: 0);
+      
+    } catch (e) {
+      debugPrint('Error rebuilding queue with custom shuffle: $e');
     }
   }
 
@@ -685,7 +849,6 @@ final List<String> _likedTracks = [];
   }
 
   // Add getters for current states
-  bool get isShuffling => _player.shuffleModeEnabled;
   LoopMode get loopMode => _player.loopMode;
 
   Future<void> playRadioStation(RadioStation station) async {

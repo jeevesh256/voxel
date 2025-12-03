@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'player.dart';
+import '../main.dart';
 
 class AppScaffold extends StatelessWidget {
   final Widget body;

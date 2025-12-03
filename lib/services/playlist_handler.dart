@@ -114,13 +114,31 @@ class PlaylistHandler extends ChangeNotifier {
 
   Future<void> removeFromSession(int index) async {
     if (index >= 0 && index < _queue.length) {
-      _queue.removeAt(index);
+      try {
+        _queue.removeAt(index);
 
-      // Update the audio player queue
-      if (_queueManager != null) {
-        await _queueManager!.removeFromQueue(index);
+        // Update the audio player queue
+        if (_queueManager != null) {
+          await _queueManager!.removeFromQueue(index);
+        }
+
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Error removing from session at index $index: $e');
+        // Refresh the queue from the audio player in case of inconsistency
+        notifyListeners();
       }
+    }
+  }
 
+  Future<void> removeSongFromSession(String songId) async {
+    try {
+      final songIndex = _queue.indexWhere((song) => song.id == songId);
+      if (songIndex >= 0) {
+        await removeFromSession(songIndex);
+      }
+    } catch (e) {
+      debugPrint('Error removing song $songId from session: $e');
       notifyListeners();
     }
   }

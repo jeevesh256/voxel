@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
+import '../services/playlist_handler.dart';
 import '../widgets/create_playlist_dialog.dart';
+import '../models/song.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:palette_generator/palette_generator.dart';
 import 'dart:io';
 
 enum SortOption { name, dateAdded, artist }
@@ -31,11 +34,63 @@ class _PlaylistPageState extends State<PlaylistPage> {
   bool _isAscending = false;
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
+  Color? _dominantColor;
+  bool _isLoadingColor = false;
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<Color?> _extractDominantColor(String imagePath) async {
+    try {
+      setState(() {
+        _isLoadingColor = true;
+      });
+      
+      final imageProvider = FileImage(File(imagePath));
+      final paletteGenerator = await PaletteGenerator.fromImageProvider(
+        imageProvider,
+        maximumColorCount: 6, // Reduced for better performance
+      );
+      
+      // Simple fallback chain - just get any available color
+      Color? dominantColor = paletteGenerator.vibrantColor?.color ?? 
+                           paletteGenerator.dominantColor?.color;
+      
+      setState(() {
+        _dominantColor = dominantColor;
+        _isLoadingColor = false;
+      });
+      
+      return dominantColor;
+    } catch (e) {
+      setState(() {
+        _isLoadingColor = false;
+      });
+      return null;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Extract color when the widget initializes - do it once
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _extractColorIfNeeded();
+    });
+  }
+
+  void _extractColorIfNeeded() {
+    final audioService = context.read<AudioPlayerService>();
+    final customPlaylist = audioService.getCustomPlaylist(widget.playlistId);
+    if (customPlaylist?.artworkPath != null && _dominantColor == null && !_isLoadingColor) {
+      // Only extract if the image file exists to avoid unnecessary work
+      if (File(customPlaylist!.artworkPath!).existsSync()) {
+        _extractDominantColor(customPlaylist.artworkPath!);
+      }
+    }
   }
 
   List<File> _getFilteredAndSortedSongs(List<File> songs) {
@@ -223,15 +278,20 @@ class _PlaylistPageState extends State<PlaylistPage> {
     final isCustomPlaylist = audioService.getCustomPlaylist(widget.playlistId) != null;
     final customPlaylist = audioService.getCustomPlaylist(widget.playlistId);
     
+    // Only extract color once - don't call in build method
+    
     // Determine the color to use for the playlist
     Color playlistColor = Colors.deepPurple.shade400; // Default color
-    if (customPlaylist?.artworkColor != null) {
+    
+    // Use dynamic color from image if available, otherwise use stored color
+    if (_dominantColor != null) {
+      playlistColor = _dominantColor!;
+    } else if (customPlaylist?.artworkColor != null) {
       playlistColor = Color(customPlaylist!.artworkColor!);
     }
     
     // Create subtle variations for different UI elements
     final playlistColorSubtle = playlistColor.withOpacity(0.7);
-    final playlistColorVerySubtle = playlistColor.withOpacity(0.3);
     final playlistColorFaint = playlistColor.withOpacity(0.15);
 
     return Scaffold(
@@ -242,25 +302,85 @@ class _PlaylistPageState extends State<PlaylistPage> {
             pinned: true,
             backgroundColor: playlistColorFaint,
             flexibleSpace: FlexibleSpaceBar(
-              title: Text(widget.title),
-              background: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      playlistColorSubtle,
-                      playlistColorFaint,
-                    ],
+              title: Text(
+                widget.title,
+                textAlign: TextAlign.center,
+              ),
+              centerTitle: true,
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Background image if available
+                  if (customPlaylist?.artworkPath != null)
+                    Image.file(
+                      File(customPlaylist!.artworkPath!),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              playlistColorSubtle,
+                              playlistColorFaint,
+                            ],
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            playlistColorSubtle,
+                            playlistColorFaint,
+                          ],
+                        ),
+                      ),
+                    ),
+                  // Simple gradient overlay - darker for image playlists
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: customPlaylist?.artworkPath != null
+                            ? [
+                                Colors.black.withOpacity(0.1),
+                                Colors.black.withOpacity(0.7),
+                              ]
+                            : [
+                                Colors.black.withOpacity(0.2),
+                                Colors.black.withOpacity(0.6),
+                              ],
+                      ),
+                    ),
                   ),
-                ),
-                child: Center(
-                  child: Icon(
-                    widget.icon,
-                    size: 64,
-                    color: Colors.white.withOpacity(0.9),
+                  // Icon overlay
+                  Center(
+                    child: customPlaylist?.artworkPath != null
+                        ? Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.4),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              widget.icon,
+                              size: 40,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Icon(
+                            widget.icon,
+                            size: 64,
+                            color: Colors.white.withOpacity(0.9),
+                          ),
                   ),
-                ),
+                ],
               ),
             ),
             actions: [
@@ -514,6 +634,19 @@ class _PlaylistPageState extends State<PlaylistPage> {
                               case 'add_to_playlist':
                                 _showAddToPlaylistDialog(file);
                                 break;
+                              case 'add_to_queue':
+                                final playlistHandler = context.read<PlaylistHandler>();
+                                final song = Song.fromFile(file);
+                                final insertIndex = (audioService.player.currentIndex ?? 0) + 1;
+                                
+                                playlistHandler.insertAtQueue(song, insertIndex);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text('Added to queue'),
+                                    backgroundColor: Colors.deepPurple.shade400,
+                                  ),
+                                );
+                                break;
                               case 'remove_from_playlist':
                                 audioService.removeSongFromCustomPlaylist(widget.playlistId, file);
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -533,6 +666,16 @@ class _PlaylistPageState extends State<PlaylistPage> {
                                   Icon(Icons.playlist_add, color: playlistColorSubtle),
                                   const SizedBox(width: 8),
                                   const Text('Add to playlist', style: TextStyle(color: Colors.white)),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'add_to_queue',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.queue, color: Colors.blue.shade400),
+                                  const SizedBox(width: 8),
+                                  const Text('Add to queue', style: TextStyle(color: Colors.white)),
                                 ],
                               ),
                             ),
@@ -599,6 +742,19 @@ class _PlaylistPageState extends State<PlaylistPage> {
                               case 'add_to_playlist':
                                 _showAddToPlaylistDialog(file);
                                 break;
+                              case 'add_to_queue':
+                                final playlistHandler = context.read<PlaylistHandler>();
+                                final song = Song.fromFile(file);
+                                final insertIndex = (audioService.player.currentIndex ?? 0) + 1;
+                                
+                                playlistHandler.insertAtQueue(song, insertIndex);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text('Added to queue'),
+                                    backgroundColor: Colors.deepPurple.shade400,
+                                  ),
+                                );
+                                break;
                               case 'remove_from_playlist':
                                 audioService.removeSongFromCustomPlaylist(widget.playlistId, file);
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -618,6 +774,16 @@ class _PlaylistPageState extends State<PlaylistPage> {
                                   Icon(Icons.playlist_add, color: playlistColorSubtle),
                                   const SizedBox(width: 8),
                                   const Text('Add to playlist', style: TextStyle(color: Colors.white)),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'add_to_queue',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.queue, color: Colors.blue.shade400),
+                                  const SizedBox(width: 8),
+                                  const Text('Add to queue', style: TextStyle(color: Colors.white)),
                                 ],
                               ),
                             ),
