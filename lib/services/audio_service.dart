@@ -60,7 +60,6 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   // Spotify-style dual queue system
   final List<Song> _nextUpQueue = []; // Manually added songs (higher priority)
   bool _isCustomShuffling = false; // Our custom shuffle state
-  List<Song> _originalPlaylistSongs = []; // Original playlist order for shuffle/unshuffle
   
   // Getters for queue system
   List<Song> get nextUpQueue => List.unmodifiable(_nextUpQueue);
@@ -673,7 +672,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
         }
       }
       
-      // Update the audio playlist
+      // ConcatenatingAudioSource.move() handles the indices correctly
+      // No adjustment needed - just pass through
       await _playlist.move(oldIndex, newIndex);
       
       if (currentIndex == oldIndex) {
@@ -714,118 +714,12 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     try {
       _isCustomShuffling = !_isCustomShuffling;
       
-      // Always disable just_audio's built-in shuffle to prevent conflicts
-      await _player.setShuffleModeEnabled(false);
-      
-      // Rebuild the queue with our custom shuffle logic
-      await _rebuildQueueWithCustomShuffle();
+      // Use just_audio's native shuffle which doesn't interrupt playback
+      await _player.setShuffleModeEnabled(_isCustomShuffling);
       
       notifyListeners();
     } catch (e) {
-      debugPrint('Error toggling custom shuffle: $e');
-    }
-  }
-  
-  Future<void> _rebuildQueueWithCustomShuffle() async {
-    try {
-      final currentIndex = _player.currentIndex ?? 0;
-      final currentPosition = _player.position;
-      final sequence = _player.sequence;
-      
-      if (sequence == null || sequence.isEmpty) return;
-      
-      // Create lists to hold indices instead of AudioSources
-      List<int> nextUpIndices = [];
-      List<int> laterIndices = [];
-      
-      // Separate Next Up and Later songs by index
-      for (int i = currentIndex + 1; i < sequence.length; i++) {
-        final mediaItem = sequence[i].tag as MediaItem?;
-        
-        if (mediaItem?.album == 'Next Up') {
-          nextUpIndices.add(i);
-        } else {
-          laterIndices.add(i);
-        }
-      }
-      
-      // Store original order for later songs if we don't have it
-      if (_originalPlaylistSongs.isEmpty && laterIndices.isNotEmpty) {
-        _originalPlaylistSongs = laterIndices.map((index) {
-          final mediaItem = sequence[index].tag as MediaItem?;
-          return Song(
-            id: mediaItem!.id,
-            title: mediaItem.title,
-            artist: mediaItem.artist ?? 'Unknown Artist',
-            filePath: mediaItem.id,
-          );
-        }).toList();
-      }
-      
-      // Apply shuffle only to Later song indices
-      if (_isCustomShuffling && laterIndices.isNotEmpty) {
-        laterIndices.shuffle();
-      }
-      
-      // Create new sources list
-      List<UriAudioSource> newSources = [];
-      
-      // Add current song
-      final currentMediaItem = sequence[currentIndex].tag as MediaItem?;
-      if (currentMediaItem != null) {
-        newSources.add(AudioSource.file(
-          currentMediaItem.id,
-          tag: currentMediaItem,
-        ));
-      }
-      
-      // Add Next Up songs (in original order)
-      for (int index in nextUpIndices) {
-        final mediaItem = sequence[index].tag as MediaItem?;
-        if (mediaItem != null) {
-          newSources.add(AudioSource.file(
-            mediaItem.id,
-            tag: mediaItem,
-          ));
-        }
-      }
-      
-      // Add Later songs (shuffled or original order)
-      if (_isCustomShuffling) {
-        // Use shuffled indices
-        for (int index in laterIndices) {
-          final mediaItem = sequence[index].tag as MediaItem?;
-          if (mediaItem != null) {
-            newSources.add(AudioSource.file(
-              mediaItem.id,
-              tag: mediaItem,
-            ));
-          }
-        }
-      } else {
-        // Restore original order from stored songs
-        for (Song song in _originalPlaylistSongs) {
-          newSources.add(AudioSource.file(
-            song.filePath,
-            tag: MediaItem(
-              id: song.id,
-              title: song.title,
-              artist: song.artist,
-              album: _currentPlaylistId ?? 'Local Music',
-            ),
-          ));
-        }
-      }
-      
-      // Update the playlist
-      await _playlist.clear();
-      await _playlist.addAll(newSources);
-      
-      // Seek back to current position at index 0
-      await _player.seek(currentPosition, index: 0);
-      
-    } catch (e) {
-      debugPrint('Error rebuilding queue with custom shuffle: $e');
+      debugPrint('Error toggling shuffle: $e');
     }
   }
 

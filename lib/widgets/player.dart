@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:rxdart/rxdart.dart';
 import 'dart:math';
 import '../services/audio_service.dart';
-import '../models/radio_station.dart';
 import 'queue.dart';
 import 'lyrics.dart';
 
@@ -83,19 +82,15 @@ class MiniPlayer extends StatelessWidget {
                               height: 18,
                               child: SingleChildScrollView(
                                 scrollDirection: Axis.horizontal,
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 300),
-                                  child: Text(
-                                    isRadio && radio != null
-                                      ? radio.name
-                                      : metadata?.title ?? 'No Track Playing',
-                                    key: ValueKey(isRadio && radio != null ? radio.name : metadata?.title ?? 'No Track Playing'),
-                                    maxLines: 1,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                                child: Text(
+                                  isRadio && radio != null
+                                    ? radio.name
+                                    : metadata?.title ?? 'No Track Playing',
+                                  maxLines: 1,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ),
@@ -104,18 +99,14 @@ class MiniPlayer extends StatelessWidget {
                               height: 16,
                               child: SingleChildScrollView(
                                 scrollDirection: Axis.horizontal,
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 300),
-                                  child: Text(
-                                    isRadio && radio != null
-                                      ? radio.genre
-                                      : metadata?.artist ?? 'Unknown Artist',
-                                    key: ValueKey(isRadio && radio != null ? radio.genre : metadata?.artist ?? 'Unknown Artist'),
-                                    maxLines: 1,
-                                    style: TextStyle(
-                                      color: Colors.grey.shade400,
-                                      fontSize: 12,
-                                    ),
+                                child: Text(
+                                  isRadio && radio != null
+                                    ? radio.genre
+                                    : metadata?.artist ?? 'Unknown Artist',
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: Colors.grey.shade400,
+                                    fontSize: 12,
                                   ),
                                 ),
                               ),
@@ -204,37 +195,65 @@ class FullScreenPlayer extends StatefulWidget {
 
 class _FullScreenPlayerState extends State<FullScreenPlayer> {
   double? _dragValue;
+  double _dragOffset = 0;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.deepPurple.shade400,
-            Colors.grey.shade900,
-            Colors.black,
-          ],
+    return GestureDetector(
+      onVerticalDragUpdate: (details) {
+        setState(() {
+          _dragOffset += details.delta.dy;
+          if (_dragOffset < 0) _dragOffset = 0;
+        });
+      },
+      onVerticalDragEnd: (details) {
+        final velocity = details.primaryVelocity ?? 0;
+        
+        // Simple logic: dismiss if dragged down 150px OR fast swipe
+        if (_dragOffset > 150 || velocity > 500) {
+          Navigator.pop(context);
+        } else {
+          setState(() {
+            _dragOffset = 0;
+          });
+        }
+      },
+      child: AnimatedContainer(
+        duration: Duration(milliseconds: _dragOffset > 0 ? 0 : 200),
+        curve: Curves.easeOut,
+        transform: Matrix4.translationValues(0, _dragOffset, 0),
+        child: Container(
+        height: MediaQuery.of(context).size.height,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.deepPurple.shade400,
+              Colors.grey.shade900,
+              Colors.black,
+            ],
+          ),
         ),
-      ),
-      child: SafeArea(
-        child: SingleChildScrollView(
+        child: SafeArea(
           child: Column(
             children: [
               _buildHeader(context),
-              const SizedBox(height: 24),
-              _buildAlbumArt(),
-              const SizedBox(height: 32),
-              _buildControls(context),
-              const SizedBox(height: 40),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildAlbumArt(),
+                    _buildControls(context),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
       ),
-    );
+    ), // Transform.translate
+    ); // GestureDetector
   }
 
   Widget _buildHeader(BuildContext context) {
@@ -391,19 +410,15 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                     height: 26,
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 300),
-                        child: Text(
-                          isRadio && radio != null
-                            ? (metadata?.title ?? radio.name)
-                            : _formatTitle(metadata?.title),
-                          key: ValueKey(isRadio && radio != null ? (metadata?.title ?? radio.name) : _formatTitle(metadata?.title)),
-                          maxLines: 1,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
+                      child: Text(
+                        isRadio && radio != null
+                          ? (metadata?.title ?? radio.name)
+                          : _formatTitle(metadata?.title),
+                        maxLines: 1,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
@@ -413,18 +428,14 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                     height: 20,
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 300),
-                        child: Text(
-                          isRadio && radio != null
-                            ? (metadata?.artist ?? radio.genre)
-                            : metadata?.artist ?? 'Unknown Artist',
-                          key: ValueKey(isRadio && radio != null ? (metadata?.artist ?? radio.genre) : metadata?.artist ?? 'Unknown Artist'),
-                          maxLines: 1,
-                          style: TextStyle(
-                            color: Colors.grey.shade300,
-                            fontSize: 16,
-                          ),
+                      child: Text(
+                        isRadio && radio != null
+                          ? (metadata?.artist ?? radio.genre)
+                          : metadata?.artist ?? 'Unknown Artist',
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: Colors.grey.shade300,
+                          fontSize: 16,
                         ),
                       ),
                     ),
@@ -670,14 +681,56 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.lyrics),
+                  icon: const Icon(Icons.cast),
                   color: Colors.grey.shade400,
                   iconSize: 28,
                   onPressed: () {
-                    showModalBottomSheet(
+                    showDialog(
                       context: context,
-                      backgroundColor: Colors.grey.shade900,
-                      builder: (context) => const LyricsView(),
+                      builder: (context) => AlertDialog(
+                        backgroundColor: Colors.grey.shade900,
+                        title: const Row(
+                          children: [
+                            Icon(Icons.cast, color: Colors.white),
+                            SizedBox(width: 8),
+                            Text(
+                              'Cast to Device',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ],
+                        ),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ListTile(
+                              leading: CircularProgressIndicator(
+                                color: Colors.deepPurple.shade400,
+                              ),
+                              title: Text(
+                                'Searching for devices...',
+                                style: TextStyle(color: Colors.grey.shade400),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Chromecast support coming soon',
+                              style: TextStyle(
+                                color: Colors.grey.shade500,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: Text(
+                              'Close',
+                              style: TextStyle(color: Colors.deepPurple.shade400),
+                            ),
+                          ),
+                        ],
+                      ),
                     );
                   },
                 ),
@@ -688,12 +741,63 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
                   onPressed: isRadio ? null : () {
                     showModalBottomSheet(
                       context: context,
-                      backgroundColor: Colors.grey.shade900,
-                      builder: (context) => const QueueList(),
+                      backgroundColor: Colors.transparent,
+                      isScrollControlled: true,
+                      isDismissible: true,
+                      enableDrag: true,
+                      barrierColor: Colors.black54,
+                      builder: (context) => const DraggableQueueSheet(),
                     );
                   },
                 ),
               ],
+            ),
+            const SizedBox(height: 16),
+            // Show Lyrics button
+            Center(
+              child: SizedBox(
+                width: 200, // Smaller width
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      PageRouteBuilder(
+                        opaque: false,
+                        barrierColor: Colors.black54,
+                        barrierDismissible: true,
+                        transitionDuration: const Duration(milliseconds: 300),
+                        reverseTransitionDuration: const Duration(milliseconds: 250),
+                        pageBuilder: (context, animation, secondaryAnimation) {
+                          return const FullScreenLyricsView();
+                        },
+                        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                          return SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(0, 1),
+                              end: Offset.zero,
+                            ).animate(CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeOutCubic,
+                              reverseCurve: Curves.easeInCubic,
+                            )),
+                            child: child,
+                          );
+                        },
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.music_note),
+                  label: const Text('Show Lyrics'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.grey.shade400,
+                    side: BorderSide(color: Colors.grey.shade600, width: 1),
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ],
         );

@@ -7,8 +7,536 @@ import '../services/playlist_handler.dart';
 import '../services/audio_service.dart';
 import '../models/song.dart';
 
+class DraggableQueueSheet extends StatefulWidget {
+  const DraggableQueueSheet({super.key});
+
+  @override
+  State<DraggableQueueSheet> createState() => _DraggableQueueSheetState();
+}
+
+class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
+  final Set<String> _dismissingItems = <String>{};
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<DraggableScrollableNotification>(
+      onNotification: (notification) {
+        // Track extent if needed in the future
+        return false;
+      },
+      child: DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        snap: true,
+        snapSizes: const [0.5, 0.95],
+        expand: false,
+        builder: (context, scrollController) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: NotificationListener<OverscrollNotification>(
+              onNotification: (notification) {
+                // When scrolling past the edge, let the sheet handle it
+                return false;
+              },
+              child: Consumer<PlaylistHandler>(
+                builder: (context, playlistHandler, _) {
+                  final audioService = context.watch<AudioPlayerService>();
+                  
+                  return StreamBuilder<MediaItem?>(
+                    stream: audioService.currentMediaStream,
+                    builder: (context, snapshot) {
+                      final currentSong = snapshot.data;
+                      
+                      return StreamBuilder<SequenceState?>(
+                        stream: audioService.player.sequenceStateStream,
+                        builder: (context, sequenceSnapshot) {
+                          final sequenceState = sequenceSnapshot.data;
+                          
+                          if (sequenceState == null || sequenceState.effectiveSequence.isEmpty) {
+                            return CustomScrollView(
+                              controller: scrollController,
+                              slivers: [
+                                SliverToBoxAdapter(
+                                  child: Column(
+                                    children: [
+                                      _buildDragHandle(),
+                                      _buildQueueHeader(),
+                                      const SizedBox(height: 20),
+                                    ],
+                                  ),
+                                ),
+                                SliverFillRemaining(
+                                  child: Center(
+                                    child: Text(
+                                      'No songs in queue',
+                                      style: TextStyle(color: Colors.grey.shade400),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
+                          
+                          // Parse queue data
+                          final songs = sequenceState.effectiveSequence.map((source) {
+                            final mediaItem = source.tag as MediaItem?;
+                            if (mediaItem != null) {
+                              return Song(
+                                id: mediaItem.id,
+                                title: mediaItem.title,
+                                artist: mediaItem.artist ?? 'Unknown Artist',
+                                filePath: mediaItem.id,
+                              );
+                            }
+                            return null;
+                          }).where((song) => song != null).cast<Song>().toList();
+
+                          final currentIndex = currentSong != null 
+                            ? songs.indexWhere((song) => song.id == currentSong.id) 
+                            : -1;
+                          
+                          // Split queue into Next Up and Later
+                          List<Song> nextUpSongs = [];
+                          List<Song> laterSongs = [];
+                          
+                          if (currentIndex != -1) {
+                            final remainingSongs = songs.sublist(currentIndex + 1);
+                            
+                            for (final song in remainingSongs) {
+                              final songIndex = songs.indexOf(song);
+                              if (songIndex < sequenceState.effectiveSequence.length) {
+                                final source = sequenceState.effectiveSequence[songIndex];
+                                final mediaItem = source.tag as MediaItem?;
+                                
+                                if (mediaItem?.album == 'Next Up') {
+                                  nextUpSongs.add(song);
+                                } else {
+                                  laterSongs.add(song);
+                                }
+                              }
+                            }
+                            
+                            if (audioService.loopMode == LoopMode.all && currentIndex == songs.length - 1) {
+                              final playlistSongs = songs.where((song) {
+                                final songIndex = songs.indexOf(song);
+                                if (songIndex < sequenceState.effectiveSequence.length) {
+                                  final source = sequenceState.effectiveSequence[songIndex];
+                                  final mediaItem = source.tag as MediaItem?;
+                                  return mediaItem?.album != 'Next Up';
+                                }
+                                return true;
+                              }).toList();
+                              laterSongs.addAll(playlistSongs);
+                            }
+                          }
+                          
+                          var queueSongs = [...nextUpSongs, ...laterSongs];
+                          queueSongs = queueSongs.where((song) => !_dismissingItems.contains(song.id)).toList();
+                          
+                          return CustomScrollView(
+                            controller: scrollController,
+                            slivers: [
+                              // Drag handle and Queue title
+                              SliverToBoxAdapter(
+                                child: Column(
+                                  children: [
+                                    _buildDragHandle(),
+                                    _buildQueueHeader(),
+                                  ],
+                                ),
+                              ),
+                              
+                              // Queue stats header
+                              SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                                  child: Row(
+                                    children: [
+                                      const Text(
+                                        'Up Next',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      if (queueSongs.isNotEmpty) ...[
+                                        if (audioService.isShuffling)
+                                          Icon(
+                                            Icons.shuffle,
+                                            color: Colors.deepPurple.shade400,
+                                            size: 16,
+                                          ),
+                                        if (audioService.loopMode == LoopMode.all)
+                                          Icon(
+                                            Icons.repeat,
+                                            color: Colors.deepPurple.shade400,
+                                            size: 16,
+                                          )
+                                        else if (audioService.loopMode == LoopMode.one)
+                                          Icon(
+                                            Icons.repeat_one,
+                                            color: Colors.deepPurple.shade400,
+                                            size: 16,
+                                          ),
+                                        if (audioService.loopMode != LoopMode.off || audioService.isShuffling)
+                                          const SizedBox(width: 4),
+                                        Text(
+                                          '${queueSongs.length} ${queueSongs.length == 1 ? 'track' : 'tracks'}',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade400,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              
+                              const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                              
+                              // Empty state or queue content
+                              if (queueSongs.isEmpty)
+                                SliverFillRemaining(
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          audioService.loopMode == LoopMode.one 
+                                            ? Icons.repeat_one 
+                                            : Icons.queue_music,
+                                          color: Colors.grey.shade600,
+                                          size: 48,
+                                        ),
+                                        const SizedBox(height: 16),
+                                        Text(
+                                          audioService.loopMode == LoopMode.one
+                                            ? 'Current song on repeat'
+                                            : 'No more songs in queue',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade400,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              else ...[
+                                // Next Up section
+                                if (nextUpSongs.isNotEmpty) ...[
+                                  SliverToBoxAdapter(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                                      child: Row(
+                                        children: [
+                                          Text(
+                                            'Next Up',
+                                            style: TextStyle(
+                                              color: Colors.grey.shade400,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            height: 1,
+                                            width: 20,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  SliverPadding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    sliver: SliverReorderableList(
+                                      itemCount: nextUpSongs.length,
+                                      onReorderStart: (index) => HapticFeedback.mediumImpact(),
+                                      onReorder: (oldIndex, newIndex) {
+                                        if (nextUpSongs.length <= 1) return;
+                                        
+                                        final actualOldIndex = currentIndex + 1 + oldIndex;
+                                        final actualNewIndex = currentIndex + 1 + newIndex;
+                                        
+                                        if (actualOldIndex >= 0 && actualNewIndex >= 0 && 
+                                            actualOldIndex < songs.length && actualNewIndex < songs.length &&
+                                            actualOldIndex != actualNewIndex) {
+                                          playlistHandler.reorderQueue(actualOldIndex, actualNewIndex);
+                                        }
+                                      },
+                                      itemBuilder: (context, index) {
+                                        final song = nextUpSongs[index];
+                                        return _buildQueueItem(
+                                          song: song,
+                                          index: index,
+                                          actualIndex: currentIndex + 1 + index,
+                                          songs: songs,
+                                          currentSong: currentSong,
+                                          audioService: audioService,
+                                          playlistHandler: playlistHandler,
+                                          isNextUp: true,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  if (laterSongs.isNotEmpty)
+                                    const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                                ],
+                                
+                                // Later section
+                                if (laterSongs.isNotEmpty) ...[
+                                  SliverToBoxAdapter(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                                      child: Row(
+                                        children: [
+                                          Text(
+                                            'Later',
+                                            style: TextStyle(
+                                              color: Colors.grey.shade400,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            height: 1,
+                                            width: 20,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  SliverPadding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    sliver: SliverReorderableList(
+                                      itemCount: laterSongs.length,
+                                      onReorderStart: (index) => HapticFeedback.mediumImpact(),
+                                      onReorder: (oldIndex, newIndex) {
+                                        if (audioService.isShuffling || laterSongs.length <= 1) return;
+                                        
+                                        final laterStartIndex = currentIndex + 1 + nextUpSongs.length;
+                                        final actualOldIndex = laterStartIndex + oldIndex;
+                                        final actualNewIndex = laterStartIndex + newIndex;
+                                        
+                                        if (actualOldIndex >= 0 && actualNewIndex >= 0 && 
+                                            actualOldIndex < songs.length && actualNewIndex < songs.length &&
+                                            actualOldIndex != actualNewIndex) {
+                                          playlistHandler.reorderQueue(actualOldIndex, actualNewIndex);
+                                        }
+                                      },
+                                      itemBuilder: (context, index) {
+                                        final song = laterSongs[index];
+                                        final actualIndex = currentIndex + 1 + nextUpSongs.length + index;
+                                        return _buildQueueItem(
+                                          song: song,
+                                          index: index,
+                                          actualIndex: actualIndex,
+                                          songs: songs,
+                                          currentSong: currentSong,
+                                          audioService: audioService,
+                                          playlistHandler: playlistHandler,
+                                          isNextUp: false,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ],
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDragHandle() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+      width: double.infinity,
+      child: Center(
+        child: Container(
+          width: 40,
+          height: 4,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade400,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQueueHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      width: double.infinity,
+      child: const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            'Queue',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQueueItem({
+    required Song song,
+    required int index,
+    required int actualIndex,
+    required List<Song> songs,
+    required MediaItem? currentSong,
+    required AudioPlayerService audioService,
+    required PlaylistHandler playlistHandler,
+    required bool isNextUp,
+  }) {
+    if (_dismissingItems.contains(song.id)) {
+      return const SizedBox.shrink();
+    }
+    
+    final dismissibleKey = ValueKey('queue_${isNextUp ? 'nextup' : 'later'}_${song.id}');
+    
+    return Dismissible(
+      key: dismissibleKey,
+      background: Container(
+        color: Colors.red.shade400,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 16),
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      direction: currentSong?.id == song.id 
+          ? DismissDirection.none
+          : DismissDirection.endToStart,
+      confirmDismiss: (direction) async {
+        if (currentSong?.id == song.id) {
+          return false;
+        }
+        return true;
+      },
+      onDismissed: (_) async {
+        if (currentSong?.id == song.id) return;
+        
+        if (mounted) {
+          setState(() {
+            _dismissingItems.add(song.id);
+          });
+        }
+
+        try {
+          await playlistHandler.removeSongFromSession(song.id);
+        } catch (e) {
+          debugPrint('Error dismissing song ${song.id}: $e');
+        } finally {
+          if (mounted) {
+            setState(() {
+              _dismissingItems.remove(song.id);
+            });
+          }
+        }
+      },
+      child: Material(
+        color: Colors.transparent,
+        child: ListTile(
+          key: ValueKey('listile_${song.id}'),
+          leading: Builder(
+            builder: (context) {
+              final isPlaying = currentSong?.id == song.id;
+              return Container(
+                height: 40,
+                width: 40,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(5),
+                  color: isNextUp 
+                      ? Colors.blue.shade200
+                      : Colors.deepPurple.shade200,
+                ),
+                child: isPlaying
+                    ? const Icon(Icons.play_circle, color: Colors.white)
+                    : Icon(
+                        isNextUp ? Icons.queue_music : Icons.music_note,
+                        color: Colors.white,
+                      ),
+              );
+            },
+          ),
+          title: Text(
+            song.title,
+            style: const TextStyle(color: Colors.white),
+          ),
+          subtitle: Text(
+            song.artist,
+            style: TextStyle(color: Colors.grey.shade400),
+          ),
+          trailing: currentSong?.id == song.id 
+            ? Icon(
+                Icons.play_circle,
+                color: Colors.deepPurple.shade400,
+              )
+            : audioService.isShuffling && !isNextUp
+                ? const Icon(
+                    Icons.shuffle,
+                    color: Colors.grey,
+                    size: 16,
+                  )
+                : GestureDetector(
+                    onTap: () {}, // Absorb taps to prevent ListTile onTap
+                    child: ReorderableDragStartListener(
+                      index: index,
+                      child: Icon(
+                        Icons.drag_handle,
+                        color: isNextUp ? Colors.blue.shade400 : Colors.grey,
+                      ),
+                    ),
+                  ),
+          onTap: () {
+            if (actualIndex >= 0 && actualIndex < songs.length) {
+              audioService.playQueueItem(actualIndex);
+            }
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// QueueList widget is no longer needed - all logic moved to DraggableQueueSheet
+/*
 class QueueList extends StatefulWidget {
-  const QueueList({super.key});
+  final ScrollController? scrollController;
+  final bool isExpanded;
+  
+  const QueueList({
+    super.key,
+    this.scrollController,
+    this.isExpanded = false,
+  });
 
   @override
   State<QueueList> createState() => _QueueListState();
@@ -23,9 +551,8 @@ class _QueueListState extends State<QueueList> {
       builder: (context, playlistHandler, _) {
         final audioService = context.watch<AudioPlayerService>();
         
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.5,
-          padding: const EdgeInsets.all(20),
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
           child: StreamBuilder<MediaItem?>(
             stream: audioService.currentMediaStream,
             builder: (context, snapshot) {
@@ -441,3 +968,4 @@ class _QueueListState extends State<QueueList> {
     );
   }
 }
+*/
