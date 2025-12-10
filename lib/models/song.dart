@@ -5,6 +5,7 @@ class Song {
   final String filePath;
   final String title;
   final String artist;
+  final String album;
   final String albumArt;
   final Duration duration;
 
@@ -13,6 +14,7 @@ class Song {
     required this.filePath,
     required this.title,
     required this.artist,
+    this.album = '',
     this.albumArt = '',
     this.duration = const Duration(minutes: 3),
   });
@@ -24,6 +26,27 @@ class Song {
       filePath: file.path,
       title: name,
       artist: 'Unknown Artist',
+      album: '',
+    );
+  }
+
+  Song copyWith({
+    String? id,
+    String? filePath,
+    String? title,
+    String? artist,
+    String? album,
+    String? albumArt,
+    Duration? duration,
+  }) {
+    return Song(
+      id: id ?? this.id,
+      filePath: filePath ?? this.filePath,
+      title: title ?? this.title,
+      artist: artist ?? this.artist,
+      album: album ?? this.album,
+      albumArt: albumArt ?? this.albumArt,
+      duration: duration ?? this.duration,
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
 import '../services/storage_service.dart';
@@ -399,31 +400,9 @@ class _LibraryPageState extends State<LibraryPage> {
         '${songs.length} songs',
         style: TextStyle(color: Colors.grey[400]),
       ),
-      trailing: PopupMenuButton(
-        color: Colors.grey[900],
+      trailing: IconButton(
         icon: Icon(Icons.more_vert, color: Colors.grey[400]),
-        itemBuilder: (context) => [
-          PopupMenuItem(
-            child: Row(
-              children: [
-                Icon(Icons.edit, color: Colors.deepPurple.shade400),
-                const SizedBox(width: 8),
-                const Text('Rename', style: TextStyle(color: Colors.white)),
-              ],
-            ),
-            onTap: () => _showRenamePlaylistDialog(playlist),
-          ),
-          PopupMenuItem(
-            child: Row(
-              children: [
-                Icon(Icons.delete, color: Colors.red.shade400),
-                const SizedBox(width: 8),
-                const Text('Delete', style: TextStyle(color: Colors.white)),
-              ],
-            ),
-            onTap: () => _showDeletePlaylistDialog(playlist),
-          ),
-        ],
+        onPressed: () => _showPlaylistOptionsSheet(playlist),
       ),
       onTap: () {
         Navigator.of(context).push(
@@ -437,6 +416,156 @@ class _LibraryPageState extends State<LibraryPage> {
           ),
         );
       },
+    );
+  }
+
+  void _showPlaylistOptionsSheet(dynamic playlist) {
+    final songCount = playlist.songPaths.length;
+    final accentColor = playlist.artworkColor != null ? Color(playlist.artworkColor!) : Colors.deepPurple.shade400;
+    bool dismissed = false;
+    void dismiss(BuildContext ctx) {
+      if (dismissed) return;
+      dismissed = true;
+      Navigator.of(ctx, rootNavigator: true).pop();
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      isDismissible: true,
+      enableDrag: true,
+      barrierColor: Colors.black54,
+      useRootNavigator: true,
+      builder: (ctx) => Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              dragStartBehavior: DragStartBehavior.down,
+              onTap: () => dismiss(ctx),
+              onVerticalDragUpdate: (details) {
+                if (details.primaryDelta != null && details.primaryDelta! > 8) {
+                  dismiss(ctx);
+                }
+              },
+              onVerticalDragEnd: (details) {
+                if (details.velocity.pixelsPerSecond.dy > 450) {
+                  dismiss(ctx);
+                }
+              },
+            ),
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: DraggableScrollableSheet(
+              initialChildSize: 0.3,
+              minChildSize: 0.25,
+              maxChildSize: 0.4,
+              snap: true,
+              snapSizes: const [0.3, 0.4],
+              expand: false,
+              builder: (context, scrollController) {
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[900],
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(20),
+                      topRight: Radius.circular(20),
+                    ),
+                  ),
+                  child: CustomScrollView(
+                    controller: scrollController,
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: Column(
+                          children: [
+                            Container(
+                              margin: const EdgeInsets.symmetric(vertical: 12),
+                              width: 40,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[700],
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 56,
+                                    height: 56,
+                                    decoration: BoxDecoration(
+                                      color: playlist.artworkColor != null ? Color(playlist.artworkColor!) : Colors.deepPurple.shade200,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: playlist.artworkPath != null && playlist.artworkPath!.isNotEmpty
+                                        ? ClipRRect(
+                                            borderRadius: BorderRadius.circular(10),
+                                            child: Image.file(
+                                              File(playlist.artworkPath!),
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => Icon(Icons.queue_music, color: Colors.white, size: 28),
+                                            ),
+                                          )
+                                        : Icon(Icons.queue_music, color: Colors.white, size: 28),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          playlist.name,
+                                          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '$songCount ${songCount == 1 ? 'song' : 'songs'}',
+                                          style: TextStyle(color: Colors.grey[400], fontSize: 13),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Divider(height: 1, color: Colors.grey),
+                          ],
+                        ),
+                      ),
+                      SliverList(
+                        delegate: SliverChildListDelegate([
+                          ListTile(
+                            leading: Icon(Icons.edit, color: accentColor),
+                            title: const Text('Rename', style: TextStyle(color: Colors.white)),
+                            onTap: () {
+                              dismiss(ctx);
+                              _showRenamePlaylistDialog(playlist);
+                            },
+                          ),
+                          ListTile(
+                            leading: Icon(Icons.delete, color: Colors.red.shade400),
+                            title: const Text('Delete', style: TextStyle(color: Colors.white)),
+                            onTap: () {
+                              dismiss(ctx);
+                              _showDeletePlaylistDialog(playlist);
+                            },
+                          ),
+                          SizedBox(height: MediaQuery.of(context).padding.bottom + 20),
+                        ]),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 

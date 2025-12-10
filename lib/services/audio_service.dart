@@ -10,6 +10,7 @@ import 'audio_queue_manager.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'song_metadata_cache.dart';
 
 
 class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
@@ -54,6 +55,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   static const String _likedRadiosKey = 'liked_radios';
   static const String _customPlaylistsKey = 'custom_playlists';
   late SharedPreferences _prefs;
+  final SongMetadataCache _metadataCache = SongMetadataCache();
 
   late ConcatenatingAudioSource _playlist;
   
@@ -91,6 +93,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     _player.setAudioSource(_playlist);
 
     _playlistHandler.setQueueManager(this);
+    _metadataCache.initialize();
     _loadLikedTracks();
 
     // Listen to player index changes and shuffle mode changes
@@ -335,7 +338,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     
     // If currently playing offline, update the queue
     if (_currentPlaylistId == 'offline') {
-      final songsList = sortedFiles.map((file) => Song.fromFile(file)).toList();
+      final songsList = sortedFiles.map((file) => _metadataCache.createSongFromFile(file)).toList();
       _playlistHandler.updateQueue(songsList, playlistContext: 'offline');
     }
     
@@ -354,7 +357,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     if (songs == null || songs.isEmpty) return;
 
     try {
-      final songsList = songs.map((file) => Song.fromFile(file)).toList();
+      final songsList = songs.map((file) => _metadataCache.createSongFromFile(file)).toList();
       _playlistHandler.updateQueue(songsList, playlistContext: playlistId);
 
       _playlist = ConcatenatingAudioSource(
@@ -366,6 +369,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
               title: song.title,
               artist: song.artist,
               album: playlistId,
+              artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+              duration: song.duration,
             ),
           ),
         ).toList(),
@@ -388,7 +393,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       _currentRadioStation = null;
       _currentPlaylistId = playlistId;
 
-      final songsList = filteredSongs.map((f) => Song.fromFile(f)).toList();
+      final songsList = filteredSongs.map((f) => _metadataCache.createSongFromFile(f)).toList();
       _playlistHandler.updateQueue(songsList, playlistContext: playlistId);
       
       _playlist = ConcatenatingAudioSource(
@@ -400,6 +405,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
               title: song.title,
               artist: song.artist,
               album: playlistId,
+              artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+              duration: song.duration,
             ),
           ),
         ).toList(),
@@ -491,7 +498,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       // If playlist not found, assume it's the offline playlist
       _currentPlaylistId ??= 'offline';
 
-      final songsList = playlistFiles.map((f) => Song.fromFile(f)).toList();
+      final songsList = playlistFiles.map((f) => _metadataCache.createSongFromFile(f)).toList();
       _playlistHandler.updateQueue(songsList, playlistContext: _currentPlaylistId);
       
       _playlist = ConcatenatingAudioSource(
@@ -503,6 +510,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
               title: song.title,
               artist: song.artist,
               album: _currentPlaylistId, // Use the identified playlist ID
+              artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+              duration: song.duration,
             ),
           ),
         ).toList(),
@@ -526,7 +535,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       _currentRadioStation = null;
       _currentPlaylistId = playlistId;
 
-      final songsList = playlistFiles.map((f) => Song.fromFile(f)).toList();
+      final songsList = playlistFiles.map((f) => _metadataCache.createSongFromFile(f)).toList();
       _playlistHandler.updateQueue(songsList, playlistContext: _currentPlaylistId);
       
       _playlist = ConcatenatingAudioSource(
@@ -538,6 +547,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
               title: song.title,
               artist: song.artist,
               album: _currentPlaylistId,
+              artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+              duration: song.duration,
             ),
           ),
         ).toList(),
@@ -593,6 +604,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
           title: song.title,
           artist: song.artist,
           album: 'Next Up', // Special marker for manually added songs
+          artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+          duration: song.duration,
         ),
       );
 
@@ -618,6 +631,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
           title: song.title,
           artist: song.artist,
           album: 'Next Up', // Special marker for manually added songs
+          artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+          duration: song.duration,
         ),
       ));
       notifyListeners();
@@ -637,6 +652,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
             title: song.title,
             artist: song.artist,
             album: _currentPlaylistId, // Preserve playlist context
+            artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+            duration: song.duration,
           ),
         ),
       ).toList();
@@ -875,6 +892,106 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
         .map((playlist) => jsonEncode(playlist.toJson()))
         .toList();
     await _prefs.setStringList(_customPlaylistsKey, playlistsJson);
+  }
+
+  /// Refresh metadata for currently playing song and entire queue from cache
+  Future<void> refreshCurrentMetadata() async {
+    try {
+      final currentIndex = _player.currentIndex;
+      if (currentIndex == null) return;
+      
+      final sequence = _player.sequence;
+      if (sequence == null || sequence.isEmpty) return;
+      
+      // Build refreshed audio sources and queue entries from cache
+      final updatedSources = <AudioSource>[];
+      final updatedQueueSongs = <Song>[];
+
+      for (final source in sequence) {
+        final mediaItem = source.tag as MediaItem?;
+
+        // If we cannot resolve the media item, keep the original source
+        if (mediaItem == null) {
+          updatedSources.add(source);
+          continue;
+        }
+
+        final file = File(mediaItem.id);
+        if (!await file.exists()) {
+          updatedSources.add(source);
+          continue;
+        }
+
+        final song = _metadataCache.createSongFromFile(file);
+
+        // Use cached album art only if the file still exists
+        Uri? artUri;
+        if (song.albumArt.isNotEmpty) {
+          final artFile = File(song.albumArt);
+          if (await artFile.exists()) {
+            artUri = Uri.file(song.albumArt);
+            debugPrint('Album art found for ${song.title}: ${song.albumArt}');
+          } else {
+            debugPrint('Album art file missing for ${song.title}: ${song.albumArt}');
+          }
+        }
+
+        final refreshedMediaItem = MediaItem(
+          id: song.id,
+          title: song.title,
+          artist: song.artist,
+          album: mediaItem.album, // Preserve playlist context / Next Up marker
+          artUri: artUri,
+          duration: song.duration,
+        );
+
+        updatedSources.add(
+          AudioSource.file(
+            song.filePath,
+            tag: refreshedMediaItem,
+          ),
+        );
+
+        updatedQueueSongs.add(
+          song.copyWith(
+            album: refreshedMediaItem.album ?? song.album,
+            artist: refreshedMediaItem.artist ?? song.artist,
+          ),
+        );
+      }
+      
+      // Remember current position/state
+      final currentPosition = _player.position;
+      final wasPlaying = _player.playing;
+
+      // Swap in a fresh concatenating source so the player/sequence stream picks up new tags
+      final refreshedPlaylist = ConcatenatingAudioSource(children: updatedSources);
+      await _player.setAudioSource(
+        refreshedPlaylist,
+        initialIndex: currentIndex,
+        initialPosition: currentPosition,
+      );
+      _playlist = refreshedPlaylist;
+
+      // Keep the queue model in sync with refreshed metadata
+      if (updatedQueueSongs.isNotEmpty) {
+        _playlistHandler.updateQueue(updatedQueueSongs, playlistContext: _currentPlaylistId);
+      }
+
+      if (wasPlaying) {
+        await _player.play();
+      }
+      
+      // Update cached current media reference
+      final refreshedSequence = _player.sequence;
+      if (refreshedSequence != null && refreshedSequence.isNotEmpty) {
+        _currentMedia = refreshedSequence[currentIndex].tag as MediaItem?;
+      }
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error refreshing metadata: $e');
+    }
   }
 
   @override

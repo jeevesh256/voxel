@@ -4,6 +4,7 @@ import 'package:just_audio_background/just_audio_background.dart';  // Add this 
 import 'package:provider/provider.dart';
 import 'package:rxdart/rxdart.dart';
 import 'dart:math';
+import 'dart:io';
 import '../services/audio_service.dart';
 import 'queue.dart';
 import 'lyrics.dart';
@@ -65,7 +66,12 @@ class MiniPlayer extends StatelessWidget {
                           image: isRadio && radio != null
                             ? DecorationImage(image: NetworkImage(radio.artworkUrl))
                             : metadata?.artUri != null 
-                              ? DecorationImage(image: NetworkImage(metadata!.artUri.toString()))
+                              ? DecorationImage(
+                                  image: metadata!.artUri!.scheme == 'file'
+                                    ? FileImage(File(metadata.artUri!.toFilePath()))
+                                    : NetworkImage(metadata.artUri.toString()) as ImageProvider,
+                                  fit: BoxFit.cover,
+                                )
                               : null,
                         ),
                         child: (!isRadio && metadata?.artUri == null)
@@ -193,67 +199,99 @@ class FullScreenPlayer extends StatefulWidget {
   State<FullScreenPlayer> createState() => _FullScreenPlayerState();
 }
 
-class _FullScreenPlayerState extends State<FullScreenPlayer> {
-  double? _dragValue;
-  double _dragOffset = 0;
+class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerProviderStateMixin {
+  late final AnimationController _dismissController;
+  static const double _dismissDistance = 160;
+  static const double _velocityThreshold = 600;
+  double _dragExtent = 0;
+  double? _dragValue; // Scrubber drag value
+
+  @override
+  void initState() {
+    super.initState();
+    _dismissController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+      lowerBound: 0,
+      upperBound: 1,
+    );
+  }
+
+  @override
+  void dispose() {
+    _dismissController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onVerticalDragUpdate: (details) {
-        setState(() {
-          _dragOffset += details.delta.dy;
-          if (_dragOffset < 0) _dragOffset = 0;
-        });
-      },
-      onVerticalDragEnd: (details) {
-        final velocity = details.primaryVelocity ?? 0;
-        
-        // Simple logic: dismiss if dragged down 150px OR fast swipe
-        if (_dragOffset > 150 || velocity > 500) {
-          Navigator.pop(context);
-        } else {
-          setState(() {
-            _dragOffset = 0;
-          });
-        }
-      },
-      child: AnimatedContainer(
-        duration: Duration(milliseconds: _dragOffset > 0 ? 0 : 200),
-        curve: Curves.easeOut,
-        transform: Matrix4.translationValues(0, _dragOffset, 0),
-        child: Container(
-        height: MediaQuery.of(context).size.height,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.deepPurple.shade400,
-              Colors.grey.shade900,
-              Colors.black,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(context),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildAlbumArt(),
-                    _buildControls(context),
-                  ],
-                ),
-              ),
-            ],
-          ),
+      onVerticalDragUpdate: _handleDragUpdate,
+      onVerticalDragEnd: _handleDragEnd,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedBuilder(
+        animation: _dismissController,
+        builder: (context, child) {
+          final offset = MediaQuery.of(context).size.height * _dismissController.value;
+          return Transform.translate(offset: Offset(0, offset), child: child);
+        },
+        child: _buildPlayerBody(context),
+      ),
+    );
+  }
+
+  Widget _buildPlayerBody(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.deepPurple.shade400,
+            Colors.grey.shade900,
+            Colors.black,
+          ],
         ),
       ),
-    ), // Transform.translate
-    ); // GestureDetector
+      child: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(context),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildAlbumArt(),
+                  _buildControls(context),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _handleDragUpdate(DragUpdateDetails details) {
+    _dragExtent = (_dragExtent + details.delta.dy).clamp(0, double.infinity);
+    final fraction = (_dragExtent / _dismissDistance).clamp(0.0, 1.0);
+    _dismissController.value = fraction;
+  }
+
+  void _handleDragEnd(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    final shouldDismiss = velocity > _velocityThreshold || _dragExtent > _dismissDistance;
+    if (shouldDismiss) {
+      _dismissController
+          .fling(velocity: max(1.5, velocity / 1000))
+          .whenComplete(() {
+        if (mounted) Navigator.of(context).pop();
+      });
+    } else {
+      _dismissController.animateBack(0, curve: Curves.easeOutCubic);
+    }
+    _dragExtent = 0;
   }
 
   Widget _buildHeader(BuildContext context) {
@@ -329,44 +367,84 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
     final audioService = context.watch<AudioPlayerService>();
     final isRadio = audioService.isRadioPlaying;
     final radio = audioService.currentRadioStation;
-    final metadata = audioService.currentMedia;
     final padding = const EdgeInsets.symmetric(horizontal: 24);
-    Widget artWidget;
-    if ((isRadio && radio != null && radio.artworkUrl.isNotEmpty) || (metadata?.artUri != null && metadata!.artUri.toString().isNotEmpty)) {
-      final imageUrl = isRadio && radio != null ? radio.artworkUrl : metadata!.artUri.toString();
-      artWidget = AnimatedSwitcher(
-        duration: const Duration(milliseconds: 400),
-        child: FadeInImage.assetNetwork(
-          key: ValueKey(imageUrl),
-          placeholder: 'assets/placeholder.png', // Add a placeholder image to your assets
-          image: imageUrl,
-          fit: BoxFit.cover,
-          width: double.infinity,
-          height: double.infinity,
-        ),
-      );
-    } else {
-      artWidget = const Icon(Icons.music_note, size: 80, color: Colors.white);
-    }
-    return Padding(
-      padding: padding,
-      child: AspectRatio(
-        aspectRatio: 1,
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(4),
-            color: Colors.deepPurple.shade200,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.3),
-                blurRadius: 15,
-                offset: const Offset(0, 10),
+    
+    return StreamBuilder<MediaItem?>(
+      stream: audioService.currentMediaStream,
+      builder: (context, snapshot) {
+        final metadata = snapshot.data;
+        
+        Widget artWidget;
+        
+        if (isRadio && radio != null && radio.artworkUrl.isNotEmpty) {
+          // Radio station - use network image
+          artWidget = AnimatedSwitcher(
+            duration: const Duration(milliseconds: 400),
+            child: Image.network(
+              key: ValueKey(radio.artworkUrl),
+              radio.artworkUrl,
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+              errorBuilder: (_, __, ___) => const Icon(Icons.music_note, size: 80, color: Colors.white),
+            ),
+          );
+        } else if (metadata?.artUri != null) {
+          // Local song - check if file URI
+          if (metadata!.artUri!.scheme == 'file') {
+            artWidget = AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              child: Image.file(
+                key: ValueKey(metadata.artUri.toString()),
+                File(metadata.artUri!.toFilePath()),
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+                errorBuilder: (_, __, ___) => const Icon(Icons.music_note, size: 80, color: Colors.white),
               ),
-            ],
+            );
+          } else {
+            // Network URI
+            artWidget = AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              child: Image.network(
+                key: ValueKey(metadata.artUri.toString()),
+                metadata.artUri.toString(),
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+                errorBuilder: (_, __, ___) => const Icon(Icons.music_note, size: 80, color: Colors.white),
+              ),
+            );
+          }
+        } else {
+          artWidget = const Icon(Icons.music_note, size: 80, color: Colors.white);
+        }
+        
+        return Padding(
+          padding: padding,
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(4),
+                color: Colors.deepPurple.shade200,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 15,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: artWidget,
+              ),
+            ),
           ),
-          child: artWidget,
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -546,8 +624,8 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> {
           );
         }
 
-        final value = min(
-          (_dragValue ?? position.inMilliseconds).toDouble(),
+        final double value = min<double>(
+          (_dragValue ?? position.inMilliseconds.toDouble()),
           duration.inMilliseconds.toDouble(),
         );
 
