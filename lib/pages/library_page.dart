@@ -326,9 +326,53 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _showCreatePlaylistDialog() async {
-    final result = await showDialog<Map<String, dynamic>>(
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const CreatePlaylistDialog(),
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        bool dismissed = false;
+        void dismiss() {
+          if (dismissed) return;
+          dismissed = true;
+          Navigator.of(ctx, rootNavigator: true).pop();
+        }
+
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: dismiss,
+              ),
+            ),
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Builder(
+                builder: (context) {
+                  final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+                  final isKeyboardVisible = viewInsets > 0;
+                  final targetSize = isKeyboardVisible ? 0.85 : 0.55;
+
+                  return DraggableScrollableSheet(
+                    initialChildSize: targetSize,
+                    minChildSize: targetSize,
+                    maxChildSize: targetSize,
+                    expand: false,
+                    builder: (context, scrollController) {
+                      return CreatePlaylistDialog(
+                        useBottomSheetStyle: true,
+                        sheetScrollController: scrollController,
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
     
     if (result != null) {
@@ -541,10 +585,10 @@ class _LibraryPageState extends State<LibraryPage> {
                         delegate: SliverChildListDelegate([
                           ListTile(
                             leading: Icon(Icons.edit, color: accentColor),
-                            title: const Text('Rename', style: TextStyle(color: Colors.white)),
+                            title: const Text('Edit', style: TextStyle(color: Colors.white)),
                             onTap: () {
                               dismiss(ctx);
-                              _showRenamePlaylistDialog(playlist);
+                              _showEditPlaylistDialog(playlist);
                             },
                           ),
                           ListTile(
@@ -610,26 +654,139 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
-  Future<void> _showDeletePlaylistDialog(dynamic playlist) async {
-    final result = await showDialog<bool>(
+  Future<void> _showEditPlaylistDialog(dynamic playlist) async {
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text('Delete Playlist?', style: TextStyle(color: Colors.white)),
-        content: Text(
-          'Are you sure you want to delete "${playlist.name}"? This action cannot be undone.',
-          style: TextStyle(color: Colors.grey[300]),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text('Delete', style: TextStyle(color: Colors.red.shade400)),
-          ),
-        ],
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        bool dismissed = false;
+        void dismiss() {
+          if (dismissed) return;
+          dismissed = true;
+          Navigator.of(ctx, rootNavigator: true).pop();
+        }
+
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: dismiss,
+              ),
+            ),
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Builder(
+                builder: (context) {
+                  final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+                  final isKeyboardVisible = viewInsets > 0;
+                  final targetSize = isKeyboardVisible ? 0.85 : 0.55;
+
+                  return DraggableScrollableSheet(
+                    initialChildSize: targetSize,
+                    minChildSize: targetSize,
+                    maxChildSize: targetSize,
+                    expand: false,
+                    builder: (context, scrollController) {
+                      return CreatePlaylistDialog(
+                        initialName: playlist.name,
+                        initialArtworkPath: playlist.artworkPath,
+                        initialColor: playlist.artworkColor,
+                        titleText: 'Edit Playlist',
+                        actionText: 'Save',
+                        useBottomSheetStyle: true,
+                        sheetScrollController: scrollController,
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result != null) {
+      final audioService = context.read<AudioPlayerService>();
+      await audioService.updateCustomPlaylist(
+        playlist.id,
+        name: result['name'] as String?,
+        artworkPath: result['artworkPath'] as String?,
+        artworkColor: result['color'] as int?,
+      );
+    }
+  }
+
+  Future<void> _showDeletePlaylistDialog(dynamic playlist) async {
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.3,
+        minChildSize: 0.25,
+        maxChildSize: 0.5,
+        expand: false,
+        builder: (context, scrollController) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Colors.grey[900],
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+              children: [
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[700],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const Text(
+                  'Delete Playlist?',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Are you sure you want to delete "${playlist.name}"? This action cannot be undone.',
+                  style: TextStyle(color: Colors.grey[300]),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade400,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: const Text('Delete'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
     

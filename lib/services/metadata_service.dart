@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import '../models/song.dart';
 import 'musicbrainz_service.dart';
+import 'itunes_service.dart';
 
 class MetadataResult {
   final String title;
@@ -13,6 +15,7 @@ class MetadataResult {
   final Duration? duration;
   final bool isFromFile;
   final bool isFromAPI;
+  final String? source;
 
   MetadataResult({
     required this.title,
@@ -24,11 +27,13 @@ class MetadataResult {
     this.duration,
     this.isFromFile = false,
     this.isFromAPI = false,
+    this.source,
   });
 }
 
 class MetadataService {
   final MusicBrainzService _musicBrainzService = MusicBrainzService();
+  final ITunesService _iTunesService = ITunesService();
 
   /// Extract basic metadata from filename
   MetadataResult extractFilenameMetadata(String filePath) {
@@ -53,6 +58,7 @@ class MetadataService {
       artist: artist,
       album: '',
       isFromFile: true,
+      source: 'File',
     );
   }
 
@@ -111,6 +117,7 @@ class MetadataService {
         releaseId: bestMatch.releaseId,
         coverArtUrl: _musicBrainzService.getCoverArtUrl(bestMatch.releaseId ?? ''),
         isFromAPI: true,
+        source: 'MusicBrainz',
       );
     } catch (e) {
       print('Error enriching metadata: $e');
@@ -165,7 +172,7 @@ class MetadataService {
         limit: limit,
       );
 
-      return recordings.map((rec) {
+      final musicBrainzResults = recordings.map((rec) {
         return MetadataResult(
           title: rec.title,
           artist: rec.artist,
@@ -173,8 +180,32 @@ class MetadataService {
           releaseId: rec.releaseId,
           coverArtUrl: _musicBrainzService.getCoverArtUrl(rec.releaseId ?? ''),
           isFromAPI: true,
+          source: 'MusicBrainz',
         );
       }).toList();
+
+      // iTunes fallback/augment
+      final query = [artist, title].where((e) => e != null && e!.isNotEmpty).join(' ');
+      final iTunesTracks = await _iTunesService.searchTracks(term: query.isNotEmpty ? query : title, limit: limit);
+      final iTunesResults = iTunesTracks.map((t) {
+        return MetadataResult(
+          title: t.trackName,
+          artist: t.artistName,
+          album: t.collectionName,
+          coverArtUrl: t.artworkUrl,
+          isFromAPI: true,
+          source: 'iTunes',
+        );
+      }).toList();
+
+      // Merge unique by title+artist, prioritizing iTunes results first
+      final merged = <String, MetadataResult>{};
+      for (final r in [...iTunesResults, ...musicBrainzResults]) {
+        final key = '${r.title.toLowerCase()}__${r.artist.toLowerCase()}';
+        merged.putIfAbsent(key, () => r);
+      }
+
+      return merged.values.take(limit).toList();
     } catch (e) {
       print('Error searching metadata options: $e');
       return [];
@@ -195,6 +226,25 @@ class MetadataService {
       return await _saveAlbumArtBytes(artBytes, identifier);
     } catch (e) {
       print('Error downloading cover art for release $releaseId: $e');
+      return null;
+    }
+  }
+
+  /// Download cover art from a direct URL and persist it; returns saved file path.
+  Future<String?> downloadCoverArtFromUrl({
+    required String url,
+    required String identifier,
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    try {
+      final uri = Uri.parse(url);
+      final response = await http.get(uri).timeout(timeout);
+      if (response.statusCode < 200 || response.statusCode >= 300 || response.bodyBytes.isEmpty) {
+        return null;
+      }
+      return await _saveAlbumArtBytes(response.bodyBytes, identifier);
+    } catch (e) {
+      print('Error downloading cover art from $url: $e');
       return null;
     }
   }

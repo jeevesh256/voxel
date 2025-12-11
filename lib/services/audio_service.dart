@@ -621,10 +621,14 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   @override
   Future<void> insertAtQueue(Song song, int index) async {
     try {
-      // Add to next up queue
-      _nextUpQueue.insert(index - (_player.currentIndex ?? 0) - 1, song);
+      final currentIdx = _player.currentIndex ?? -1;
+      final relativeNextUpIndex = (index - currentIdx - 1).clamp(0, _nextUpQueue.length);
+      final clampedInsertIndex = index.clamp(0, _playlist.length);
 
-      await _playlist.insert(index, AudioSource.file(
+      // Add to next up queue
+      _nextUpQueue.insert(relativeNextUpIndex, song);
+
+      await _playlist.insert(clampedInsertIndex, AudioSource.file(
         song.filePath,
         tag: MediaItem(
           id: song.id,
@@ -816,12 +820,13 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     notifyListeners();
   }
 
-  Future<void> updateCustomPlaylist(String playlistId, {String? name, String? artworkPath}) async {
+  Future<void> updateCustomPlaylist(String playlistId, {String? name, String? artworkPath, int? artworkColor}) async {
     final playlist = _customPlaylists[playlistId];
     if (playlist != null) {
       _customPlaylists[playlistId] = playlist.copyWith(
         name: name,
         artworkPath: artworkPath,
+        artworkColor: artworkColor,
         modifiedAt: DateTime.now(),
       );
       await _saveCustomPlaylists();
@@ -867,6 +872,47 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     }
   }
 
+  /// Generic removal that handles custom, liked, and system playlists.
+  Future<void> removeSongFromPlaylist(String playlistId, File song) async {
+    if (playlistId == 'liked') {
+      _likedTracks.remove(song.path);
+      _playlists['liked']?.removeWhere((f) => f.path == song.path);
+      await _saveLikedTracks();
+
+      if (_currentPlaylistId == 'liked') {
+        final songsList = (_playlists['liked'] ?? []).map((f) => _metadataCache.createSongFromFile(f)).toList();
+        _playlistHandler.updateQueue(songsList, playlistContext: 'liked');
+      }
+
+      notifyListeners();
+      return;
+    }
+
+    if (_customPlaylists.containsKey(playlistId)) {
+      await removeSongFromCustomPlaylist(playlistId, song);
+
+      if (_currentPlaylistId == playlistId) {
+        final songsList = (_playlists[playlistId] ?? []).map((f) => _metadataCache.createSongFromFile(f)).toList();
+        _playlistHandler.updateQueue(songsList, playlistContext: playlistId);
+      }
+      return;
+    }
+
+    // Fallback for other system playlists
+    final list = _playlists[playlistId];
+    if (list != null) {
+      list.removeWhere((f) => f.path == song.path);
+      _playlists[playlistId] = list;
+
+      if (_currentPlaylistId == playlistId) {
+        final songsList = list.map((f) => _metadataCache.createSongFromFile(f)).toList();
+        _playlistHandler.updateQueue(songsList, playlistContext: playlistId);
+      }
+
+      notifyListeners();
+    }
+  }
+
   CustomPlaylist? getCustomPlaylist(String playlistId) {
     return _customPlaylists[playlistId];
   }
@@ -895,13 +941,21 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   }
 
   /// Refresh metadata for currently playing song and entire queue from cache
+  /// Always notifies listeners, even if player/queue is empty, so UI using cached
+  /// metadata can rebuild immediately after edits.
   Future<void> refreshCurrentMetadata() async {
     try {
       final currentIndex = _player.currentIndex;
-      if (currentIndex == null) return;
+      if (currentIndex == null) {
+        notifyListeners();
+        return;
+      }
       
       final sequence = _player.sequence;
-      if (sequence == null || sequence.isEmpty) return;
+      if (sequence == null || sequence.isEmpty) {
+        notifyListeners();
+        return;
+      }
       
       // Build refreshed audio sources and queue entries from cache
       final updatedSources = <AudioSource>[];
@@ -977,6 +1031,9 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       if (updatedQueueSongs.isNotEmpty) {
         _playlistHandler.updateQueue(updatedQueueSongs, playlistContext: _currentPlaylistId);
       }
+
+      // Notify listeners so any UI using cached metadata refreshes immediately
+      notifyListeners();
 
       if (wasPlaying) {
         await _player.play();

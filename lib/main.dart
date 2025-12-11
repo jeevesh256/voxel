@@ -217,12 +217,24 @@ class _MusicAppState extends State<MusicApp> {
 
   @override
   Widget build(BuildContext context) {
+    void handleTabTap(int index) {
+      if (index == _selectedIndex) {
+        final navigator = _navigatorKeys[index].currentState;
+        if (navigator != null && navigator.canPop()) {
+          navigator.popUntil((route) => route.isFirst);
+        }
+        return;
+      }
+      setState(() => _selectedIndex = index);
+    }
+
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(
+        resizeToAvoidBottomInset: false,
         body: PersistentOverlay(
           currentIndex: _selectedIndex,
-          onTabChanged: (index) => setState(() => _selectedIndex = index),
+          onTabChanged: handleTabTap,
           child: Navigator(
             key: _navigatorKeys[_selectedIndex],
             onGenerateRoute: (settings) => MaterialPageRoute(

@@ -3,17 +3,42 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 
 class CreatePlaylistDialog extends StatefulWidget {
-  const CreatePlaylistDialog({super.key});
+  final String? initialName;
+  final String? initialArtworkPath;
+  final int? initialColor;
+  final String titleText;
+  final String actionText;
+  final bool useBottomSheetStyle;
+  final ScrollController? sheetScrollController;
+
+  const CreatePlaylistDialog({
+    super.key,
+    this.initialName,
+    this.initialArtworkPath,
+    this.initialColor,
+    this.titleText = 'Create Playlist',
+    this.actionText = 'Create',
+    this.useBottomSheetStyle = false,
+    this.sheetScrollController,
+  });
 
   @override
   State<CreatePlaylistDialog> createState() => _CreatePlaylistDialogState();
 }
 
 class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
-  final TextEditingController _nameController = TextEditingController();
+  late final TextEditingController _nameController;
   final ImagePicker _picker = ImagePicker();
   String? _selectedImagePath;
   Color? _selectedColor;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialName ?? '');
+    _selectedImagePath = widget.initialArtworkPath;
+    _selectedColor = widget.initialColor != null ? Color(widget.initialColor!) : null;
+  }
 
   @override
   void dispose() {
@@ -190,120 +215,169 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.useBottomSheetStyle) {
+      return _buildBottomSheetContent(context);
+    }
+
     return AlertDialog(
       backgroundColor: Colors.grey[900],
-      title: const Text(
-        'Create Playlist',
-        style: TextStyle(color: Colors.white),
+      title: Text(
+        widget.titleText,
+        style: const TextStyle(color: Colors.white),
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Playlist artwork selector
-          InkWell(
-            onTap: _pickImage,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: Colors.grey[800],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Colors.deepPurple.shade400,
-                  width: 2,
-                ),
-              ),
-              child: _selectedImagePath != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Image.file(
-                        File(_selectedImagePath!),
-                        fit: BoxFit.cover,
-                        width: 116,
-                        height: 116,
-                      ),
-                    )
-                  : _selectedColor != null
-                      ? Container(
-                          width: 116,
-                          height: 116,
-                          decoration: BoxDecoration(
-                            color: _selectedColor,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(
-                            Icons.queue_music,
-                            color: Colors.white,
-                            size: 48,
-                          ),
-                        )
-                      : Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.add_photo_alternate,
-                              color: Colors.deepPurple.shade400,
-                              size: 32,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Add Cover',
-                              style: TextStyle(
-                                color: Colors.deepPurple.shade400,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          // Playlist name input
-          TextField(
-            controller: _nameController,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              labelText: 'Playlist Name',
-              labelStyle: TextStyle(color: Colors.grey[400]),
-              enabledBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: Colors.grey[600]!),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: Colors.deepPurple.shade400),
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            autofocus: true,
-          ),
-        ],
-      ),
+      content: _buildFormContent(),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: Text(
-            'Cancel',
-            style: TextStyle(color: Colors.grey[400]),
+          child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.of(context).pop({
+              'name': _nameController.text.trim(),
+              'artworkPath': _selectedImagePath,
+              'color': _selectedColor?.value,
+            });
+          },
+          child: Text(widget.actionText, style: TextStyle(color: Colors.deepPurple.shade400)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFormContent() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: _pickImage,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: 160,
+            height: 160,
+            decoration: BoxDecoration(
+              color: Colors.grey[800],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.deepPurple.shade400,
+                width: 2,
+              ),
+            ),
+            child: _selectedImagePath != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.file(
+                      File(_selectedImagePath!),
+                      fit: BoxFit.cover,
+                      width: 156,
+                      height: 156,
+                    ),
+                  )
+                : _selectedColor != null
+                    ? Container(
+                        width: 156,
+                        height: 156,
+                        decoration: BoxDecoration(
+                          color: _selectedColor,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.queue_music,
+                          color: Colors.white,
+                          size: 64,
+                        ),
+                      )
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(
+                            Icons.image,
+                            color: Colors.white70,
+                            size: 40,
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'Add Artwork',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ],
+                      ),
           ),
-        ),          TextButton(
-            onPressed: () {
-              final name = _nameController.text.trim();
-              if (name.isNotEmpty) {
-                Navigator.of(context).pop({
-                  'name': name,
-                  'artworkPath': _selectedImagePath,
-                  'color': _selectedColor?.value, // Store color as int
-                });
-              }
-            },
-          child: Text(
-            'Create',
-            style: TextStyle(color: Colors.deepPurple.shade400),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _nameController,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            labelText: 'Playlist Name',
+            labelStyle: TextStyle(color: Colors.deepPurple.shade200),
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.grey.shade700),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.deepPurple.shade400),
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildBottomSheetContent(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[900],
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+          ),
+          child: SingleChildScrollView(
+            controller: widget.sheetScrollController,
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.titleText,
+                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 16),
+                _buildFormContent(),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.deepPurple.shade400,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () {
+                        Navigator.of(context).pop({
+                          'name': _nameController.text.trim(),
+                          'artworkPath': _selectedImagePath,
+                          'color': _selectedColor?.value,
+                        });
+                      },
+                      child: Text(widget.actionText),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
