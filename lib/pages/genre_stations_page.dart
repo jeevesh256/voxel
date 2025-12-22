@@ -13,6 +13,12 @@ class GenreStationsPage extends StatelessWidget {
     required this.stations,
   });
 
+  // Match homepage tile sizing so genre station tiles look consistent.
+  static const double _kTileImageSize = 150.0;
+  static const double _kTileWidth = 150.0;
+  // Text block below the image (approx)
+  static const double _kTextBlockHeight = 56.0;
+
   // Get genre-specific artwork
   String _getGenreArtwork(String genre) {
     final Map<String, String> genreArtwork = {
@@ -127,9 +133,10 @@ class GenreStationsPage extends StatelessWidget {
           Expanded(
             child: GridView.builder(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 136), // Add bottom padding for mini player
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
-                childAspectRatio: 1,
+                // width / height = _kTileWidth / (_kTileImageSize + textBlock)
+                childAspectRatio: _kTileWidth / (_kTileImageSize + _kTextBlockHeight),
                 crossAxisSpacing: 16,
                 mainAxisSpacing: 16,
               ),
@@ -148,7 +155,8 @@ class GenreStationsPage extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
+                        SizedBox(
+                          height: _kTileImageSize,
                           child: Stack(
                             children: [
                               ClipRRect(
@@ -157,14 +165,17 @@ class GenreStationsPage extends StatelessWidget {
                                     ? Image.network(
                                         station.artworkUrl,
                                         width: double.infinity,
+                                        height: _kTileImageSize,
                                         fit: BoxFit.cover,
                                         filterQuality: FilterQuality.high,
                                         errorBuilder: (_, __, ___) => Container(
+                                          height: _kTileImageSize,
                                           color: Colors.deepPurple.shade200,
                                           child: const Icon(Icons.radio, color: Colors.white, size: 60),
                                         ),
                                       )
                                     : Container(
+                                        height: _kTileImageSize,
                                         color: Colors.deepPurple.shade200,
                                         child: const Icon(Icons.radio, color: Colors.white, size: 60),
                                       ),

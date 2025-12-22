@@ -380,6 +380,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       await _player.setShuffleModeEnabled(false);
       await _player.setAudioSource(_playlist, initialIndex: 0);
       await _player.play();
+      addRecentlyPlayedPlaylist(playlistId);
     } catch (e) {
       debugPrint('Error playing playlist: $e');
     }
@@ -491,6 +492,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       for (var entry in _playlists.entries) {
         if (listEquals(entry.value, playlistFiles)) {
           _currentPlaylistId = entry.key;
+          addRecentlyPlayedPlaylist(_currentPlaylistId!);
           break;
         }
       }
@@ -534,6 +536,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       // Clear radio station when playing songs
       _currentRadioStation = null;
       _currentPlaylistId = playlistId;
+      addRecentlyPlayedPlaylist(_currentPlaylistId!);
 
       final songsList = playlistFiles.map((f) => _metadataCache.createSongFromFile(f)).toList();
       _playlistHandler.updateQueue(songsList, playlistContext: _currentPlaylistId);
@@ -1050,6 +1053,20 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       debugPrint('Error refreshing metadata: $e');
     }
   }
+
+  // --- Recently Played State ---
+  final List<String> _recentlyPlayedPlaylistIds = [];
+
+  void addRecentlyPlayedPlaylist(String playlistId) {
+    _recentlyPlayedPlaylistIds.remove(playlistId);
+    _recentlyPlayedPlaylistIds.insert(0, playlistId);
+    if (_recentlyPlayedPlaylistIds.length > 10) {
+      _recentlyPlayedPlaylistIds.removeLast();
+    }
+    notifyListeners();
+  }
+
+  List<String> get recentlyPlayedPlaylistIds => List.unmodifiable(_recentlyPlayedPlaylistIds);
 
   @override
   void dispose() {

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,6 +8,8 @@ import 'genre_stations_page.dart';
 import '../models/settings_model.dart';
 import '../services/audio_service.dart';
 import '../services/radio_browser_service.dart';
+import 'playlist_page.dart'; // <-- Missing import added here
+import 'package:voxel/models/custom_playlist.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -16,6 +19,10 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  // Homepage tile sizing constants (smaller than before)
+  static const double _homeTileImageSize = 150.0;
+  static const double _homeTileWidth = 150.0;
+  static const double _homeRowHeight = 220.0;
   // Removed direct getter for audioService. Use context.watch or context.read everywhere.
 
   // List all radios in the top section, with a "See All" button
@@ -28,8 +35,42 @@ class _HomePageState extends State<HomePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 0),
+          child: Row(
+            children: [
+              const Text(
+                'Radio Stations',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              TextButton(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: Colors.deepPurple,
+                  textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => AllStationsPage(stations: validStations),
+                    ),
+                  );
+                },
+                child: const Text('See All'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
         SizedBox(
-          height: 270,
+          height: _homeRowHeight,
           child: ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             scrollDirection: Axis.horizontal,
@@ -40,7 +81,7 @@ class _HomePageState extends State<HomePage> {
               return GestureDetector(
                 onTap: () => context.read<AudioPlayerService>().playRadioStation(station),
                 child: Container(
-                  width: 200,
+                  width: _homeTileWidth,
                   margin: const EdgeInsets.only(right: 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -52,20 +93,20 @@ class _HomePageState extends State<HomePage> {
                             child: hasArt
                                 ? Image.network(
                                     station.artworkUrl,
-                                    height: 200,
-                                    width: 200,
+                                    height: _homeTileImageSize,
+                                    width: _homeTileImageSize,
                                     fit: BoxFit.cover,
                                     filterQuality: FilterQuality.high,
                                     errorBuilder: (_, __, ___) => Container(
-                                      height: 200,
-                                      width: 200,
+                                      height: _homeTileImageSize,
+                                      width: _homeTileImageSize,
                                       color: Colors.deepPurple.shade200,
                                       child: const Icon(Icons.radio, color: Colors.white, size: 60),
                                     ),
                                   )
                                 : Container(
-                                    height: 200,
-                                    width: 200,
+                                    height: _homeTileImageSize,
+                                    width: _homeTileImageSize,
                                     color: Colors.deepPurple.shade200,
                                     child: const Icon(Icons.radio, color: Colors.white, size: 60),
                                   ),
@@ -113,24 +154,6 @@ class _HomePageState extends State<HomePage> {
                 ),
               );
             },
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(left: 16, top: 8),
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.deepPurple,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => AllStationsPage(stations: validStations),
-                ),
-              );
-            },
-            child: const Text('See All'),
           ),
         ),
       ],
@@ -185,7 +208,7 @@ class _HomePageState extends State<HomePage> {
     // Use the defined order from allGenres, only including genres that have stations
     final displayedGenres = allGenres.where((genre) => genreMap.containsKey(genre)).toList();
     return SizedBox(
-      height: 270,
+      height: _homeRowHeight,
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         scrollDirection: Axis.horizontal,
@@ -208,7 +231,7 @@ class _HomePageState extends State<HomePage> {
               );
             },
             child: Container(
-              width: 200,
+              width: _homeTileWidth,
               margin: const EdgeInsets.only(right: 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -219,13 +242,13 @@ class _HomePageState extends State<HomePage> {
                         borderRadius: BorderRadius.circular(10),
                         child: Image.network(
                           artworkUrl,
-                          height: 200,
-                          width: 200,
+                          height: _homeTileImageSize,
+                          width: _homeTileImageSize,
                           fit: BoxFit.cover,
                           filterQuality: FilterQuality.high,
                           errorBuilder: (_, __, ___) => Container(
-                            height: 200,
-                            width: 200,
+                            height: _homeTileImageSize,
+                            width: _homeTileImageSize,
                             color: Colors.deepPurple.shade200,
                             child: const Icon(Icons.radio, color: Colors.white, size: 60),
                           ),
@@ -333,14 +356,12 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildSection('Radio Stations'),
+              _buildRecentlyPlayedRow(),
               _buildRadioStationRow(),
               _buildSection('Genre Radios'),
               _buildGenreRadioRow(),
-              _buildSection('Top Picks'),
-              _buildMusicRow(),
-              _buildSection('Recently Played'),
-              _buildMusicRow(),
+              _buildForYouRow(),
+              _buildUserPlaylistsRow(),
               const SizedBox(height: 120), // Add padding for mini player
             ],
           ),
@@ -362,91 +383,379 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Removed old _buildRadioStationRow (language filter)
-
-  Widget _buildMusicRow() {
-    return SizedBox(
-      height: 270,
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        scrollDirection: Axis.horizontal,
-        itemCount: 5,
-        itemBuilder: (context, index) {
-          return Container(
-            width: 200,
-            margin: const EdgeInsets.only(right: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  height: 200,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Colors.deepPurple.shade400,
-                        Colors.deepPurple.shade800,
-                      ],
+  // --- For You Row (Liked Songs Playlist) ---
+  Widget _buildForYouRow() {
+    final audioService = context.watch<AudioPlayerService>();
+    final likedFiles = audioService.getPlaylistSongs('liked').reversed.toList();
+    if (likedFiles.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSection('For You'),
+        SizedBox(
+          height: _homeRowHeight,
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            scrollDirection: Axis.horizontal,
+            children: [
+              GestureDetector(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => PlaylistPage(
+                        playlistId: 'liked',
+                        title: 'Liked Songs',
+                        icon: Icons.favorite,
+                        allowReorder: true,
+                      ),
                     ),
+                  );
+                },
+                child: Container(
+                  width: _homeTileWidth,
+                  margin: const EdgeInsets.only(right: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        height: _homeTileImageSize,
+                        width: _homeTileImageSize,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          color: Colors.deepPurple.shade200,
+                        ),
+                        child: const Icon(Icons.favorite, color: Colors.white, size: 60),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Liked Songs',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                          color: Colors.white,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${likedFiles.length} song${likedFiles.length == 1 ? '' : 's'}',
+                        style: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  'Album Title ${index + 1}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Artist Name',
-                  style: TextStyle(
-                    color: Colors.grey[400],
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
-  // Helper method to match genres with common variations
-  bool _isGenreMatch(String stationGenre, String targetGenre) {
-    switch (targetGenre) {
-      case 'pop':
-        return stationGenre.contains('pop') || stationGenre.contains('top 40') || stationGenre.contains('hits');
-      case 'rock':
-        return stationGenre.contains('rock') || stationGenre.contains('metal') || stationGenre.contains('alternative');
-      case 'electronic':
-        return stationGenre.contains('electronic') || stationGenre.contains('dance') || stationGenre.contains('edm') || stationGenre.contains('techno') || stationGenre.contains('house');
-      case 'hip-hop':
-        return stationGenre.contains('hip') || stationGenre.contains('rap') || stationGenre.contains('r&b') || stationGenre.contains('rnb');
-      case 'jazz':
-        return stationGenre.contains('jazz') || stationGenre.contains('smooth') || stationGenre.contains('soul');
-      case 'classical':
-        return stationGenre.contains('classical') || stationGenre.contains('symphony') || stationGenre.contains('opera');
-      case 'country':
-        return stationGenre.contains('country') || stationGenre.contains('folk') || stationGenre.contains('americana');
-      case 'blues':
-        return stationGenre.contains('blues') || stationGenre.contains('rhythm');
-      case 'reggae':
-        return stationGenre.contains('reggae') || stationGenre.contains('ska') || stationGenre.contains('caribbean');
-      case 'latin':
-        return stationGenre.contains('latin') || stationGenre.contains('spanish') || stationGenre.contains('salsa') || stationGenre.contains('bachata');
-      case 'news':
-        return stationGenre.contains('news') || stationGenre.contains('current');
-      case 'talk':
-        return stationGenre.contains('talk') || stationGenre.contains('discussion') || stationGenre.contains('interview');
-      case 'sports':
-        return stationGenre.contains('sports') || stationGenre.contains('football') || stationGenre.contains('basketball');
-      default:
-        return false;
+  // --- User Playlists Row ---
+  Widget _buildUserPlaylistsRow() {
+    final audioService = context.watch<AudioPlayerService>();
+    final customPlaylists = audioService.customPlaylists;
+    if (customPlaylists.isEmpty) {
+      return const SizedBox.shrink();
     }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSection('Your Playlists'),
+        SizedBox(
+          height: _homeRowHeight,
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            scrollDirection: Axis.horizontal,
+            itemCount: customPlaylists.length > 10 ? 10 : customPlaylists.length,
+            itemBuilder: (context, index) {
+              final playlist = customPlaylists[index];
+              final songs = audioService.getPlaylistSongs(playlist.id);
+              final hasArt = playlist.artworkPath != null && playlist.artworkPath!.isNotEmpty;
+              return GestureDetector(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => PlaylistPage(
+                        playlistId: playlist.id,
+                        title: playlist.name,
+                        icon: Icons.queue_music,
+                        allowReorder: true,
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: _homeTileWidth,
+                  margin: const EdgeInsets.only(right: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      hasArt
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.file(
+                                File(playlist.artworkPath!),
+                                height: _homeTileImageSize,
+                                width: _homeTileImageSize,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  height: _homeTileImageSize,
+                                  width: _homeTileImageSize,
+                                  color: playlist.artworkColor != null
+                                      ? Color(playlist.artworkColor!)
+                                      : Colors.deepPurple.shade200,
+                                  child: const Icon(Icons.queue_music, color: Colors.white, size: 60),
+                                ),
+                              ),
+                            )
+                          : Container(
+                              height: _homeTileImageSize,
+                              width: _homeTileImageSize,
+                              decoration: BoxDecoration(
+                                color: playlist.artworkColor != null
+                                    ? Color(playlist.artworkColor!)
+                                    : Colors.deepPurple.shade200,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.queue_music, color: Colors.white, size: 60),
+                            ),
+                      const SizedBox(height: 12),
+                      Text(
+                        playlist.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                          color: Colors.white,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${songs.length} song${songs.length == 1 ? '' : 's'}',
+                        style: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // --- Recently Played Row ---
+  Widget _buildRecentlyPlayedRow() {
+    final audioService = context.watch<AudioPlayerService>();
+    final List<_RecentlyPlayedItem> items = [];
+    // Use the new recently played playlist IDs for ordering
+    for (final playlistId in audioService.recentlyPlayedPlaylistIds) {
+      if (playlistId == 'liked') {
+        final likedFiles = audioService.getPlaylistSongs('liked');
+        if (likedFiles.isNotEmpty) {
+          items.add(_RecentlyPlayedItem(
+            title: 'Liked Songs',
+            subtitle: '${likedFiles.length} song${likedFiles.length == 1 ? '' : 's'}',
+            icon: Icons.favorite,
+            color: Colors.deepPurple.shade200,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => PlaylistPage(
+                    playlistId: 'liked',
+                    title: 'Liked Songs',
+                    icon: Icons.favorite,
+                    allowReorder: true,
+                  ),
+                ),
+              );
+            },
+          ));
+        }
+      } else {
+        final playlist = audioService.customPlaylists.firstWhere(
+          (p) => p.id == playlistId,
+          orElse: () => CustomPlaylist(
+            id: '',
+            name: '',
+            songPaths: const [],
+            createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+            modifiedAt: DateTime.fromMillisecondsSinceEpoch(0),
+          ),
+        );
+        if (playlist.id.isNotEmpty) {
+          final songs = audioService.getPlaylistSongs(playlist.id);
+          if (songs.isNotEmpty) {
+            items.add(_RecentlyPlayedItem(
+              title: playlist.name,
+              subtitle: '${songs.length} song${songs.length == 1 ? '' : 's'}',
+              icon: Icons.queue_music,
+              color: playlist.artworkColor != null ? Color(playlist.artworkColor!) : Colors.deepPurple.shade200,
+              imagePath: playlist.artworkPath,
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => PlaylistPage(
+                      playlistId: playlist.id,
+                      title: playlist.name,
+                      icon: Icons.queue_music,
+                      allowReorder: true,
+                    ),
+                  ),
+                );
+              },
+            ));
+          }
+        }
+      }
+    }
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSection('Recently Played'),
+        SizedBox(
+          height: _homeRowHeight,
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            scrollDirection: Axis.horizontal,
+            itemCount: items.length > 10 ? 10 : items.length,
+            itemBuilder: (context, index) {
+              final item = items[index];
+              return GestureDetector(
+                onTap: item.onTap,
+                child: Container(
+                  width: _homeTileWidth,
+                  margin: const EdgeInsets.only(right: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      item.imagePath != null && item.imagePath!.isNotEmpty
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.file(
+                                File(item.imagePath!),
+                                height: _homeTileImageSize,
+                                width: _homeTileImageSize,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  height: _homeTileImageSize,
+                                  width: _homeTileImageSize,
+                                  color: item.color,
+                                  child: Icon(item.icon, color: Colors.white, size: 60),
+                                ),
+                              ),
+                            )
+                          : Container(
+                              height: _homeTileImageSize,
+                              width: _homeTileImageSize,
+                              decoration: BoxDecoration(
+                                color: item.color,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(item.icon, color: Colors.white, size: 60),
+                            ),
+                      const SizedBox(height: 12),
+                      Text(
+                        item.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                          color: Colors.white,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        item.subtitle,
+                        style: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 32), // Add extra gap below Recently Played
+      ],
+    );
+  }
+}
+
+// Helper class for recently played items
+class _RecentlyPlayedItem {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final String? imagePath;
+  final VoidCallback onTap;
+  _RecentlyPlayedItem({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    this.imagePath,
+    required this.onTap,
+  });
+}
+
+// Helper method to match genres with common variations
+bool _isGenreMatch(String stationGenre, String targetGenre) {
+  switch (targetGenre) {
+    case 'pop':
+      return stationGenre.contains('pop') || stationGenre.contains('top 40') || stationGenre.contains('hits');
+    case 'rock':
+      return stationGenre.contains('rock') || stationGenre.contains('metal') || stationGenre.contains('alternative');
+    case 'electronic':
+      return stationGenre.contains('electronic') || stationGenre.contains('dance') || stationGenre.contains('edm') || stationGenre.contains('techno') || stationGenre.contains('house');
+    case 'hip-hop':
+      return stationGenre.contains('hip') || stationGenre.contains('rap') || stationGenre.contains('r&b') || stationGenre.contains('rnb');
+    case 'jazz':
+      return stationGenre.contains('jazz') || stationGenre.contains('smooth') || stationGenre.contains('soul');
+    case 'classical':
+      return stationGenre.contains('classical') || stationGenre.contains('symphony') || stationGenre.contains('opera');
+    case 'country':
+      return stationGenre.contains('country') || stationGenre.contains('folk') || stationGenre.contains('americana');
+    case 'blues':
+      return stationGenre.contains('blues') || stationGenre.contains('rhythm');
+    case 'reggae':
+      return stationGenre.contains('reggae') || stationGenre.contains('ska') || stationGenre.contains('caribbean');
+    case 'latin':
+      return stationGenre.contains('latin') || stationGenre.contains('spanish') || stationGenre.contains('salsa') || stationGenre.contains('bachata');
+    case 'news':
+      return stationGenre.contains('news') || stationGenre.contains('current');
+    case 'talk':
+      return stationGenre.contains('talk') || stationGenre.contains('discussion') || stationGenre.contains('interview');
+    case 'sports':
+      return stationGenre.contains('sports') || stationGenre.contains('football') || stationGenre.contains('basketball');
+    default:
+      return false;
   }
 }

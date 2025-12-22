@@ -7,6 +7,11 @@ class AllStationsPage extends StatelessWidget {
   final List<RadioStation> stations;
   const AllStationsPage({super.key, required this.stations});
 
+  // Use the same sizing constants as HomePage
+  static const double _kTileImageSize = 150.0;
+  static const double _kTileWidth = 150.0;
+  static const double _kTextBlockHeight = 56.0;
+
   @override
   Widget build(BuildContext context) {
     final audioService = Provider.of<AudioPlayerService>(context, listen: false);
@@ -18,9 +23,10 @@ class AllStationsPage extends StatelessWidget {
       backgroundColor: Colors.black,
       body: GridView.builder(
         padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 1,
+          // width / height = _kTileWidth / (_kTileImageSize + _kTextBlockHeight)
+          childAspectRatio: _kTileWidth / (_kTileImageSize + _kTextBlockHeight),
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
         ),
@@ -31,6 +37,7 @@ class AllStationsPage extends StatelessWidget {
           return GestureDetector(
             onTap: () => audioService.playRadioStation(station),
             child: Container(
+              width: _kTileWidth,
               decoration: BoxDecoration(
                 color: Colors.transparent,
                 borderRadius: BorderRadius.circular(10),
@@ -38,7 +45,8 @@ class AllStationsPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
+                  SizedBox(
+                    height: _kTileImageSize,
                     child: Stack(
                       children: [
                         ClipRRect(
@@ -47,14 +55,17 @@ class AllStationsPage extends StatelessWidget {
                               ? Image.network(
                                   station.artworkUrl,
                                   width: double.infinity,
+                                  height: _kTileImageSize,
                                   fit: BoxFit.cover,
                                   filterQuality: FilterQuality.high,
                                   errorBuilder: (_, __, ___) => Container(
+                                    height: _kTileImageSize,
                                     color: Colors.deepPurple.shade200,
                                     child: const Icon(Icons.radio, color: Colors.white, size: 60),
                                   ),
                                 )
                               : Container(
+                                  height: _kTileImageSize,
                                   color: Colors.deepPurple.shade200,
                                   child: const Icon(Icons.radio, color: Colors.white, size: 60),
                                 ),
@@ -77,27 +88,34 @@ class AllStationsPage extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    station.name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                      color: Colors.white,
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                    child: Text(
+                      station.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                        color: Colors.white,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    station.genre,
-                    style: TextStyle(
-                      color: Colors.grey[400],
-                      fontSize: 14,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                    child: Text(
+                      station.genre,
+                      style: TextStyle(
+                        color: Colors.grey[400],
+                        fontSize: 14,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 8),
                 ],
               ),
             ),
