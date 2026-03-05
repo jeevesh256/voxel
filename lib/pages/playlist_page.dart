@@ -9,7 +9,6 @@ import '../widgets/create_playlist_dialog.dart';
 import '../models/custom_playlist.dart';
 import '../models/song.dart';
 import 'package:just_audio_background/just_audio_background.dart';
-import 'package:palette_generator/palette_generator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
@@ -42,19 +41,29 @@ class _PlaylistPageState extends State<PlaylistPage> {
   bool _isAscending = false;
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
-  Color? _dominantColor;
-  bool _isLoadingColor = false;
   final MetadataService _metadataService = MetadataService();
   final SongMetadataCache _metadataCache = SongMetadataCache();
+  
+  // Performance optimization: Cache filtered songs
+  List<File>? _cachedFilteredSongs;
+  String _lastSearchQuery = '';
+  SortOption _lastSortOption = SortOption.dateAdded;
+  bool _lastIsAscending = false;
+  int _lastSongCount = 0;
+  bool _isLoadingSongs = false;
+  
+  // Consistent playlist colors - no extraction needed
+  final Color _playlistColor = Colors.deepPurple.shade400;
+  late final Color _playlistColorSubtle;
+  late final Color _playlistColorFaint;
 
   @override
   void initState() {
     super.initState();
     _initializeCache();
-    // Extract color when the widget initializes - do it once
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _extractColorIfNeeded();
-    });
+    // Set consistent colors
+    _playlistColorSubtle = _playlistColor.withOpacity(0.7);
+    _playlistColorFaint = _playlistColor.withOpacity(0.15);
   }
 
   Future<void> _initializeCache() async {
@@ -67,60 +76,39 @@ class _PlaylistPageState extends State<PlaylistPage> {
     super.dispose();
   }
 
-  Future<Color?> _extractDominantColor(String imagePath) async {
-    try {
-      setState(() {
-        _isLoadingColor = true;
-      });
-      
-      final imageProvider = FileImage(File(imagePath));
-      final paletteGenerator = await PaletteGenerator.fromImageProvider(
-        imageProvider,
-        maximumColorCount: 6, // Reduced for better performance
-      );
-      
-      // Simple fallback chain - just get any available color
-      Color? dominantColor = paletteGenerator.vibrantColor?.color ?? 
-                           paletteGenerator.dominantColor?.color;
-      
-      setState(() {
-        _dominantColor = dominantColor;
-        _isLoadingColor = false;
-      });
-      
-      return dominantColor;
-    } catch (e) {
-      setState(() {
-        _isLoadingColor = false;
-      });
-      return null;
-    }
-  }
-
-  void _extractColorIfNeeded() {
-    final audioService = context.read<AudioPlayerService>();
-    final customPlaylist = audioService.getCustomPlaylist(widget.playlistId);
-    if (customPlaylist?.artworkPath != null && _dominantColor == null && !_isLoadingColor) {
-      // Only extract if the image file exists to avoid unnecessary work
-      if (File(customPlaylist!.artworkPath!).existsSync()) {
-        _extractDominantColor(customPlaylist.artworkPath!);
-      }
-    }
-  }
-
   bool _isMiniPlayerActive(AudioPlayerService audioService) {
     final seqState = audioService.player.sequenceState;
     return seqState?.sequence.isNotEmpty ?? false;
   }
 
   List<File> _getFilteredAndSortedSongs(List<File> songs) {
-    final entries = songs.map((file) => MapEntry(file, _metadataCache.createSongFromFile(file))).toList();
+    // Check if we can use cached results for performance
+    if (_cachedFilteredSongs != null &&
+        _lastSearchQuery == _searchQuery &&
+        _lastSortOption == _sortOption &&
+        _lastIsAscending == _isAscending &&
+        _lastSongCount == songs.length) {
+      return _cachedFilteredSongs!;
+    }
+    
+    // Process songs in chunks to avoid blocking UI for large playlists
+    if (songs.length > 200 && !_isLoadingSongs) {
+      _processLargePlaylists(songs);
+      return _cachedFilteredSongs ?? [];
+    }
+    
+    final entries = songs
+        .map((file) => MapEntry(file, _metadataCache.createSongFromFile(file)))
+        .toList();
 
     // Filter by search query (use title/artist/filename)
     final query = _searchQuery.toLowerCase();
     List<MapEntry<File, Song>> filtered = entries.where((entry) {
       final song = entry.value;
-      final filename = entry.key.path.split('/').last.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
+      final filename = entry.key.path
+          .split('/')
+          .last
+          .replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
       return song.title.toLowerCase().contains(query) ||
           song.artist.toLowerCase().contains(query) ||
           filename.toLowerCase().contains(query);
@@ -153,7 +141,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
         filtered.sort((a, b) {
           final artistA = a.value.artist.toLowerCase();
           final artistB = b.value.artist.toLowerCase();
-          final cmp = _isAscending ? artistA.compareTo(artistB) : artistB.compareTo(artistA);
+          final cmp = _isAscending
+              ? artistA.compareTo(artistB)
+              : artistB.compareTo(artistA);
           if (cmp != 0) return cmp;
           final nameA = a.value.title.toLowerCase();
           final nameB = b.value.title.toLowerCase();
@@ -162,9 +152,13 @@ class _PlaylistPageState extends State<PlaylistPage> {
         break;
       case SortOption.album:
         filtered.sort((a, b) {
-          final albumA = (a.value.album.isNotEmpty ? a.value.album : 'Unknown').toLowerCase();
-          final albumB = (b.value.album.isNotEmpty ? b.value.album : 'Unknown').toLowerCase();
-          final albumCompare = _isAscending ? albumA.compareTo(albumB) : albumB.compareTo(albumA);
+          final albumA = (a.value.album.isNotEmpty ? a.value.album : 'Unknown')
+              .toLowerCase();
+          final albumB = (b.value.album.isNotEmpty ? b.value.album : 'Unknown')
+              .toLowerCase();
+          final albumCompare = _isAscending
+              ? albumA.compareTo(albumB)
+              : albumB.compareTo(albumA);
           if (albumCompare != 0) return albumCompare;
           final nameA = a.value.title.toLowerCase();
           final nameB = b.value.title.toLowerCase();
@@ -173,33 +167,138 @@ class _PlaylistPageState extends State<PlaylistPage> {
         break;
     }
 
-    return filtered.map((e) => e.key).toList();
+    final result = filtered.map((e) => e.key).toList();
+    
+    // Cache the results for better performance
+    _cachedFilteredSongs = result;
+    _lastSearchQuery = _searchQuery;
+    _lastSortOption = _sortOption;
+    _lastIsAscending = _isAscending;
+    _lastSongCount = songs.length;
+    
+    return result;
+  }
+  
+  // Process large playlists asynchronously to prevent UI blocking
+  void _processLargePlaylists(List<File> songs) async {
+    if (_isLoadingSongs) return;
+    
+    setState(() {
+      _isLoadingSongs = true;
+    });
+    
+    // Process in background
+    final result = await Future.microtask(() {
+      final entries = songs
+          .map((file) => MapEntry(file, _metadataCache.createSongFromFile(file)))
+          .toList();
+
+      final query = _searchQuery.toLowerCase();
+      List<MapEntry<File, Song>> filtered = entries.where((entry) {
+        final song = entry.value;
+        final filename = entry.key.path
+            .split('/')
+            .last
+            .replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
+        return song.title.toLowerCase().contains(query) ||
+            song.artist.toLowerCase().contains(query) ||
+            filename.toLowerCase().contains(query);
+      }).toList();
+      
+      // Apply sorting logic (same as main method)
+      switch (_sortOption) {
+        case SortOption.name:
+          filtered.sort((a, b) {
+            final nameA = a.value.title.toLowerCase();
+            final nameB = b.value.title.toLowerCase();
+            return _isAscending ? nameA.compareTo(nameB) : nameB.compareTo(nameA);
+          });
+          break;
+        case SortOption.dateAdded:
+          if (widget.playlistId == 'liked') {
+            if (_isAscending) {
+              filtered = filtered.reversed.toList();
+            }
+          } else {
+            filtered.sort((a, b) {
+              final statA = a.key.statSync();
+              final statB = b.key.statSync();
+              return _isAscending
+                  ? statA.modified.compareTo(statB.modified)
+                  : statB.modified.compareTo(statA.modified);
+            });
+          }
+          break;
+        case SortOption.artist:
+          filtered.sort((a, b) {
+            final artistA = a.value.artist.toLowerCase();
+            final artistB = b.value.artist.toLowerCase();
+            final cmp = _isAscending
+                ? artistA.compareTo(artistB)
+                : artistB.compareTo(artistA);
+            if (cmp != 0) return cmp;
+            final nameA = a.value.title.toLowerCase();
+            final nameB = b.value.title.toLowerCase();
+            return _isAscending ? nameA.compareTo(nameB) : nameB.compareTo(nameA);
+          });
+          break;
+        case SortOption.album:
+          filtered.sort((a, b) {
+            final albumA = (a.value.album.isNotEmpty ? a.value.album : 'Unknown')
+                .toLowerCase();
+            final albumB = (b.value.album.isNotEmpty ? b.value.album : 'Unknown')
+                .toLowerCase();
+            final albumCompare = _isAscending
+                ? albumA.compareTo(albumB)
+                : albumB.compareTo(albumA);
+            if (albumCompare != 0) return albumCompare;
+            final nameA = a.value.title.toLowerCase();
+            final nameB = b.value.title.toLowerCase();
+            return _isAscending ? nameA.compareTo(nameB) : nameB.compareTo(nameA);
+          });
+          break;
+      }
+      
+      return filtered.map((e) => e.key).toList();
+    });
+    
+    if (mounted) {
+      setState(() {
+        _cachedFilteredSongs = result;
+        _lastSearchQuery = _searchQuery;
+        _lastSortOption = _sortOption;
+        _lastIsAscending = _isAscending;
+        _lastSongCount = songs.length;
+        _isLoadingSongs = false;
+      });
+    }
+  }
+  
+  // Clear cache when filters change
+  void _clearSongCache() {
+    _cachedFilteredSongs = null;
   }
 
   Future<void> _showAddToPlaylistDialog(File song) async {
     final audioService = context.read<AudioPlayerService>();
     final customPlaylists = audioService.customPlaylists;
-    final currentCustomPlaylist = audioService.getCustomPlaylist(widget.playlistId);
-    
-    // Determine the color to use
-    Color dialogColor = Colors.deepPurple.shade400; // Default color
-    if (currentCustomPlaylist?.artworkColor != null) {
-      dialogColor = Color(currentCustomPlaylist!.artworkColor!);
-    }
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.grey[900],
-        title: const Text('Add to Playlist', style: TextStyle(color: Colors.white)),
+        title: const Text('Add to Playlist',
+            style: TextStyle(color: Colors.white)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Create new playlist option
             ListTile(
-              leading: Icon(Icons.add, color: dialogColor),
-              title: const Text('Create New Playlist', style: TextStyle(color: Colors.white)),
-              subtitle: Text('Create a new playlist with this song', style: TextStyle(color: Colors.grey[400])),
+              leading: Icon(Icons.add, color: _playlistColor),
+              title: const Text('Create New Playlist',
+                  style: TextStyle(color: Colors.white)),
+              subtitle: Text('Create a new playlist with this song',
+                  style: TextStyle(color: Colors.grey[400])),
               onTap: () async {
                 Navigator.of(context).pop();
                 await _createPlaylistWithSong(song);
@@ -209,64 +308,91 @@ class _PlaylistPageState extends State<PlaylistPage> {
               const Divider(color: Colors.grey),
               // Existing playlists
               ...customPlaylists.map((playlist) => ListTile(
-                leading: playlist.artworkPath != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image.file(
-                          File(playlist.artworkPath!),
-                          width: 40,
-                          height: 40,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => playlist.artworkColor != null
-                              ? Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: Color(playlist.artworkColor!),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: const Icon(
-                                    Icons.queue_music,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                )
-                              : Icon(
-                                  Icons.queue_music,
-                                  color: Colors.deepPurple.shade400,
-                                ),
-                        ),
-                      )
-                    : playlist.artworkColor != null
+                    leading: playlist.artworkPath != null
                         ? Container(
-                            width: 40,
-                            height: 40,
+                            width: 48,
+                            height: 48,
                             decoration: BoxDecoration(
-                              color: Color(playlist.artworkColor!),
                               borderRadius: BorderRadius.circular(6),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black26,
+                                  blurRadius: 3,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ],
                             ),
-                            child: const Icon(
-                              Icons.queue_music,
-                              color: Colors.white,
-                              size: 20,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Image.file(
+                                File(playlist.artworkPath!),
+                                width: 48,
+                                height: 48,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => playlist
+                                            .artworkColor !=
+                                        null
+                                    ? Container(
+                                        width: 48,
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          color: Color(playlist.artworkColor!),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: const Icon(
+                                          Icons.queue_music,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                      )
+                                    : Icon(
+                                        Icons.queue_music,
+                                        color: Colors.deepPurple.shade400,
+                                      ),
+                              ),
                             ),
                           )
-                        : Icon(Icons.queue_music, color: Colors.deepPurple.shade400),
-                title: Text(playlist.name, style: const TextStyle(color: Colors.white)),
-                subtitle: Text('${playlist.songPaths.length} songs', style: TextStyle(color: Colors.grey[400])),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  audioService.addSongToCustomPlaylist(playlist.id, song);
-                  Future.delayed(const Duration(milliseconds: 100), () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Added to ${playlist.name}'),
-                        backgroundColor: Colors.deepPurple.shade400,
-                      ),
-                    );
-                  });
-                },
-              )),
+                        : playlist.artworkColor != null
+                            ? Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: _playlistColor,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Icon(
+                                  Icons.queue_music,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              )
+                            : Icon(Icons.queue_music,
+                                color: _playlistColor),
+                    title: Text(playlist.name,
+                        style: const TextStyle(color: Colors.white)),
+                    subtitle: Text('${playlist.songPaths.length} songs',
+                        style: TextStyle(color: Colors.grey[400])),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      audioService.addSongToCustomPlaylist(playlist.id, song);
+                      Future.delayed(const Duration(milliseconds: 100), () {
+                        final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
+                        final bottomMargin = (MediaQuery.of(context).padding.bottom) + kBottomNavigationBarHeight + miniPlayerHeight;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            behavior: SnackBarBehavior.floating,
+                            margin: EdgeInsets.only(
+                              left: 16,
+                              right: 16,
+                              bottom: bottomMargin,
+                            ),
+                            content: Text('Added to ${playlist.name}'),
+                            backgroundColor: Colors.deepPurple.shade400,
+                          ),
+                        );
+                      });
+                    },
+                  )),
             ],
           ],
         ),
@@ -317,6 +443,11 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     expand: false,
                     builder: (context, scrollController) {
                       return CreatePlaylistDialog(
+                        initialName: '',
+                        initialArtworkPath: '',
+                        initialColor: null,
+                        titleText: 'Create Playlist',
+                        actionText: 'Create',
                         useBottomSheetStyle: true,
                         sheetScrollController: scrollController,
                       );
@@ -329,7 +460,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
         );
       },
     );
-    
+
     if (result != null) {
       final audioService = context.read<AudioPlayerService>();
       final playlist = await audioService.createCustomPlaylist(
@@ -337,15 +468,23 @@ class _PlaylistPageState extends State<PlaylistPage> {
         artworkPath: result['artworkPath'],
         artworkColor: result['color'],
       );
-      
+
       // Add the song to the newly created playlist
       audioService.addSongToCustomPlaylist(playlist.id, song);
-      
+
       Future.delayed(const Duration(milliseconds: 100), () {
+        final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
+        final bottomMargin = (MediaQuery.of(context).padding.bottom) + kBottomNavigationBarHeight + miniPlayerHeight;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            behavior: SnackBarBehavior.floating,
+            margin: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              bottom: bottomMargin,
+            ),
             content: Text('Created "${result['name']}" and added song'),
-            backgroundColor: result['color'] != null ? Color(result['color']) : Colors.deepPurple.shade400,
+            backgroundColor: _playlistColor,
           ),
         );
       });
@@ -354,38 +493,35 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
   Future<void> _updateMetadata(File file) async {
     final audioService = context.read<AudioPlayerService>();
-    final customPlaylist = audioService.getCustomPlaylist(widget.playlistId);
-    
-    Color dialogColor = Colors.deepPurple.shade400;
-    if (customPlaylist?.artworkColor != null) {
-      dialogColor = Color(customPlaylist!.artworkColor!);
-    }
 
     // Get current song data from cache or file
     final currentSong = await _metadataCache.createSongFromFile(file);
-    
+
     Song? updatedSong;
     String? errorMessage;
 
     try {
       // Fetch from API by default
-      updatedSong = await _metadataService.updateSongMetadata(currentSong).timeout(
+      updatedSong =
+          await _metadataService.updateSongMetadata(currentSong).timeout(
         const Duration(seconds: 15),
         onTimeout: () {
           print('Metadata update timed out');
           return currentSong;
         },
       );
-      
+
       // Save the updated metadata to cache
       await _metadataCache.saveMetadata(updatedSong);
-      
+
       // Refresh player and queue metadata
       await audioService.refreshCurrentMetadata();
-      audioService.notifyListeners();
-      
+
       print('Metadata update completed successfully and saved to cache');
-      
+
+      // Clear song cache to force refresh
+      _clearSongCache();
+
       // Trigger UI refresh
       if (mounted) {
         setState(() {});
@@ -398,8 +534,17 @@ class _PlaylistPageState extends State<PlaylistPage> {
     // Show results or error - no loading dialog needed
     if (errorMessage != null) {
       if (context.mounted) {
+        final audioService = context.read<AudioPlayerService>();
+        final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
+        final bottomMargin = (MediaQuery.of(context).padding.bottom) + kBottomNavigationBarHeight + miniPlayerHeight;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            behavior: SnackBarBehavior.floating,
+            margin: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              bottom: bottomMargin,
+            ),
             content: Text('Error updating metadata: $errorMessage'),
             backgroundColor: Colors.red.shade400,
           ),
@@ -413,9 +558,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
           backgroundColor: Colors.grey[900],
           title: Row(
             children: [
-              Icon(Icons.info_outline, color: dialogColor),
+              Icon(Icons.info_outline, color: _playlistColor),
               const SizedBox(width: 8),
-              const Text('Updated Metadata', style: TextStyle(color: Colors.white)),
+              const Text('Updated Metadata',
+                  style: TextStyle(color: Colors.white)),
             ],
           ),
           content: Column(
@@ -424,27 +570,43 @@ class _PlaylistPageState extends State<PlaylistPage> {
             children: [
               if (song.albumArt.isNotEmpty) ...[
                 Center(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.file(
-                      File(song.albumArt),
-                      width: 150,
-                      height: 150,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  child: Container(
+                    width: 180,
+                    height: 180,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black26,
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        File(song.albumArt),
+                        width: 180,
+                        height: 180,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 16),
               ],
-              _buildMetadataRow('Title', song.title, dialogColor),
+              _buildMetadataRow('Title', song.title, _playlistColor),
               const SizedBox(height: 8),
-              _buildMetadataRow('Artist', song.artist, dialogColor),
+              _buildMetadataRow('Artist', song.artist, _playlistColor),
               const SizedBox(height: 8),
-              _buildMetadataRow('Album', song.album.isNotEmpty ? song.album : 'Unknown', dialogColor),
+              _buildMetadataRow('Album',
+                  song.album.isNotEmpty ? song.album : 'Unknown', _playlistColor),
               if (song.duration != const Duration(minutes: 3)) ...[
                 const SizedBox(height: 8),
-                _buildMetadataRow('Duration', _formatDuration(song.duration), dialogColor),
+                _buildMetadataRow(
+                    'Duration', _formatDuration(song.duration), _playlistColor),
               ],
             ],
           ),
@@ -453,13 +615,13 @@ class _PlaylistPageState extends State<PlaylistPage> {
               onPressed: () async {
                 Navigator.of(dialogContext).pop();
                 // Show edit dialog for manual correction
-                await _showManualEditDialog(file, song, dialogColor);
+                await _showManualEditDialog(file, song, _playlistColor);
               },
-              child: Text('Edit', style: TextStyle(color: dialogColor)),
+              child: Text('Edit', style: TextStyle(color: _playlistColor)),
             ),
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text('OK', style: TextStyle(color: dialogColor)),
+              child: Text('OK', style: TextStyle(color: _playlistColor)),
             ),
           ],
         ),
@@ -467,14 +629,14 @@ class _PlaylistPageState extends State<PlaylistPage> {
     }
   }
 
-  Future<void> _showManualEditDialog(File file, Song song, Color accentColor) async {
+  Future<void> _showManualEditDialog(
+      File file, Song song, Color accentColor) async {
     final titleController = TextEditingController(text: song.title);
     final artistController = TextEditingController(text: song.artist);
-    final albumController = TextEditingController(text: song.album.isEmpty ? 'Unknown' : song.album);
+    final albumController = TextEditingController(
+        text: song.album.isEmpty ? 'Unknown' : song.album);
     String? selectedAlbumArt = song.albumArt.isNotEmpty ? song.albumArt : null;
-    bool applyingCandidate = false;
-    String? applyingCandidateId;
-    
+
     final result = await showDialog<Map<String, dynamic>?>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -484,7 +646,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
             children: [
               Icon(Icons.edit, color: accentColor),
               const SizedBox(width: 8),
-              const Text('Edit Metadata', style: TextStyle(color: Colors.white)),
+              const Text('Edit Metadata',
+                  style: TextStyle(color: Colors.white)),
             ],
           ),
           content: SingleChildScrollView(
@@ -495,44 +658,59 @@ class _PlaylistPageState extends State<PlaylistPage> {
                 GestureDetector(
                   onTap: () async {
                     final ImagePicker picker = ImagePicker();
-                    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-                    
+                    final XFile? image =
+                        await picker.pickImage(source: ImageSource.gallery);
+
                     if (image != null) {
                       // Copy image to app directory
                       final appDir = await getApplicationDocumentsDirectory();
-                      final fileName = 'album_art_${DateTime.now().millisecondsSinceEpoch}.jpg';
-                      final savedImage = await File(image.path).copy('${appDir.path}/$fileName');
-                      
+                      final fileName =
+                          'album_art_${DateTime.now().millisecondsSinceEpoch}.jpg';
+                      final savedImage = await File(image.path)
+                          .copy('${appDir.path}/$fileName');
+
                       setDialogState(() {
                         selectedAlbumArt = savedImage.path;
                       });
                     }
                   },
                   child: Container(
-                    width: 150,
-                    height: 150,
+                    width: 180,
+                    height: 180,
                     decoration: BoxDecoration(
                       color: Colors.grey[800],
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: selectedAlbumArt != null && selectedAlbumArt!.isNotEmpty
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.file(
-                              File(selectedAlbumArt!),
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Icon(
+                            ? Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black26,
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.file(
+                                    File(selectedAlbumArt!),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Icon(
+                                      Icons.add_photo_alternate,
+                                      size: 50,
+                                      color: accentColor,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : Icon(
                                 Icons.add_photo_alternate,
                                 size: 50,
                                 color: accentColor,
                               ),
-                            ),
-                          )
-                        : Icon(
-                            Icons.add_photo_alternate,
-                            size: 50,
-                            color: accentColor,
-                          ),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -592,7 +770,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.grey[850],
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
                     ),
                     icon: const Icon(Icons.travel_explore, size: 18),
                     label: const Text('Advanced search'),
@@ -604,9 +783,12 @@ class _PlaylistPageState extends State<PlaylistPage> {
                         onApply: (result, artPath) {
                           titleController.text = result.title;
                           artistController.text = result.artist;
-                          albumController.text = result.album.isNotEmpty ? result.album : 'Unknown';
+                          albumController.text = result.album.isNotEmpty
+                              ? result.album
+                              : 'Unknown';
                           setDialogState(() {
-                            selectedAlbumArt = artPath ?? selectedAlbumArt ?? song.albumArt;
+                            selectedAlbumArt =
+                                artPath ?? selectedAlbumArt ?? song.albumArt;
                           });
                         },
                         currentTitle: titleController.text,
@@ -636,7 +818,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
         ),
       ),
     );
-    
+
     if (result != null && mounted) {
       // Save manual edits
       final editedSong = song.copyWith(
@@ -645,28 +827,37 @@ class _PlaylistPageState extends State<PlaylistPage> {
         album: result['album'] as String,
         albumArt: result['albumArt'] as String,
       );
-      
+
       await _metadataCache.saveMetadata(editedSong);
-      
+
       // Refresh player and queue metadata
       final audioService = context.read<AudioPlayerService>();
       await audioService.refreshCurrentMetadata();
-      audioService.notifyListeners();
-      
+
+      // Clear song cache to force refresh
+      _clearSongCache();
+
       // Refresh UI
       setState(() {});
-      
+
       // Show confirmation
       if (mounted) {
+        final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
+        final bottomMargin = (MediaQuery.of(context).padding.bottom) + kBottomNavigationBarHeight + miniPlayerHeight;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            behavior: SnackBarBehavior.floating,
+            margin: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              bottom: bottomMargin,
+            ),
             content: const Text('Metadata updated'),
-            backgroundColor: accentColor,
+            backgroundColor: _playlistColor,
           ),
         );
       }
     }
-    
   }
 
   Future<void> _showMusicBrainzSurfer({
@@ -708,8 +899,11 @@ class _PlaylistPageState extends State<PlaylistPage> {
             for (final candidate in candidates) {
               try {
                 final uri = Uri.parse(candidate);
-                final response = await http.get(uri).timeout(const Duration(seconds: 3));
-                if (response.statusCode >= 200 && response.statusCode < 300 && response.bodyBytes.isNotEmpty) {
+                final response =
+                    await http.get(uri).timeout(const Duration(seconds: 3));
+                if (response.statusCode >= 200 &&
+                    response.statusCode < 300 &&
+                    response.bodyBytes.isNotEmpty) {
                   return response.bodyBytes;
                 }
               } catch (_) {
@@ -735,7 +929,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
               children: [
                 Icon(Icons.travel_explore, color: accentColor),
                 const SizedBox(width: 8),
-                const Text('Suggestions', style: TextStyle(color: Colors.white)),
+                const Text('Suggestions',
+                    style: TextStyle(color: Colors.white)),
               ],
             ),
             content: SizedBox(
@@ -753,7 +948,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                             labelText: 'Title',
                             labelStyle: TextStyle(color: accentColor),
                             enabledBorder: UnderlineInputBorder(
-                              borderSide: BorderSide(color: Colors.grey.shade700),
+                              borderSide:
+                                  BorderSide(color: Colors.grey.shade700),
                             ),
                             focusedBorder: UnderlineInputBorder(
                               borderSide: BorderSide(color: accentColor),
@@ -772,7 +968,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                             labelText: 'Artist (optional)',
                             labelStyle: TextStyle(color: accentColor),
                             enabledBorder: UnderlineInputBorder(
-                              borderSide: BorderSide(color: Colors.grey.shade700),
+                              borderSide:
+                                  BorderSide(color: Colors.grey.shade700),
                             ),
                             focusedBorder: UnderlineInputBorder(
                               borderSide: BorderSide(color: accentColor),
@@ -791,7 +988,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: accentColor,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
                       ),
                       icon: const Icon(Icons.search, size: 18),
                       label: const Text('Search'),
@@ -801,153 +999,69 @@ class _PlaylistPageState extends State<PlaylistPage> {
                   const SizedBox(height: 12),
                   Expanded(
                     child: FutureBuilder<List<MetadataResult>>(
-                      future: futureResults,
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(
-                            child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
-                          );
-                        }
-
-                        if (futureResults == null) {
-                          return const Center(
-                            child: Text('Enter a title/artist to search', style: TextStyle(color: Colors.white70)),
-                          );
-                        }
-
-                        if (snapshot.hasError) {
-                          return Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Text('Search failed: ${snapshot.error}', style: const TextStyle(color: Colors.redAccent)),
-                          );
-                        }
-
-                        final results = snapshot.data ?? [];
-                        if (results.isEmpty) {
-                          return const Center(
-                            child: Text('No results found', style: TextStyle(color: Colors.white70)),
-                          );
-                        }
-
-                        return ListView.separated(
-                          itemCount: results.length,
-                          separatorBuilder: (_, __) => const Divider(color: Colors.grey),
-                          itemBuilder: (context, index) {
-                            final result = results[index];
-                            bool isApplying = false;
-                            final isITunes = (result.source ?? '').toLowerCase() == 'itunes';
-
-                            return StatefulBuilder(
-                              builder: (context, setRowState) {
-                                return ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  leading: SizedBox(
-                                    width: 56,
-                                    height: 56,
-                                    child: FutureBuilder<Uint8List?>(
-                                      future: getPreviewFuture(result.coverArtUrl),
-                                      builder: (context, artSnap) {
-                                        if (artSnap.connectionState == ConnectionState.waiting) {
-                                          return Container(
-                                            decoration: BoxDecoration(
-                                              color: Colors.grey[850],
-                                              borderRadius: BorderRadius.circular(6),
-                                            ),
-                                            child: const Center(
-                                              child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-                                            ),
-                                          );
-                                        }
-
-                                        if (artSnap.data != null) {
-                                          return ClipRRect(
-                                            borderRadius: BorderRadius.circular(6),
-                                            child: Image.memory(
-                                              artSnap.data!,
-                                              fit: BoxFit.cover,
-                                            ),
-                                          );
-                                        }
-
-                                        return Container(
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey[800],
-                                            borderRadius: BorderRadius.circular(6),
-                                          ),
-                                          child: const Icon(Icons.album, color: Colors.white54),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                  title: Text(result.title, style: const TextStyle(color: Colors.white)),
-                                  subtitle: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        [result.artist, result.album].where((e) => e != null && e.isNotEmpty).join(' • '),
-                                        style: TextStyle(color: Colors.grey[400]),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            Icons.public,
-                                            size: 16,
-                                            color: isITunes ? Colors.red.shade300 : Colors.green.shade300,
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                  trailing: isApplying
-                                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                                      : TextButton(
-                                          onPressed: () async {
-                                            if (isApplying) return;
-                                            setRowState(() => isApplying = true);
-
-                                            String? artPath;
-                                            final identifier = '${result.artist}_${result.title}';
-
-                                            // Try official cover art download first
-                                            if (result.releaseId != null && result.releaseId!.isNotEmpty) {
-                                              artPath = await _metadataService.downloadCoverArtForRelease(
-                                                releaseId: result.releaseId!,
-                                                identifier: identifier,
-                                              );
-                                            }
-
-                                            // Fallback: use preview-loaded bytes if download failed
-                                            if (artPath == null) {
-                                              final previewBytes = await fetchCoverArtPreview(result.coverArtUrl);
-                                              if (previewBytes != null) {
-                                                artPath = await _metadataService.saveAlbumArtBytes(
-                                                  bytes: previewBytes,
-                                                  identifier: identifier,
-                                                );
-                                              }
-                                            }
-
-                                            // Last resort: direct download from URL if still nothing (e.g., iTunes high-res art)
-                                            if (artPath == null && result.coverArtUrl != null && result.coverArtUrl!.isNotEmpty) {
-                                              artPath = await _metadataService.downloadCoverArtFromUrl(
-                                                url: result.coverArtUrl!,
-                                                identifier: identifier,
-                                              );
-                                            }
-
-                                            onApply(result, artPath);
-                                            Navigator.of(ctx).pop();
-                                          },
-                                          child: Text('Use', style: TextStyle(color: accentColor)),
-                                        ),
-                                );
-                              },
+                        future: futureResults,
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                              child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2)),
                             );
-                          },
-                        );
-                      },
-                    ),
+                          }
+
+                          if (futureResults == null) {
+                            return const Center(
+                              child: Text('Enter a title/artist to search',
+                                  style: TextStyle(color: Colors.white70)),
+                            );
+                          }
+
+                          if (snapshot.hasError) {
+                            return Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Text('Search failed: ${snapshot.error}',
+                                  style:
+                                      const TextStyle(color: Colors.redAccent)),
+                            );
+                          }
+
+                          final results = snapshot.data ?? [];
+                          if (results.isEmpty) {
+                            return const Center(
+                              child: Text('No results found',
+                                  style: TextStyle(color: Colors.white70)),
+                            );
+                          }
+
+                          return ListView.separated(
+                            itemCount: results.length,
+                            physics: const BouncingScrollPhysics(),
+                            separatorBuilder: (_, __) =>
+                                const Divider(color: Colors.grey),
+                            itemBuilder: (context, index) {
+                              final result = results[index];
+                              final isITunes =
+                                  (result.source ?? '').toLowerCase() ==
+                                      'itunes';
+
+                              return RepaintBoundary(
+                                child: _ApplyableMetadataItem(
+                                  result: result,
+                                  isITunes: isITunes,
+                                  metadataService: _metadataService,
+                                  onApply: (artPath) {
+                                    Navigator.of(ctx).pop();
+                                    onApply(result, artPath);
+                                  },
+                                  getPreviewFuture: getPreviewFuture,
+                                ),
+                              );
+                            },
+                          );
+                        }),
                   ),
                 ],
               ),
@@ -955,7 +1069,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Close', style: TextStyle(color: Colors.grey)),
+                child:
+                    const Text('Close', style: TextStyle(color: Colors.grey)),
               ),
             ],
           );
@@ -1008,7 +1123,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
       dismissed = true;
       Navigator.of(ctx, rootNavigator: true).pop();
     }
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1076,32 +1191,49 @@ class _PlaylistPageState extends State<PlaylistPage> {
                               padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                               child: Row(
                                 children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: cachedSong.albumArt.isNotEmpty
-                                        ? Image.file(
-                                            File(cachedSong.albumArt),
-                                            width: 60,
-                                            height: 60,
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) => Container(
-                                              width: 60,
-                                              height: 60,
-                                              color: Colors.grey[800],
-                                              child: const Icon(Icons.music_note, color: Colors.white),
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black26,
+                                          blurRadius: 4,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: cachedSong.albumArt.isNotEmpty
+                                          ? Image.file(
+                                              File(cachedSong.albumArt),
+                                              width: 75,
+                                              height: 75,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) =>
+                                                  Container(
+                                                width: 75,
+                                                height: 75,
+                                                color: accentColor,
+                                                child: const Icon(
+                                                    Icons.music_note,
+                                                    color: Colors.white),
+                                              ),
+                                            )
+                                          : Container(
+                                              width: 75,
+                                              height: 75,
+                                              color: accentColor,
+                                              child: const Icon(Icons.music_note,
+                                                  color: Colors.white),
                                             ),
-                                          )
-                                        : Container(
-                                            width: 60,
-                                            height: 60,
-                                            color: Colors.grey[800],
-                                            child: const Icon(Icons.music_note, color: Colors.white),
-                                          ),
+                                    ),
                                   ),
                                   const SizedBox(width: 16),
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           cachedSong.title,
@@ -1110,7 +1242,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                                             fontSize: 16,
                                             fontWeight: FontWeight.w600,
                                           ),
-                                          maxLines: 1,
+                                          maxLines: 3,
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                         const SizedBox(height: 4),
@@ -1120,7 +1252,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                                             color: Colors.grey[400],
                                             fontSize: 14,
                                           ),
-                                          maxLines: 1,
+                                          maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ],
@@ -1150,13 +1282,20 @@ class _PlaylistPageState extends State<PlaylistPage> {
                             color: Colors.blue.shade400,
                             onTap: () {
                               Navigator.pop(context);
-                              final bottomMargin = (MediaQuery.of(context).padding.bottom) + kBottomNavigationBarHeight + 70.0;
 
                               if (_isMiniPlayerActive(audioService)) {
-                                final playlistHandler = context.read<PlaylistHandler>();
-                                final song = _metadataCache.createSongFromFile(file);
-                                final insertIndex = (audioService.player.currentIndex ?? 0) + 1;
-                                playlistHandler.insertAtQueue(song, insertIndex);
+                                final bottomMargin =
+                                    (MediaQuery.of(context).padding.bottom) +
+                                        kBottomNavigationBarHeight +
+                                        70.0;
+                                final playlistHandler =
+                                    context.read<PlaylistHandler>();
+                                final song =
+                                    _metadataCache.createSongFromFile(file);
+                                final insertIndex =
+                                    (audioService.player.currentIndex ?? 0) + 1;
+                                playlistHandler.insertAtQueue(
+                                    song, insertIndex);
 
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
@@ -1172,7 +1311,13 @@ class _PlaylistPageState extends State<PlaylistPage> {
                                 );
                               } else {
                                 // No mini player active: start playback with this song immediately
-                                audioService.playFileInContextWithPlaylistId(file, songs, widget.playlistId);
+                                audioService.playFileInContextWithPlaylistId(
+                                    file, songs, widget.playlistId);
+                                
+                                final bottomMargin =
+                                    (MediaQuery.of(context).padding.bottom) +
+                                        kBottomNavigationBarHeight +
+                                        70.0; // Mini player will be active after this
 
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
@@ -1204,9 +1349,14 @@ class _PlaylistPageState extends State<PlaylistPage> {
                             color: Colors.red.shade400,
                             onTap: () {
                               Navigator.pop(context);
-                              audioService.removeSongFromPlaylist(widget.playlistId, file);
+                              audioService.removeSongFromPlaylist(
+                                  widget.playlistId, file);
 
-                              final bottomMargin = (MediaQuery.of(context).padding.bottom) + kBottomNavigationBarHeight + 70.0;
+                              final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
+                              final bottomMargin =
+                                  (MediaQuery.of(context).padding.bottom) +
+                                      kBottomNavigationBarHeight +
+                                      miniPlayerHeight;
 
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
@@ -1222,7 +1372,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
                               );
                             },
                           ),
-                          SizedBox(height: MediaQuery.of(context).padding.bottom + 20),
+                          SizedBox(
+                              height:
+                                  MediaQuery.of(context).padding.bottom + 20),
                         ]),
                       ),
                     ],
@@ -1263,7 +1415,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
     );
   }
 
-  Widget _buildSortMenu(Color playlistColor, Color playlistColorSubtle, {Color? iconColor}) {
+  Widget _buildSortMenu(Color playlistColor, Color _playlistColorSubtle,
+      {Color? iconColor}) {
     final options = [
       (
         icon: Icons.sort_by_alpha,
@@ -1287,7 +1440,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
       ),
     ];
 
-    final resolvedIconColor = iconColor ?? playlistColor;
+    final resolvedIconColor = iconColor ?? _playlistColor;
 
     return IconButton(
       icon: const Icon(Icons.sort),
@@ -1315,7 +1468,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     dragStartBehavior: DragStartBehavior.down,
                     onTap: () => dismiss(ctx),
                     onVerticalDragUpdate: (details) {
-                      if (details.primaryDelta != null && details.primaryDelta! > 8) {
+                      if (details.primaryDelta != null &&
+                          details.primaryDelta! > 8) {
                         dismiss(ctx);
                       }
                     },
@@ -1332,7 +1486,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     onNotification: (notification) {
                       // Dismiss after the sheet settles near min extent (release)
                       if (!notification.extent.isNaN &&
-                          notification.extent <= notification.minExtent + 0.02) {
+                          notification.extent <=
+                              notification.minExtent + 0.02) {
                         dismiss(ctx);
                       }
                       return false;
@@ -1360,7 +1515,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                                 child: Column(
                                   children: [
                                     Container(
-                                      margin: const EdgeInsets.symmetric(vertical: 12),
+                                      margin: const EdgeInsets.symmetric(
+                                          vertical: 12),
                                       width: 40,
                                       height: 4,
                                       decoration: BoxDecoration(
@@ -1376,17 +1532,24 @@ class _PlaylistPageState extends State<PlaylistPage> {
                                   options.map((opt) {
                                     final isSelected = _sortOption == opt.value;
                                     return ListTile(
-                                      leading: Icon(opt.icon, color: isSelected ? Colors.white : Colors.grey),
+                                      leading: Icon(opt.icon,
+                                          color: isSelected
+                                              ? Colors.white
+                                              : Colors.grey),
                                       title: Text(
                                         opt.label,
                                         style: TextStyle(
                                           color: Colors.white,
-                                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                          fontWeight: isSelected
+                                              ? FontWeight.w600
+                                              : FontWeight.normal,
                                         ),
                                       ),
                                       trailing: isSelected
                                           ? Icon(
-                                              _isAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                                              _isAscending
+                                                  ? Icons.arrow_upward
+                                                  : Icons.arrow_downward,
                                               color: Colors.white,
                                             )
                                           : null,
@@ -1400,13 +1563,17 @@ class _PlaylistPageState extends State<PlaylistPage> {
                                             _isAscending = false;
                                           }
                                         });
+                                        _clearSongCache();
                                       },
                                     );
                                   }).toList(),
                                 ),
                               ),
                               SliverToBoxAdapter(
-                                child: SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
+                                child: SizedBox(
+                                    height:
+                                        MediaQuery.of(context).padding.bottom +
+                                            16),
                               ),
                             ],
                           ),
@@ -1428,24 +1595,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
     final audioService = context.watch<AudioPlayerService>();
     final allSongs = audioService.getPlaylistSongs(widget.playlistId);
     final songs = _getFilteredAndSortedSongs(allSongs);
-    final isCustomPlaylist = audioService.getCustomPlaylist(widget.playlistId) != null;
+    final isCustomPlaylist =
+        audioService.getCustomPlaylist(widget.playlistId) != null;
     final customPlaylist = audioService.getCustomPlaylist(widget.playlistId);
-    
-    // Only extract color once - don't call in build method
-    
-    // Determine the color to use for the playlist
-    Color playlistColor = Colors.deepPurple.shade400; // Default color
-    
-    // Use dynamic color from image if available, otherwise use stored color
-    if (_dominantColor != null) {
-      playlistColor = _dominantColor!;
-    } else if (customPlaylist?.artworkColor != null) {
-      playlistColor = Color(customPlaylist!.artworkColor!);
-    }
-    
-    // Create subtle variations for different UI elements
-    final playlistColorSubtle = playlistColor.withOpacity(0.7);
-    final playlistColorFaint = playlistColor.withOpacity(0.15);
 
     return Scaffold(
       body: CustomScrollView(
@@ -1477,8 +1629,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
                             colors: [
-                              playlistColorSubtle,
-                              playlistColorFaint,
+                              _playlistColorSubtle,
+                              _playlistColorFaint,
                             ],
                           ),
                         ),
@@ -1491,8 +1643,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            playlistColorSubtle,
-                            playlistColorFaint,
+                            _playlistColorSubtle,
+                            _playlistColorFaint,
                           ],
                         ),
                       ),
@@ -1543,8 +1695,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: _buildSortMenu(
-                  playlistColor,
-                  playlistColorSubtle,
+                  _playlistColor,
+                  _playlistColorSubtle,
                   iconColor: isCustomPlaylist ? Colors.white : null,
                 ),
               ),
@@ -1582,6 +1734,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                         _searchQuery = '';
                         _searchController.clear();
                       });
+                      _clearSongCache();
                     },
                   ),
                 ),
@@ -1627,6 +1780,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                           setState(() {
                             _searchQuery = value;
                           });
+                          _clearSongCache();
                         },
                       ),
                     ),
@@ -1634,172 +1788,109 @@ class _PlaylistPageState extends State<PlaylistPage> {
                 ),
               ),
             ),
+          // Loading indicator for large playlists
+          if (_isLoadingSongs)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 12),
+                    Text(
+                      'Loading songs...',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           // Play All Button
           SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(16, _isSearching ? 0 : 16, 16, 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: songs.isEmpty ? null : () {
-                    // Play the filtered and sorted songs that the user actually sees
-                    audioService.playFilteredPlaylist(widget.playlistId, songs);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: playlistColorSubtle,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+            child: RepaintBoundary(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, _isSearching ? 0 : 16, 16, 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: (songs.isEmpty || _isLoadingSongs)
+                        ? null
+                        : () {
+                            // Play the filtered and sorted songs that the user actually sees
+                            audioService.playFilteredPlaylist(
+                                widget.playlistId, songs);
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.deepPurple.shade400,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
+                    child: _isLoadingSongs 
+                        ? const Text('Loading...')
+                        : Text('Play All (${songs.length} songs)'),
                   ),
-                  child: Text('Play All (${songs.length} songs)'),
                 ),
               ),
             ),
           ),
           // Songs List
           if (isCustomPlaylist && !_isSearching && _searchQuery.isEmpty)
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final file = songs[index];
-                  final cachedSong = _metadataCache.createSongFromFile(file);
-                  
-                  return StreamBuilder<MediaItem?>(
+            SliverList.builder(
+              itemCount: songs.length,
+              itemBuilder: (context, index) {
+                final file = songs[index];
+                return RepaintBoundary(
+                  child: _OptimizedSongTile(
                     key: ValueKey(file.path),
-                    stream: audioService.currentMediaStream,
-                    builder: (context, snapshot) {
-                      final isPlaying = snapshot.data?.id == file.path;
-                      
-                      return ListTile(
-                        leading: cachedSong.albumArt.isNotEmpty
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(5),
-                                child: Image.file(
-                                  File(cachedSong.albumArt),
-                                  width: 40,
-                                  height: 40,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    height: 40,
-                                    width: 40,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(5),
-                                      color: Colors.deepPurple.shade200,
-                                    ),
-                                    child: isPlaying
-                                        ? const Icon(Icons.play_circle, color: Colors.white)
-                                        : const Icon(Icons.music_note),
-                                  ),
-                                ),
-                              )
-                            : Container(
-                                height: 40,
-                                width: 40,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(5),
-                                  color: Colors.deepPurple.shade200,
-                                ),
-                                child: isPlaying
-                                    ? const Icon(Icons.play_circle, color: Colors.white)
-                                    : const Icon(Icons.music_note),
-                              ),
-                        title: Text(
-                          cachedSong.title,
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                        subtitle: Text(
-                          cachedSong.artist,
-                          style: TextStyle(color: Colors.grey.shade400),
-                        ),
-                        trailing: IconButton(
-                          icon: Icon(Icons.more_vert, color: Colors.grey[400]),
-                          onPressed: () => _showSongOptionsSheet(file, playlistColorSubtle),
-                        ),
-                        onTap: () {
-                          audioService.playFileInContextWithPlaylistId(file, songs, widget.playlistId);
-                        },
-                      );
-                    },
-                  );
-                },
-                childCount: songs.length,
-              ),
+                    file: file,
+                    audioService: audioService,
+                    metadataCache: _metadataCache,
+                    playlistColor: _playlistColorSubtle,
+                    onTap: () => audioService.playFileInContextWithPlaylistId(
+                        file, songs, widget.playlistId),
+                    onMoreTap: () =>
+                        _showSongOptionsSheet(file, _playlistColorSubtle),
+                  ),
+                );
+              },
             )
           else
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final file = songs[index];
-                  final cachedSong = _metadataCache.createSongFromFile(file);
-                  
-                  return StreamBuilder<MediaItem?>(
-                    stream: audioService.currentMediaStream,
-                    builder: (context, snapshot) {
-                      final isPlaying = snapshot.data?.id == file.path;
-                      
-                      return ListTile(
-                        leading: cachedSong.albumArt.isNotEmpty
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(5),
-                                child: Image.file(
-                                  File(cachedSong.albumArt),
-                                  width: 40,
-                                  height: 40,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    height: 40,
-                                    width: 40,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(5),
-                                      color: Colors.deepPurple.shade200,
-                                    ),
-                                    child: isPlaying
-                                        ? const Icon(Icons.play_circle, color: Colors.white)
-                                        : const Icon(Icons.music_note),
-                                  ),
-                                ),
-                              )
-                            : Container(
-                                height: 40,
-                                width: 40,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(5),
-                                  color: Colors.deepPurple.shade200,
-                                ),
-                                child: isPlaying
-                                    ? const Icon(Icons.play_circle, color: Colors.white)
-                                    : const Icon(Icons.music_note),
-                              ),
-                        title: Text(
-                          cachedSong.title,
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                        subtitle: Text(
-                          cachedSong.artist,
-                          style: TextStyle(color: Colors.grey.shade400),
-                        ),
-                        trailing: IconButton(
-                          icon: Icon(Icons.more_vert, color: Colors.grey[400]),
-                          onPressed: () => _showSongOptionsSheet(file, playlistColorSubtle),
-                        ),
-                        onTap: () {
-                          audioService.playFileInContextWithPlaylistId(file, songs, widget.playlistId);
-                        },
-                      );
-                    },
-                  );
-                },
-                childCount: songs.length,
-              ),
+            SliverList.builder(
+              itemCount: songs.length,
+              itemBuilder: (context, index) {
+                final file = songs[index];
+                return RepaintBoundary(
+                  child: _OptimizedSongTile(
+                    key: ValueKey(file.path),
+                    file: file,
+                    audioService: audioService,
+                    metadataCache: _metadataCache,
+                    playlistColor: _playlistColorSubtle,
+                    onTap: () => audioService.playFileInContextWithPlaylistId(
+                        file, songs, widget.playlistId),
+                    onMoreTap: () =>
+                        _showSongOptionsSheet(file, _playlistColorSubtle),
+                  ),
+                );
+              },
             ),
+          // Bottom padding to prevent mini player overlap
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).padding.bottom + // Device bottom padding
-                        kBottomNavigationBarHeight + // Navigation bar height (usually 56)
-                        60.0, // Mini player height
+                bottom: MediaQuery.of(context)
+                        .padding
+                        .bottom + // Device bottom padding
+                    kBottomNavigationBarHeight + // Navigation bar height (usually 56)
+                    60.0, // Mini player height
               ),
             ),
           ),
@@ -1847,7 +1938,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                       return CreatePlaylistDialog(
                         initialName: playlist.name,
                         initialArtworkPath: playlist.artworkPath,
-                        initialColor: playlist.artworkColor,
+                        initialColor: playlist.artworkColor is int ? playlist.artworkColor : null,
                         titleText: 'Edit Playlist',
                         actionText: 'Save',
                         useBottomSheetStyle: true,
@@ -1874,22 +1965,316 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
       // Update dominant color if provided
       if (result['artworkPath'] != null) {
-        _extractDominantColor(result['artworkPath'] as String);
-      } else if (result['color'] != null) {
-        setState(() {
-          _dominantColor = Color(result['color'] as int);
-        });
+        // No color extraction needed
       }
 
       if (mounted) {
         setState(() {});
+        final audioService = context.read<AudioPlayerService>();
+        final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
+        final bottomMargin = (MediaQuery.of(context).padding.bottom) + kBottomNavigationBarHeight + miniPlayerHeight;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            behavior: SnackBarBehavior.floating,
+            margin: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              bottom: bottomMargin,
+            ),
             content: const Text('Playlist updated'),
-            backgroundColor: Colors.deepPurple.shade400,
+            backgroundColor: _playlistColor,
           ),
         );
       }
     }
+  }
+}
+
+// Optimized song tile widget for better performance
+class _OptimizedSongTile extends StatefulWidget {
+  final File file;
+  final AudioPlayerService audioService;
+  final SongMetadataCache metadataCache;
+  final Color? playlistColor;
+  final VoidCallback onTap;
+  final VoidCallback onMoreTap;
+
+  const _OptimizedSongTile({
+    super.key,
+    required this.file,
+    required this.audioService,
+    required this.metadataCache,
+    required this.playlistColor,
+    required this.onTap,
+    required this.onMoreTap,
+  });
+
+  @override
+  State<_OptimizedSongTile> createState() => _OptimizedSongTileState();
+}
+
+class _OptimizedSongTileState extends State<_OptimizedSongTile>
+    with AutomaticKeepAliveClientMixin {
+  late Song _cachedSong;
+  bool _isPlaying = false;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _cachedSong = widget.metadataCache.createSongFromFile(widget.file);
+    _updatePlayingState();
+    widget.audioService.currentMediaStream.listen(_onMediaChanged);
+  }
+
+  @override
+  void didUpdateWidget(_OptimizedSongTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reload cached song data when widget updates (e.g., after metadata edit)
+    _cachedSong = widget.metadataCache.createSongFromFile(widget.file);
+  }
+
+  void _updatePlayingState() {
+    final currentMedia = widget
+        .audioService.player.sequenceState?.currentSource?.tag as MediaItem?;
+    final newIsPlaying = currentMedia?.id == widget.file.path;
+    if (_isPlaying != newIsPlaying) {
+      setState(() {
+        _isPlaying = newIsPlaying;
+      });
+    }
+  }
+
+  void _onMediaChanged(MediaItem? media) {
+    _updatePlayingState();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return ListTile(
+      contentPadding: const EdgeInsets.only(left: 16, right: 8),
+      horizontalTitleGap: 12,
+      leading: _buildAlbumArt(),
+      title: Text(
+        _cachedSong.title,
+        style: const TextStyle(color: Colors.white),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        _cachedSong.artist,
+        style: TextStyle(color: Colors.grey.shade400),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: IconButton(
+        icon: Icon(Icons.more_vert, color: Colors.grey[400]),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        onPressed: widget.onMoreTap,
+      ),
+      onTap: widget.onTap,
+    );
+  }
+
+  Widget _buildAlbumArt() {
+    if (_cachedSong.albumArt.isNotEmpty) {
+      return RepaintBoundary(
+        child: Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Image.file(
+              File(_cachedSong.albumArt),
+              width: 50,
+              height: 50,
+              fit: BoxFit.cover,
+              cacheWidth: 150, // Higher cache for sharpness
+              cacheHeight: 150,
+              errorBuilder: (_, __, ___) => _buildFallbackIcon(),
+            ),
+          ),
+        ),
+      );
+    }
+    return _buildFallbackIcon();
+  }
+
+  Widget _buildFallbackIcon() {
+    return Container(
+      height: 50,
+      width: 50,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(5),
+        color: widget.playlistColor ?? Colors.deepPurple.shade400,
+      ),
+      child: _isPlaying
+          ? const Icon(Icons.play_circle, color: Colors.white)
+          : const Icon(Icons.music_note),
+    );
+  }
+}
+
+/// Widget for a metadata search result item with apply functionality
+class _ApplyableMetadataItem extends StatefulWidget {
+  final MetadataResult result;
+  final bool isITunes;
+  final MetadataService metadataService;
+  final Function(String? artPath) onApply;
+  final Future<Uint8List?> Function(String? url) getPreviewFuture;
+
+  const _ApplyableMetadataItem({
+    required this.result,
+    required this.isITunes,
+    required this.metadataService,
+    required this.onApply,
+    required this.getPreviewFuture,
+  });
+
+  @override
+  State<_ApplyableMetadataItem> createState() => _ApplyableMetadataItemState();
+}
+
+class _ApplyableMetadataItemState extends State<_ApplyableMetadataItem> {
+  bool _isApplying = false;
+
+  Future<void> _applyMetadata() async {
+    if (_isApplying) return;
+
+    setState(() {
+      _isApplying = true;
+    });
+
+    String? artPath;
+    if (widget.result.coverArtUrl != null && widget.result.coverArtUrl!.isNotEmpty) {
+      if (widget.isITunes) {
+        artPath = await widget.metadataService.downloadCoverArtFromUrl(
+          url: widget.result.coverArtUrl!,
+          identifier: '${widget.result.artist}_${widget.result.album.isNotEmpty ? widget.result.album : widget.result.title}',
+        );
+      } else if (widget.result.releaseId != null) {
+        artPath = await widget.metadataService.downloadCoverArtForRelease(
+          releaseId: widget.result.releaseId!,
+          identifier: '${widget.result.artist}_${widget.result.album.isNotEmpty ? widget.result.album : widget.result.title}',
+        );
+      }
+    }
+
+    if (mounted) {
+      widget.onApply(artPath);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: SizedBox(
+        width: 56,
+        height: 56,
+        child: FutureBuilder<Uint8List?>(
+          future: widget.getPreviewFuture(widget.result.coverArtUrl),
+          builder: (context, artSnap) {
+            if (artSnap.connectionState == ConnectionState.waiting) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey[850],
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Center(
+                  child: SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              );
+            }
+
+            if (artSnap.data != null) {
+              return Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(6),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.memory(
+                    artSnap.data!,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              );
+            }
+
+            return Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[800],
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Icon(Icons.album, color: Colors.white54),
+            );
+          },
+        ),
+      ),
+      title: Text(
+        widget.result.title,
+        style: const TextStyle(color: Colors.white),
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            [widget.result.artist, widget.result.album]
+                .where((e) => e.isNotEmpty)
+                .join(' • '),
+            style: TextStyle(color: Colors.grey[400]),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Icon(
+                Icons.public,
+                size: 16,
+                color: widget.isITunes
+                    ? Colors.red.shade300
+                    : Colors.green.shade300,
+              ),
+            ],
+          ),
+        ],
+      ),
+      trailing: _isApplying
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : IconButton(
+              icon: Icon(Icons.check_circle_outline, color: Colors.grey[400]),
+              onPressed: _applyMetadata,
+            ),
+      onTap: _applyMetadata,
+    );
   }
 }

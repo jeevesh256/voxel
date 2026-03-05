@@ -236,33 +236,17 @@ class _MusicAppState extends State<MusicApp> {
           currentIndex: _selectedIndex,
           onTabChanged: handleTabTap,
           child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 250),
-            switchInCurve: Curves.easeInOutCubic,
-            switchOutCurve: Curves.easeInOutCubic,
+            duration: const Duration(milliseconds: 180),
+            switchInCurve: Curves.fastOutSlowIn,
+            switchOutCurve: Curves.fastOutSlowIn,
             transitionBuilder: (Widget child, Animation<double> animation) {
               return FadeTransition(
-                opacity: CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeInOutCubic,
-                ),
-                child: ScaleTransition(
-                  scale: Tween<double>(
-                    begin: 0.95,
-                    end: 1.0,
-                  ).animate(CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeInOutCubic,
-                  )),
+                opacity: animation,
+                child: RepaintBoundary(
                   child: child,
                 ),
               );
             },
-            layoutBuilder: (currentChild, previousChildren) => Stack(
-              children: [
-                ...previousChildren,
-                if (currentChild != null) currentChild,
-              ],
-            ),
             child: KeyedSubtree(
               key: ValueKey<int>(_selectedIndex),
               child: Navigator(
@@ -270,12 +254,10 @@ class _MusicAppState extends State<MusicApp> {
                 onGenerateRoute: (settings) => PageRouteBuilder(
                   pageBuilder: (context, animation, secondaryAnimation) =>
                       _pages[_selectedIndex],
+                  transitionDuration: Duration.zero,
                   transitionsBuilder:
                       (context, animation, secondaryAnimation, child) {
-                    return FadeTransition(
-                      opacity: animation,
-                      child: child,
-                    );
+                    return child;
                   },
                 ),
               ),

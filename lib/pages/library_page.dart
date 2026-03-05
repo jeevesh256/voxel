@@ -4,32 +4,31 @@ import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
 import '../services/storage_service.dart';
+import '../services/song_metadata_cache.dart';
 import '../widgets/create_playlist_dialog.dart';
 import 'dart:io';
 import 'playlist_page.dart';
 import 'favourite_radios_page.dart';
+import 'artist_page.dart';
 
 // Helper for Cupertino-style page transitions
 void pushMaterialPage(BuildContext context, Widget page) {
   Navigator.of(context).push(
     PageRouteBuilder(
-      pageBuilder: (context, animation, secondaryAnimation) => page,
-      transitionDuration: const Duration(milliseconds: 300),
-      reverseTransitionDuration: const Duration(milliseconds: 250),
+      pageBuilder: (context, animation, secondaryAnimation) => RepaintBoundary(child: page),
+      transitionDuration: const Duration(milliseconds: 250),
+      reverseTransitionDuration: const Duration(milliseconds: 200),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        const begin = Offset(1.0, 0.0);
-        const end = Offset.zero;
-        final tween = Tween(begin: begin, end: end);
-        final curvedAnimation = CurvedAnimation(
+        final slideAnimation = Tween(
+          begin: const Offset(1.0, 0.0),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(
           parent: animation,
-          curve: Curves.easeInOutCubic,
-        );
+          curve: Curves.fastOutSlowIn,
+        ));
         return SlideTransition(
-          position: tween.animate(curvedAnimation),
-          child: FadeTransition(
-            opacity: curvedAnimation,
-            child: child,
-          ),
+          position: slideAnimation,
+          child: child,
         );
       },
     ),
@@ -45,12 +44,20 @@ class LibraryPage extends StatefulWidget {
 
 class _LibraryPageState extends State<LibraryPage> {
   final StorageService _storageService = StorageService();
-  List<FileSystemEntity> _audioFiles = [];
+  final SongMetadataCache _metadataCache = SongMetadataCache();
 
   @override
   void initState() {
     super.initState();
-    _loadAudioFiles();
+    _metadataCache.initialize();
+    // Check if offline files are already loaded, if not, load them
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final audioService = context.read<AudioPlayerService>();
+      final offlineSongs = audioService.getPlaylistSongs('offline');
+      if (offlineSongs.isEmpty) {
+        _loadAudioFiles();
+      }
+    });
   }
 
   Future<void> _loadAudioFiles() async {
@@ -59,9 +66,6 @@ class _LibraryPageState extends State<LibraryPage> {
       final files = entities.whereType<File>().toList();
 
       if (mounted) {
-        setState(() {
-          _audioFiles = files;
-        });
         // Load files into offline playlist
         context.read<AudioPlayerService>().loadOfflineFiles(files);
       }
@@ -85,7 +89,7 @@ class _LibraryPageState extends State<LibraryPage> {
             tabs: const [
               Tab(text: 'Playlists'),
               Tab(text: 'Artists'),
-              Tab(text: 'Favourite Radios'),
+              Tab(text: 'Radios'),
             ],
             indicatorColor: Colors.deepPurple.shade400,
           ),
@@ -121,12 +125,12 @@ class _LibraryPageState extends State<LibraryPage> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'No favourite radios yet',
+                    'No radios yet',
                     style: TextStyle(color: Colors.grey[400], fontSize: 16),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Add stations to your favourites by tapping the heart icon',
+                    'Add stations by tapping the heart icon',
                     style: TextStyle(color: Colors.grey[600], fontSize: 14),
                     textAlign: TextAlign.center,
                   ),
@@ -248,7 +252,7 @@ class _LibraryPageState extends State<LibraryPage> {
                             color: Colors.deepPurple.shade400,
                             size: 20,
                           ),
-                          tooltip: 'Remove from favourites',
+                          tooltip: 'Remove radio',
                           onPressed: () {
                             // Show confirmation dialog for better UX
                             showDialog(
@@ -257,11 +261,11 @@ class _LibraryPageState extends State<LibraryPage> {
                                 return AlertDialog(
                                   backgroundColor: Colors.grey[900],
                                   title: Text(
-                                    'Remove from favourites?',
+                                    'Remove radio?',
                                     style: TextStyle(color: Colors.white),
                                   ),
                                   content: Text(
-                                    'Remove "${radio.name}" from your favourite radios?',
+                                    'Remove "${radio.name}" from your radios?',
                                     style: TextStyle(color: Colors.grey[300]),
                                   ),
                                   actions: [
@@ -299,7 +303,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 ),
               ),
               // Add spacing for mini player
-              const SizedBox(height: 80),
+              const SizedBox(height: 100),
             ],
           );
         },
@@ -427,6 +431,8 @@ class _LibraryPageState extends State<LibraryPage> {
     final songs = audioService.getPlaylistSongs(playlist.id);
 
     return ListTile(
+      contentPadding: const EdgeInsets.only(left: 16, right: 8),
+      horizontalTitleGap: 12,
       leading: playlist.artworkPath != null
           ? ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -483,6 +489,8 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
       trailing: IconButton(
         icon: Icon(Icons.more_vert, color: Colors.grey[400]),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
         onPressed: () => _showPlaylistOptionsSheet(playlist),
       ),
       onTap: () {
@@ -886,27 +894,125 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Widget _buildArtistsView() {
+    final audioService = context.watch<AudioPlayerService>();
+    final audioFiles = audioService.getPlaylistSongs('offline');
+    
+    // Group songs by artist using metadata cache
     final artistMap = <String, List<File>>{};
+    final artistAlbumArt = <String, String>{};
 
-    for (var file in _audioFiles.whereType<File>()) {
-      final name = file.path.split('/').last;
-      final artist = name.split(' - ').first;
+    for (var file in audioFiles) {
+      final song = _metadataCache.createSongFromFile(file);
+      final artist = song.artist;
+      
+      // Skip Unknown Artist
+      if (artist == 'Unknown Artist' || artist.isEmpty) continue;
+      
       artistMap.putIfAbsent(artist, () => []).add(file);
+      
+      // Store first album art found for this artist
+      if (!artistAlbumArt.containsKey(artist) && song.albumArt.isNotEmpty) {
+        artistAlbumArt[artist] = song.albumArt;
+      }
     }
 
     final sortedArtists = artistMap.keys.toList()..sort();
 
+    if (sortedArtists.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.person_outline,
+                size: 80,
+                color: Colors.grey[600],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No artists found',
+                style: TextStyle(color: Colors.grey[400], fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Add songs with artist metadata to see them here',
+                style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 100), // Space for nav bar and mini player
       itemCount: sortedArtists.length,
       itemBuilder: (context, index) {
         final artist = sortedArtists[index];
         final songs = artistMap[artist]!;
+        final albumArt = artistAlbumArt[artist];
 
         return ListTile(
-          leading: const Icon(Icons.person),
-          title: Text(artist),
-          subtitle: Text('${songs.length} songs'),
-          onTap: () => context.read<AudioPlayerService>().playFiles(songs),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          leading: albumArt != null && albumArt.isNotEmpty
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(25),
+                  child: Image.file(
+                    File(albumArt),
+                    width: 50,
+                    height: 50,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: Colors.deepPurple.shade400,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.person,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                )
+              : Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: Colors.deepPurple.shade400,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.person,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+          title: Text(
+            artist,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            '${songs.length} ${songs.length == 1 ? 'song' : 'songs'}',
+            style: TextStyle(color: Colors.grey[400]),
+          ),
+          onTap: () {
+            pushMaterialPage(
+              context,
+              ArtistPage(
+                artistName: artist,
+                songs: songs,
+                artistArtwork: albumArt,
+              ),
+            );
+          },
         );
       },
     );

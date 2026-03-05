@@ -11,6 +11,7 @@ import 'package:rxdart/rxdart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'song_metadata_cache.dart';
+import 'storage_service.dart';
 
 
 class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
@@ -95,6 +96,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
     _playlistHandler.setQueueManager(this);
     _metadataCache.initialize();
+    _initOfflineFiles();
     _loadLikedTracks();
     _loadRecentlyPlayed();
 
@@ -155,6 +157,28 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     return _likedTracks.contains(current.id);
   }
 
+
+  Future<void> _initOfflineFiles() async {
+    try {
+      final storageService = StorageService();
+      final entities = await storageService.getAudioFiles();
+      final files = entities.whereType<File>().toList();
+      
+      // Sort files by modification time (recently added first)
+      files.sort((a, b) {
+        try {
+          return b.statSync().modified.compareTo(a.statSync().modified);
+        } catch (e) {
+          return 0;
+        }
+      });
+      
+      _playlists['offline'] = files;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading offline files: $e');
+    }
+  }
 
   Future<void> _loadLikedTracks() async {
     _prefs = await SharedPreferences.getInstance();

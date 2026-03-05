@@ -8,23 +8,20 @@ import 'package:provider/provider.dart';
 void pushMaterialPage(BuildContext context, Widget page) {
   Navigator.of(context).push(
     PageRouteBuilder(
-      pageBuilder: (context, animation, secondaryAnimation) => page,
-      transitionDuration: const Duration(milliseconds: 300),
-      reverseTransitionDuration: const Duration(milliseconds: 250),
+      pageBuilder: (context, animation, secondaryAnimation) => RepaintBoundary(child: page),
+      transitionDuration: const Duration(milliseconds: 250),
+      reverseTransitionDuration: const Duration(milliseconds: 200),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        const begin = Offset(1.0, 0.0);
-        const end = Offset.zero;
-        final tween = Tween(begin: begin, end: end);
-        final curvedAnimation = CurvedAnimation(
+        final slideAnimation = Tween(
+          begin: const Offset(1.0, 0.0),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(
           parent: animation,
-          curve: Curves.easeInOutCubic,
-        );
+          curve: Curves.fastOutSlowIn,
+        ));
         return SlideTransition(
-          position: tween.animate(curvedAnimation),
-          child: FadeTransition(
-            opacity: curvedAnimation,
-            child: child,
-          ),
+          position: slideAnimation,
+          child: child,
         );
       },
     ),
