@@ -1,7 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
 import '../models/radio_station.dart';
+
+// Helper for Cupertino-style page transitions
+void pushMaterialPage(BuildContext context, Widget page) {
+  Navigator.of(context).push(
+    PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => page,
+      transitionDuration: const Duration(milliseconds: 300),
+      reverseTransitionDuration: const Duration(milliseconds: 250),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        const begin = Offset(1.0, 0.0);
+        const end = Offset.zero;
+        final tween = Tween(begin: begin, end: end);
+        final curvedAnimation = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeInOutCubic,
+        );
+        return SlideTransition(
+          position: tween.animate(curvedAnimation),
+          child: FadeTransition(
+            opacity: curvedAnimation,
+            child: child,
+          ),
+        );
+      },
+    ),
+  );
+}
 
 enum RadioSortOption { name, genre, country, dateAdded }
 
@@ -21,25 +49,31 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
     // Filter by search query
     List<RadioStation> filteredRadios = radios.where((radio) {
       return radio.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-             radio.genre.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-             radio.country.toLowerCase().contains(_searchQuery.toLowerCase());
+          radio.genre.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          radio.country.toLowerCase().contains(_searchQuery.toLowerCase());
     }).toList();
 
     // Sort radios
     switch (_sortOption) {
       case RadioSortOption.name:
         filteredRadios.sort((a, b) {
-          return _isAscending ? a.name.compareTo(b.name) : b.name.compareTo(a.name);
+          return _isAscending
+              ? a.name.compareTo(b.name)
+              : b.name.compareTo(a.name);
         });
         break;
       case RadioSortOption.genre:
         filteredRadios.sort((a, b) {
-          return _isAscending ? a.genre.compareTo(b.genre) : b.genre.compareTo(a.genre);
+          return _isAscending
+              ? a.genre.compareTo(b.genre)
+              : b.genre.compareTo(a.genre);
         });
         break;
       case RadioSortOption.country:
         filteredRadios.sort((a, b) {
-          return _isAscending ? a.country.compareTo(b.country) : b.country.compareTo(a.country);
+          return _isAscending
+              ? a.country.compareTo(b.country)
+              : b.country.compareTo(a.country);
         });
         break;
       case RadioSortOption.dateAdded:
@@ -197,19 +231,22 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                             const SizedBox(height: 16),
                             Text(
                               'No favourite radios yet',
-                              style: TextStyle(color: Colors.grey[400], fontSize: 16),
+                              style: TextStyle(
+                                  color: Colors.grey[400], fontSize: 16),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               'Add stations to your favourites by tapping the heart icon',
-                              style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                              style: TextStyle(
+                                  color: Colors.grey[600], fontSize: 14),
                               textAlign: TextAlign.center,
                             ),
                           ],
                         ),
                       )
                     : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(0, 0, 0, 120), // Add bottom padding for mini player
+                        padding: const EdgeInsets.fromLTRB(
+                            0, 0, 0, 120), // Add bottom padding for mini player
                         itemCount: radios.length,
                         itemBuilder: (context, index) {
                           final radio = radios[index];
@@ -227,7 +264,8 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                                         width: 48,
                                         height: 48,
                                         color: Colors.deepPurple.shade200,
-                                        child: const Icon(Icons.radio, color: Colors.white, size: 24),
+                                        child: const Icon(Icons.radio,
+                                            color: Colors.white, size: 24),
                                       ),
                                     ),
                                   )
@@ -238,7 +276,8 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                                       color: Colors.deepPurple.shade200,
                                       borderRadius: BorderRadius.circular(8),
                                     ),
-                                    child: const Icon(Icons.radio, color: Colors.white, size: 24),
+                                    child: const Icon(Icons.radio,
+                                        color: Colors.white, size: 24),
                                   ),
                             title: Text(
                               radio.name,
@@ -258,7 +297,8 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                                 if (radio.country.isNotEmpty)
                                   Text(
                                     radio.country,
-                                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                                    style: TextStyle(
+                                        color: Colors.grey[600], fontSize: 12),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -266,18 +306,23 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                             ),
                             trailing: PopupMenuButton(
                               color: Colors.grey[900],
-                              icon: Icon(Icons.more_vert, color: Colors.grey[400]),
+                              icon: Icon(Icons.more_vert,
+                                  color: Colors.grey[400]),
                               itemBuilder: (context) => [
                                 PopupMenuItem(
                                   child: Row(
                                     children: [
-                                      Icon(Icons.favorite_border, color: Colors.red.shade400),
+                                      Icon(Icons.favorite_border,
+                                          color: Colors.red.shade400),
                                       const SizedBox(width: 8),
-                                      const Text('Remove from favourites', style: TextStyle(color: Colors.white)),
+                                      const Text('Remove from favourites',
+                                          style:
+                                              TextStyle(color: Colors.white)),
                                     ],
                                   ),
                                   onTap: () {
-                                    audioService.removeRadioFromPlaylist('favourite_radios', radio);
+                                    audioService.removeRadioFromPlaylist(
+                                        'favourite_radios', radio);
                                   },
                                 ),
                               ],

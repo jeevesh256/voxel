@@ -1,9 +1,37 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
 import '../services/radio_browser_service.dart';
 import '../models/radio_station.dart';
 import 'dart:async';
+
+// Helper for Cupertino-style page transitions
+void pushMaterialPage(BuildContext context, Widget page) {
+  Navigator.of(context).push(
+    PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => page,
+      transitionDuration: const Duration(milliseconds: 300),
+      reverseTransitionDuration: const Duration(milliseconds: 250),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        const begin = Offset(1.0, 0.0);
+        const end = Offset.zero;
+        final tween = Tween(begin: begin, end: end);
+        final curvedAnimation = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeInOutCubic,
+        );
+        return SlideTransition(
+          position: tween.animate(curvedAnimation),
+          child: FadeTransition(
+            opacity: curvedAnimation,
+            child: child,
+          ),
+        );
+      },
+    ),
+  );
+}
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -34,7 +62,7 @@ class _SearchPageState extends State<SearchPage> {
 
   Future<void> _fetchStations([String? query]) async {
     if (!mounted) return; // Check if widget is still mounted
-    
+
     // Only fetch if there's actually a query
     if (query == null || query.trim().isEmpty) {
       if (mounted) {
@@ -45,16 +73,16 @@ class _SearchPageState extends State<SearchPage> {
       }
       return;
     }
-    
+
     setState(() => _loadingStations = true);
     final radioService = RadioBrowserService();
     final stations = await radioService.fetchStations(
       genre: query,
       limit: 20,
     );
-    
+
     if (!mounted) return; // Check again before calling setState
-    
+
     setState(() {
       _stations = stations;
       _loadingStations = false;
@@ -64,10 +92,10 @@ class _SearchPageState extends State<SearchPage> {
   void _onSearchChanged(String value) {
     setState(() => _query = value);
     _searchController.text = value;
-    
+
     // Cancel previous timer
     _debounceTimer?.cancel();
-    
+
     // Only search if there's text, with a 500ms debounce
     if (value.trim().isNotEmpty) {
       _debounceTimer = Timer(const Duration(milliseconds: 500), () {
@@ -84,9 +112,11 @@ class _SearchPageState extends State<SearchPage> {
 
   List<RadioStation> get _filteredStations => _query.isEmpty
       ? _stations
-      : _stations.where((s) =>
-          s.name.toLowerCase().contains(_query.toLowerCase()) ||
-          s.genre.toLowerCase().contains(_query.toLowerCase())).toList();
+      : _stations
+          .where((s) =>
+              s.name.toLowerCase().contains(_query.toLowerCase()) ||
+              s.genre.toLowerCase().contains(_query.toLowerCase()))
+          .toList();
 
   @override
   Widget build(BuildContext context) {
@@ -163,7 +193,8 @@ class _SearchPageState extends State<SearchPage> {
         if (_query.isNotEmpty && !_loadingStations && _stations.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 4),
+              padding:
+                  const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 4),
               child: Text(
                 'Stations',
                 style: TextStyle(
@@ -209,24 +240,25 @@ class _SearchPageState extends State<SearchPage> {
                   leading: ClipRRect(
                     borderRadius: BorderRadius.circular(5),
                     child: station.artworkUrl.isNotEmpty
-                      ? Image.network(
-                          station.artworkUrl,
-                          height: 40,
-                          width: 40,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
+                        ? Image.network(
+                            station.artworkUrl,
+                            height: 40,
+                            width: 40,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              height: 40,
+                              width: 40,
+                              color: Colors.deepPurple.shade200,
+                              child:
+                                  const Icon(Icons.radio, color: Colors.white),
+                            ),
+                          )
+                        : Container(
                             height: 40,
                             width: 40,
                             color: Colors.deepPurple.shade200,
                             child: const Icon(Icons.radio, color: Colors.white),
                           ),
-                        )
-                      : Container(
-                          height: 40,
-                          width: 40,
-                          color: Colors.deepPurple.shade200,
-                          child: const Icon(Icons.radio, color: Colors.white),
-                        ),
                   ),
                   title: Text(
                     station.name,
@@ -243,7 +275,8 @@ class _SearchPageState extends State<SearchPage> {
             ),
           ),
         SliverPadding(
-          padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 16),
+          padding:
+              const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 16),
           sliver: SliverGrid(
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,

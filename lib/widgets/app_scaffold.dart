@@ -40,16 +40,27 @@ class AppScaffold extends StatelessWidget {
                 // Pop to root and navigate to selected tab
                 Navigator.of(context).pop();
                 Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (context) => MusicApp(initialIndex: index),
+                  PageRouteBuilder(
+                    pageBuilder: (context, animation, secondaryAnimation) =>
+                        const MusicApp(),
+                    transitionsBuilder:
+                        (context, animation, secondaryAnimation, child) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: child,
+                      );
+                    },
                   ),
                 );
               },
               items: const [
                 BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-                BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
-                BottomNavigationBarItem(icon: Icon(Icons.library_music), label: 'Library'),
-                BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
+                BottomNavigationBarItem(
+                    icon: Icon(Icons.search), label: 'Search'),
+                BottomNavigationBarItem(
+                    icon: Icon(Icons.library_music), label: 'Library'),
+                BottomNavigationBarItem(
+                    icon: Icon(Icons.settings), label: 'Settings'),
               ],
             ),
           ),

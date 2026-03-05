@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
@@ -7,6 +8,33 @@ import '../widgets/create_playlist_dialog.dart';
 import 'dart:io';
 import 'playlist_page.dart';
 import 'favourite_radios_page.dart';
+
+// Helper for Cupertino-style page transitions
+void pushMaterialPage(BuildContext context, Widget page) {
+  Navigator.of(context).push(
+    PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => page,
+      transitionDuration: const Duration(milliseconds: 300),
+      reverseTransitionDuration: const Duration(milliseconds: 250),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        const begin = Offset(1.0, 0.0);
+        const end = Offset.zero;
+        final tween = Tween(begin: begin, end: end);
+        final curvedAnimation = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeInOutCubic,
+        );
+        return SlideTransition(
+          position: tween.animate(curvedAnimation),
+          child: FadeTransition(
+            opacity: curvedAnimation,
+            child: child,
+          ),
+        );
+      },
+    ),
+  );
+}
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
@@ -71,7 +99,7 @@ class _LibraryPageState extends State<LibraryPage> {
         ),
       ),
     );
-  // ...existing code...
+    // ...existing code...
   }
 
   Widget _buildFavouriteRadiosView() {
@@ -80,7 +108,7 @@ class _LibraryPageState extends State<LibraryPage> {
       child: Consumer<AudioPlayerService>(
         builder: (context, audioService, child) {
           final radios = audioService.getPlaylistRadios('favourite_radios');
-          
+
           if (radios.isEmpty) {
             return Center(
               child: Column(
@@ -125,11 +153,8 @@ class _LibraryPageState extends State<LibraryPage> {
                       ),
                       TextButton.icon(
                         onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const FavouriteRadiosPage(),
-                            ),
-                          );
+                          pushMaterialPage(
+                              context, const FavouriteRadiosPage());
                         },
                         icon: Icon(
                           Icons.arrow_forward,
@@ -170,7 +195,8 @@ class _LibraryPageState extends State<LibraryPage> {
                                     width: 48,
                                     height: 48,
                                     color: Colors.deepPurple.shade200,
-                                    child: const Icon(Icons.radio, color: Colors.white, size: 24),
+                                    child: const Icon(Icons.radio,
+                                        color: Colors.white, size: 24),
                                   ),
                                 ),
                               )
@@ -181,7 +207,8 @@ class _LibraryPageState extends State<LibraryPage> {
                                   color: Colors.deepPurple.shade200,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: const Icon(Icons.radio, color: Colors.white, size: 24),
+                                child: const Icon(Icons.radio,
+                                    color: Colors.white, size: 24),
                               ),
                         title: Text(
                           radio.name,
@@ -239,20 +266,24 @@ class _LibraryPageState extends State<LibraryPage> {
                                   ),
                                   actions: [
                                     TextButton(
-                                      onPressed: () => Navigator.of(context).pop(),
+                                      onPressed: () =>
+                                          Navigator.of(context).pop(),
                                       child: Text(
                                         'Cancel',
-                                        style: TextStyle(color: Colors.grey[400]),
+                                        style:
+                                            TextStyle(color: Colors.grey[400]),
                                       ),
                                     ),
                                     TextButton(
                                       onPressed: () {
-                                        audioService.removeRadioFromPlaylist('favourite_radios', radio);
+                                        audioService.removeRadioFromPlaylist(
+                                            'favourite_radios', radio);
                                         Navigator.of(context).pop();
                                       },
                                       child: Text(
                                         'Remove',
-                                        style: TextStyle(color: Colors.deepPurple.shade400),
+                                        style: TextStyle(
+                                            color: Colors.deepPurple.shade400),
                                       ),
                                     ),
                                   ],
@@ -280,13 +311,16 @@ class _LibraryPageState extends State<LibraryPage> {
     final audioService = context.watch<AudioPlayerService>();
     final playlists = audioService.allPlaylists;
     final customPlaylists = audioService.customPlaylists;
-    
+
     // Show liked songs in stack order (newest first)
-    final likedSongs = List<File>.from(playlists.firstWhere(
-      (e) => e.key == 'liked',
-      orElse: () => const MapEntry('liked', []),
-    ).value.reversed);
-    
+    final likedSongs = List<File>.from(playlists
+        .firstWhere(
+          (e) => e.key == 'liked',
+          orElse: () => const MapEntry('liked', []),
+        )
+        .value
+        .reversed);
+
     return ListView(
       children: [
         // Default playlists
@@ -300,14 +334,17 @@ class _LibraryPageState extends State<LibraryPage> {
           title: 'Offline',
           icon: Icons.offline_pin,
           playlistId: 'offline',
-          songs: playlists.firstWhere(
-            (e) => e.key == 'offline',
-            orElse: () => const MapEntry('offline', []),
-          ).value,
+          songs: playlists
+              .firstWhere(
+                (e) => e.key == 'offline',
+                orElse: () => const MapEntry('offline', []),
+              )
+              .value,
         ),
         const Divider(),
         // Custom playlists
-        ...customPlaylists.map((playlist) => _buildCustomPlaylistTile(playlist)),
+        ...customPlaylists
+            .map((playlist) => _buildCustomPlaylistTile(playlist)),
         // Create new playlist button at the bottom
         ListTile(
           leading: Icon(
@@ -374,7 +411,7 @@ class _LibraryPageState extends State<LibraryPage> {
         );
       },
     );
-    
+
     if (result != null) {
       final audioService = context.read<AudioPlayerService>();
       await audioService.createCustomPlaylist(
@@ -388,7 +425,7 @@ class _LibraryPageState extends State<LibraryPage> {
   Widget _buildCustomPlaylistTile(dynamic playlist) {
     final audioService = context.watch<AudioPlayerService>();
     final songs = audioService.getPlaylistSongs(playlist.id);
-    
+
     return ListTile(
       leading: playlist.artworkPath != null
           ? ClipRRect(
@@ -449,14 +486,13 @@ class _LibraryPageState extends State<LibraryPage> {
         onPressed: () => _showPlaylistOptionsSheet(playlist),
       ),
       onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => PlaylistPage(
-              playlistId: playlist.id,
-              title: playlist.name,
-              icon: Icons.queue_music,
-              allowReorder: true,
-            ),
+        pushMaterialPage(
+          context,
+          PlaylistPage(
+            playlistId: playlist.id,
+            title: playlist.name,
+            icon: Icons.queue_music,
+            allowReorder: true,
           ),
         );
       },
@@ -465,7 +501,9 @@ class _LibraryPageState extends State<LibraryPage> {
 
   void _showPlaylistOptionsSheet(dynamic playlist) {
     final songCount = playlist.songPaths.length;
-    final accentColor = playlist.artworkColor != null ? Color(playlist.artworkColor!) : Colors.deepPurple.shade400;
+    final accentColor = playlist.artworkColor != null
+        ? Color(playlist.artworkColor!)
+        : Colors.deepPurple.shade400;
     bool dismissed = false;
     void dismiss(BuildContext ctx) {
       if (dismissed) return;
@@ -541,35 +579,49 @@ class _LibraryPageState extends State<LibraryPage> {
                                     width: 56,
                                     height: 56,
                                     decoration: BoxDecoration(
-                                      color: playlist.artworkColor != null ? Color(playlist.artworkColor!) : Colors.deepPurple.shade200,
+                                      color: playlist.artworkColor != null
+                                          ? Color(playlist.artworkColor!)
+                                          : Colors.deepPurple.shade200,
                                       borderRadius: BorderRadius.circular(10),
                                     ),
-                                    child: playlist.artworkPath != null && playlist.artworkPath!.isNotEmpty
+                                    child: playlist.artworkPath != null &&
+                                            playlist.artworkPath!.isNotEmpty
                                         ? ClipRRect(
-                                            borderRadius: BorderRadius.circular(10),
+                                            borderRadius:
+                                                BorderRadius.circular(10),
                                             child: Image.file(
                                               File(playlist.artworkPath!),
                                               fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) => Icon(Icons.queue_music, color: Colors.white, size: 28),
+                                              errorBuilder: (_, __, ___) =>
+                                                  Icon(Icons.queue_music,
+                                                      color: Colors.white,
+                                                      size: 28),
                                             ),
                                           )
-                                        : Icon(Icons.queue_music, color: Colors.white, size: 28),
+                                        : Icon(Icons.queue_music,
+                                            color: Colors.white, size: 28),
                                   ),
                                   const SizedBox(width: 14),
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           playlist.name,
-                                          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                                          style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
                                           '$songCount ${songCount == 1 ? 'song' : 'songs'}',
-                                          style: TextStyle(color: Colors.grey[400], fontSize: 13),
+                                          style: TextStyle(
+                                              color: Colors.grey[400],
+                                              fontSize: 13),
                                         ),
                                       ],
                                     ),
@@ -585,21 +637,26 @@ class _LibraryPageState extends State<LibraryPage> {
                         delegate: SliverChildListDelegate([
                           ListTile(
                             leading: Icon(Icons.edit, color: accentColor),
-                            title: const Text('Edit', style: TextStyle(color: Colors.white)),
+                            title: const Text('Edit',
+                                style: TextStyle(color: Colors.white)),
                             onTap: () {
                               dismiss(ctx);
                               _showEditPlaylistDialog(playlist);
                             },
                           ),
                           ListTile(
-                            leading: Icon(Icons.delete, color: Colors.red.shade400),
-                            title: const Text('Delete', style: TextStyle(color: Colors.white)),
+                            leading:
+                                Icon(Icons.delete, color: Colors.red.shade400),
+                            title: const Text('Delete',
+                                style: TextStyle(color: Colors.white)),
                             onTap: () {
                               dismiss(ctx);
                               _showDeletePlaylistDialog(playlist);
                             },
                           ),
-                          SizedBox(height: MediaQuery.of(context).padding.bottom + 20),
+                          SizedBox(
+                              height:
+                                  MediaQuery.of(context).padding.bottom + 20),
                         ]),
                       ),
                     ],
@@ -619,7 +676,8 @@ class _LibraryPageState extends State<LibraryPage> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.grey[900],
-        title: const Text('Rename Playlist', style: TextStyle(color: Colors.white)),
+        title: const Text('Rename Playlist',
+            style: TextStyle(color: Colors.white)),
         content: TextField(
           controller: controller,
           style: const TextStyle(color: Colors.white),
@@ -642,12 +700,13 @@ class _LibraryPageState extends State<LibraryPage> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: Text('Rename', style: TextStyle(color: Colors.deepPurple.shade400)),
+            child: Text('Rename',
+                style: TextStyle(color: Colors.deepPurple.shade400)),
           ),
         ],
       ),
     );
-    
+
     if (result != null && result.isNotEmpty && result != playlist.name) {
       final audioService = context.read<AudioPlayerService>();
       await audioService.updateCustomPlaylist(playlist.id, name: result);
@@ -757,7 +816,10 @@ class _LibraryPageState extends State<LibraryPage> {
                 ),
                 const Text(
                   'Delete Playlist?',
-                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -770,7 +832,8 @@ class _LibraryPageState extends State<LibraryPage> {
                   children: [
                     TextButton(
                       onPressed: () => Navigator.of(context).pop(false),
-                      child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
+                      child: Text('Cancel',
+                          style: TextStyle(color: Colors.grey[400])),
                     ),
                     const SizedBox(width: 8),
                     ElevatedButton(
@@ -789,7 +852,7 @@ class _LibraryPageState extends State<LibraryPage> {
         },
       ),
     );
-    
+
     if (result == true) {
       final audioService = context.read<AudioPlayerService>();
       await audioService.deleteCustomPlaylist(playlist.id);
@@ -810,14 +873,12 @@ class _LibraryPageState extends State<LibraryPage> {
       title: Text(title),
       subtitle: Text('${songs.length} songs'),
       onTap: () {
-        Navigator.push(
+        pushMaterialPage(
           context,
-          MaterialPageRoute(
-            builder: (context) => PlaylistPage(
-              playlistId: playlistId,
-              title: title,
-              icon: icon,
-            ),
+          PlaylistPage(
+            playlistId: playlistId,
+            title: title,
+            icon: icon,
           ),
         );
       },
@@ -826,7 +887,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Widget _buildArtistsView() {
     final artistMap = <String, List<File>>{};
-    
+
     for (var file in _audioFiles.whereType<File>()) {
       final name = file.path.split('/').last;
       final artist = name.split(' - ').first;
@@ -840,7 +901,7 @@ class _LibraryPageState extends State<LibraryPage> {
       itemBuilder: (context, index) {
         final artist = sortedArtists[index];
         final songs = artistMap[artist]!;
-        
+
         return ListTile(
           leading: const Icon(Icons.person),
           title: Text(artist),

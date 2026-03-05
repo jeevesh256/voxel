@@ -54,6 +54,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   static const String _likedTracksKey = 'liked_tracks';
   static const String _likedRadiosKey = 'liked_radios';
   static const String _customPlaylistsKey = 'custom_playlists';
+  static const String _recentlyPlayedKey = 'recently_played_playlists';
   late SharedPreferences _prefs;
   final SongMetadataCache _metadataCache = SongMetadataCache();
 
@@ -95,6 +96,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     _playlistHandler.setQueueManager(this);
     _metadataCache.initialize();
     _loadLikedTracks();
+    _loadRecentlyPlayed();
 
     // Listen to player index changes and shuffle mode changes
     _player.currentIndexStream.listen((index) {
@@ -104,6 +106,17 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     _player.shuffleModeEnabledStream.listen((enabled) {
       notifyListeners();
     });
+  }
+  Future<void> _loadRecentlyPlayed() async {
+    _prefs = await SharedPreferences.getInstance();
+    final cached = _prefs.getStringList(_recentlyPlayedKey) ?? [];
+    _recentlyPlayedPlaylistIds.clear();
+    _recentlyPlayedPlaylistIds.addAll(cached);
+    notifyListeners();
+  }
+
+  Future<void> _saveRecentlyPlayed() async {
+    await _prefs.setStringList(_recentlyPlayedKey, _recentlyPlayedPlaylistIds);
   }
 
   String? _currentPlaylistId;
@@ -417,6 +430,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       await _player.setShuffleModeEnabled(false);
       await _player.setAudioSource(_playlist, initialIndex: initialIndex);
       await _player.play();
+      addRecentlyPlayedPlaylist(playlistId);
       notifyListeners();
     } catch (e) {
       debugPrint('Error playing filtered playlist: $e');
@@ -1063,6 +1077,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     if (_recentlyPlayedPlaylistIds.length > 10) {
       _recentlyPlayedPlaylistIds.removeLast();
     }
+    _saveRecentlyPlayed();
     notifyListeners();
   }
 

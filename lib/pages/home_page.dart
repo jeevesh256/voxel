@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 
 import '../models/radio_station.dart';
@@ -10,6 +11,32 @@ import '../services/audio_service.dart';
 import '../services/radio_browser_service.dart';
 import 'playlist_page.dart'; // <-- Missing import added here
 import 'package:voxel/models/custom_playlist.dart';
+
+void pushMaterialPage(BuildContext context, Widget page) {
+  Navigator.of(context).push(
+    PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => page,
+      transitionDuration: const Duration(milliseconds: 300),
+      reverseTransitionDuration: const Duration(milliseconds: 250),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        const begin = Offset(1.0, 0.0);
+        const end = Offset.zero;
+        final tween = Tween(begin: begin, end: end);
+        final curvedAnimation = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeInOutCubic,
+        );
+        return SlideTransition(
+          position: tween.animate(curvedAnimation),
+          child: FadeTransition(
+            opacity: curvedAnimation,
+            child: child,
+          ),
+        );
+      },
+    ),
+  );
+}
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -29,7 +56,8 @@ class _HomePageState extends State<HomePage> {
   Widget _buildRadioStationRow() {
     final validStations = _stations.where((station) {
       final streamUrl = station.streamUrl;
-      return streamUrl.startsWith('https://') || streamUrl.startsWith('http://');
+      return streamUrl.startsWith('https://') ||
+          streamUrl.startsWith('http://');
     }).toList();
     final topStations = validStations.take(10).toList();
     return Column(
@@ -49,18 +77,19 @@ class _HomePageState extends State<HomePage> {
               const Spacer(),
               TextButton(
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   visualDensity: VisualDensity.compact,
                   foregroundColor: Colors.deepPurple,
-                  textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  textStyle: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600),
                 ),
                 onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => AllStationsPage(stations: validStations),
-                    ),
+                  pushMaterialPage(
+                    context,
+                    AllStationsPage(stations: validStations),
                   );
                 },
                 child: const Text('See All'),
@@ -79,7 +108,9 @@ class _HomePageState extends State<HomePage> {
               final station = topStations[index];
               final hasArt = station.artworkUrl.isNotEmpty;
               return GestureDetector(
-                onTap: () => context.read<AudioPlayerService>().playRadioStation(station),
+                onTap: () => context
+                    .read<AudioPlayerService>()
+                    .playRadioStation(station),
                 child: Container(
                   width: _homeTileWidth,
                   margin: const EdgeInsets.only(right: 16),
@@ -101,14 +132,16 @@ class _HomePageState extends State<HomePage> {
                                       height: _homeTileImageSize,
                                       width: _homeTileImageSize,
                                       color: Colors.deepPurple.shade200,
-                                      child: const Icon(Icons.radio, color: Colors.white, size: 60),
+                                      child: const Icon(Icons.radio,
+                                          color: Colors.white, size: 60),
                                     ),
                                   )
                                 : Container(
                                     height: _homeTileImageSize,
                                     width: _homeTileImageSize,
                                     color: Colors.deepPurple.shade200,
-                                    child: const Icon(Icons.radio, color: Colors.white, size: 60),
+                                    child: const Icon(Icons.radio,
+                                        color: Colors.white, size: 60),
                                   ),
                           ),
                           Positioned.fill(
@@ -166,47 +199,73 @@ class _HomePageState extends State<HomePage> {
   Widget _buildGenreRadioRow() {
     final validStations = _stations.where((station) {
       final streamUrl = station.streamUrl;
-      return streamUrl.startsWith('https://') || streamUrl.startsWith('http://');
+      return streamUrl.startsWith('https://') ||
+          streamUrl.startsWith('http://');
     }).toList();
     final settings = context.watch<SettingsModel>();
-    
+
     // Simplified generic genres with artwork
     final Map<String, String> genreArtwork = {
-      'Pop': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop',
-      'Rock': 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=400&h=400&fit=crop',
-      'Jazz': 'https://images.unsplash.com/photo-1415201364774-f6f0bb35f28f?w=400&h=400&fit=crop',
-      'Classical': 'https://images.unsplash.com/photo-1507838153414-b4b713384a76?w=400&h=400&fit=crop',
-      'Electronic': 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&h=400&fit=crop',
-      'Hip-Hop': 'https://images.unsplash.com/photo-1571330735066-03aaa9429d89?w=400&h=400&fit=crop',
-      'Country': 'https://images.unsplash.com/photo-1586348943529-beaae6c28db9?w=400&h=400&fit=crop',
-      'Blues': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop',
-      'Reggae': 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=400&h=400&fit=crop',
-      'Latin': 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=400&h=400&fit=crop',
-      'News': 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400&h=400&fit=crop',
-      'Talk': 'https://images.unsplash.com/photo-1589903308904-1010c2294adc?w=400&h=400&fit=crop',
-      'Sports': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=400&fit=crop',
+      'Pop':
+          'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop',
+      'Rock':
+          'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=400&h=400&fit=crop',
+      'Jazz':
+          'https://images.unsplash.com/photo-1415201364774-f6f0bb35f28f?w=400&h=400&fit=crop',
+      'Classical':
+          'https://images.unsplash.com/photo-1507838153414-b4b713384a76?w=400&h=400&fit=crop',
+      'Electronic':
+          'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&h=400&fit=crop',
+      'Hip-Hop':
+          'https://images.unsplash.com/photo-1571330735066-03aaa9429d89?w=400&h=400&fit=crop',
+      'Country':
+          'https://images.unsplash.com/photo-1586348943529-beaae6c28db9?w=400&h=400&fit=crop',
+      'Blues':
+          'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop',
+      'Reggae':
+          'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=400&h=400&fit=crop',
+      'Latin':
+          'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=400&h=400&fit=crop',
+      'News':
+          'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400&h=400&fit=crop',
+      'Talk':
+          'https://images.unsplash.com/photo-1589903308904-1010c2294adc?w=400&h=400&fit=crop',
+      'Sports':
+          'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=400&fit=crop',
     };
-    
-    final musicGenres = ['Jazz', 'Electronic', 'Classical', 'Pop', 'Country', 'Rock', 'Latin', 'Hip-Hop'];
+
+    final musicGenres = [
+      'Jazz',
+      'Electronic',
+      'Classical',
+      'Pop',
+      'Country',
+      'Rock',
+      'Latin',
+      'Hip-Hop'
+    ];
     final nonMusicGenres = ['News', 'Talk', 'Sports'];
-    final allGenres = settings.showNonMusicGenres ? [...musicGenres, ...nonMusicGenres] : musicGenres;
-    
+    final allGenres = settings.showNonMusicGenres
+        ? [...musicGenres, ...nonMusicGenres]
+        : musicGenres;
+
     final genreMap = <String, List<RadioStation>>{};
-    
+
     // Map stations to simplified genres
     for (var station in validStations) {
       final stationGenre = station.genre.toLowerCase();
       for (var genre in allGenres) {
-        if (stationGenre.contains(genre.toLowerCase()) || 
+        if (stationGenre.contains(genre.toLowerCase()) ||
             _isGenreMatch(stationGenre, genre.toLowerCase())) {
           genreMap.putIfAbsent(genre, () => []).add(station);
           break; // Only add to first matching genre to avoid duplicates
         }
       }
     }
-    
+
     // Use the defined order from allGenres, only including genres that have stations
-    final displayedGenres = allGenres.where((genre) => genreMap.containsKey(genre)).toList();
+    final displayedGenres =
+        allGenres.where((genre) => genreMap.containsKey(genre)).toList();
     return SizedBox(
       height: _homeRowHeight,
       child: ListView.builder(
@@ -216,17 +275,17 @@ class _HomePageState extends State<HomePage> {
         itemBuilder: (context, index) {
           final genre = displayedGenres[index];
           final stations = genreMap[genre]!;
-          final artworkUrl = genreArtwork[genre] ?? 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop';
-          
+          final artworkUrl = genreArtwork[genre] ??
+              'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop';
+
           return GestureDetector(
             onTap: () {
-              // Navigate to genre stations page instead of playing first station
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => GenreStationsPage(
-                    genre: genre,
-                    stations: stations,
-                  ),
+              // Navigate to genre stations page with Cupertino transition
+              pushMaterialPage(
+                context,
+                GenreStationsPage(
+                  genre: genre,
+                  stations: stations,
                 ),
               );
             },
@@ -250,7 +309,8 @@ class _HomePageState extends State<HomePage> {
                             height: _homeTileImageSize,
                             width: _homeTileImageSize,
                             color: Colors.deepPurple.shade200,
-                            child: const Icon(Icons.radio, color: Colors.white, size: 60),
+                            child: const Icon(Icons.radio,
+                                color: Colors.white, size: 60),
                           ),
                         ),
                       ),
@@ -300,6 +360,7 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
+
   // Removed unused _selectedGenre
   List<RadioStation> _stations = [];
   // Removed unused _genres, _loadingGenres, and _loadingStations
@@ -402,14 +463,13 @@ class _HomePageState extends State<HomePage> {
             children: [
               GestureDetector(
                 onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => PlaylistPage(
-                        playlistId: 'liked',
-                        title: 'Liked Songs',
-                        icon: Icons.favorite,
-                        allowReorder: true,
-                      ),
+                  pushMaterialPage(
+                    context,
+                    PlaylistPage(
+                      playlistId: 'liked',
+                      title: 'Liked Songs',
+                      icon: Icons.favorite,
+                      allowReorder: true,
                     ),
                   );
                 },
@@ -426,7 +486,8 @@ class _HomePageState extends State<HomePage> {
                           borderRadius: BorderRadius.circular(10),
                           color: Colors.deepPurple.shade200,
                         ),
-                        child: const Icon(Icons.favorite, color: Colors.white, size: 60),
+                        child: const Icon(Icons.favorite,
+                            color: Colors.white, size: 60),
                       ),
                       const SizedBox(height: 12),
                       Text(
@@ -476,21 +537,22 @@ class _HomePageState extends State<HomePage> {
           child: ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             scrollDirection: Axis.horizontal,
-            itemCount: customPlaylists.length > 10 ? 10 : customPlaylists.length,
+            itemCount:
+                customPlaylists.length > 10 ? 10 : customPlaylists.length,
             itemBuilder: (context, index) {
               final playlist = customPlaylists[index];
               final songs = audioService.getPlaylistSongs(playlist.id);
-              final hasArt = playlist.artworkPath != null && playlist.artworkPath!.isNotEmpty;
+              final hasArt = playlist.artworkPath != null &&
+                  playlist.artworkPath!.isNotEmpty;
               return GestureDetector(
                 onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => PlaylistPage(
-                        playlistId: playlist.id,
-                        title: playlist.name,
-                        icon: Icons.queue_music,
-                        allowReorder: true,
-                      ),
+                  pushMaterialPage(
+                    context,
+                    PlaylistPage(
+                      playlistId: playlist.id,
+                      title: playlist.name,
+                      icon: Icons.queue_music,
+                      allowReorder: true,
                     ),
                   );
                 },
@@ -514,7 +576,8 @@ class _HomePageState extends State<HomePage> {
                                   color: playlist.artworkColor != null
                                       ? Color(playlist.artworkColor!)
                                       : Colors.deepPurple.shade200,
-                                  child: const Icon(Icons.queue_music, color: Colors.white, size: 60),
+                                  child: const Icon(Icons.queue_music,
+                                      color: Colors.white, size: 60),
                                 ),
                               ),
                             )
@@ -527,7 +590,8 @@ class _HomePageState extends State<HomePage> {
                                     : Colors.deepPurple.shade200,
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              child: const Icon(Icons.queue_music, color: Colors.white, size: 60),
+                              child: const Icon(Icons.queue_music,
+                                  color: Colors.white, size: 60),
                             ),
                       const SizedBox(height: 12),
                       Text(
@@ -572,18 +636,18 @@ class _HomePageState extends State<HomePage> {
         if (likedFiles.isNotEmpty) {
           items.add(_RecentlyPlayedItem(
             title: 'Liked Songs',
-            subtitle: '${likedFiles.length} song${likedFiles.length == 1 ? '' : 's'}',
+            subtitle:
+                '${likedFiles.length} song${likedFiles.length == 1 ? '' : 's'}',
             icon: Icons.favorite,
             color: Colors.deepPurple.shade200,
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => PlaylistPage(
-                    playlistId: 'liked',
-                    title: 'Liked Songs',
-                    icon: Icons.favorite,
-                    allowReorder: true,
-                  ),
+              pushMaterialPage(
+                context,
+                PlaylistPage(
+                  playlistId: 'liked',
+                  title: 'Liked Songs',
+                  icon: Icons.favorite,
+                  allowReorder: true,
                 ),
               );
             },
@@ -607,17 +671,18 @@ class _HomePageState extends State<HomePage> {
               title: playlist.name,
               subtitle: '${songs.length} song${songs.length == 1 ? '' : 's'}',
               icon: Icons.queue_music,
-              color: playlist.artworkColor != null ? Color(playlist.artworkColor!) : Colors.deepPurple.shade200,
+              color: playlist.artworkColor != null
+                  ? Color(playlist.artworkColor!)
+                  : Colors.deepPurple.shade200,
               imagePath: playlist.artworkPath,
               onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => PlaylistPage(
-                      playlistId: playlist.id,
-                      title: playlist.name,
-                      icon: Icons.queue_music,
-                      allowReorder: true,
-                    ),
+                pushMaterialPage(
+                  context,
+                  PlaylistPage(
+                    playlistId: playlist.id,
+                    title: playlist.name,
+                    icon: Icons.queue_music,
+                    allowReorder: true,
                   ),
                 );
               },
@@ -661,7 +726,8 @@ class _HomePageState extends State<HomePage> {
                                   height: _homeTileImageSize,
                                   width: _homeTileImageSize,
                                   color: item.color,
-                                  child: Icon(item.icon, color: Colors.white, size: 60),
+                                  child: Icon(item.icon,
+                                      color: Colors.white, size: 60),
                                 ),
                               ),
                             )
@@ -672,7 +738,8 @@ class _HomePageState extends State<HomePage> {
                                 color: item.color,
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              child: Icon(item.icon, color: Colors.white, size: 60),
+                              child: Icon(item.icon,
+                                  color: Colors.white, size: 60),
                             ),
                       const SizedBox(height: 12),
                       Text(
@@ -730,31 +797,57 @@ class _RecentlyPlayedItem {
 bool _isGenreMatch(String stationGenre, String targetGenre) {
   switch (targetGenre) {
     case 'pop':
-      return stationGenre.contains('pop') || stationGenre.contains('top 40') || stationGenre.contains('hits');
+      return stationGenre.contains('pop') ||
+          stationGenre.contains('top 40') ||
+          stationGenre.contains('hits');
     case 'rock':
-      return stationGenre.contains('rock') || stationGenre.contains('metal') || stationGenre.contains('alternative');
+      return stationGenre.contains('rock') ||
+          stationGenre.contains('metal') ||
+          stationGenre.contains('alternative');
     case 'electronic':
-      return stationGenre.contains('electronic') || stationGenre.contains('dance') || stationGenre.contains('edm') || stationGenre.contains('techno') || stationGenre.contains('house');
+      return stationGenre.contains('electronic') ||
+          stationGenre.contains('dance') ||
+          stationGenre.contains('edm') ||
+          stationGenre.contains('techno') ||
+          stationGenre.contains('house');
     case 'hip-hop':
-      return stationGenre.contains('hip') || stationGenre.contains('rap') || stationGenre.contains('r&b') || stationGenre.contains('rnb');
+      return stationGenre.contains('hip') ||
+          stationGenre.contains('rap') ||
+          stationGenre.contains('r&b') ||
+          stationGenre.contains('rnb');
     case 'jazz':
-      return stationGenre.contains('jazz') || stationGenre.contains('smooth') || stationGenre.contains('soul');
+      return stationGenre.contains('jazz') ||
+          stationGenre.contains('smooth') ||
+          stationGenre.contains('soul');
     case 'classical':
-      return stationGenre.contains('classical') || stationGenre.contains('symphony') || stationGenre.contains('opera');
+      return stationGenre.contains('classical') ||
+          stationGenre.contains('symphony') ||
+          stationGenre.contains('opera');
     case 'country':
-      return stationGenre.contains('country') || stationGenre.contains('folk') || stationGenre.contains('americana');
+      return stationGenre.contains('country') ||
+          stationGenre.contains('folk') ||
+          stationGenre.contains('americana');
     case 'blues':
       return stationGenre.contains('blues') || stationGenre.contains('rhythm');
     case 'reggae':
-      return stationGenre.contains('reggae') || stationGenre.contains('ska') || stationGenre.contains('caribbean');
+      return stationGenre.contains('reggae') ||
+          stationGenre.contains('ska') ||
+          stationGenre.contains('caribbean');
     case 'latin':
-      return stationGenre.contains('latin') || stationGenre.contains('spanish') || stationGenre.contains('salsa') || stationGenre.contains('bachata');
+      return stationGenre.contains('latin') ||
+          stationGenre.contains('spanish') ||
+          stationGenre.contains('salsa') ||
+          stationGenre.contains('bachata');
     case 'news':
       return stationGenre.contains('news') || stationGenre.contains('current');
     case 'talk':
-      return stationGenre.contains('talk') || stationGenre.contains('discussion') || stationGenre.contains('interview');
+      return stationGenre.contains('talk') ||
+          stationGenre.contains('discussion') ||
+          stationGenre.contains('interview');
     case 'sports':
-      return stationGenre.contains('sports') || stationGenre.contains('football') || stationGenre.contains('basketball');
+      return stationGenre.contains('sports') ||
+          stationGenre.contains('football') ||
+          stationGenre.contains('basketball');
     default:
       return false;
   }

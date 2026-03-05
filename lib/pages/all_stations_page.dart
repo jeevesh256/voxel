@@ -1,7 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import '../models/radio_station.dart';
 import '../services/audio_service.dart';
 import 'package:provider/provider.dart';
+
+// Helper for Cupertino-style page transitions
+void pushMaterialPage(BuildContext context, Widget page) {
+  Navigator.of(context).push(
+    PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => page,
+      transitionDuration: const Duration(milliseconds: 300),
+      reverseTransitionDuration: const Duration(milliseconds: 250),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        const begin = Offset(1.0, 0.0);
+        const end = Offset.zero;
+        final tween = Tween(begin: begin, end: end);
+        final curvedAnimation = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeInOutCubic,
+        );
+        return SlideTransition(
+          position: tween.animate(curvedAnimation),
+          child: FadeTransition(
+            opacity: curvedAnimation,
+            child: child,
+          ),
+        );
+      },
+    ),
+  );
+}
 
 class AllStationsPage extends StatelessWidget {
   final List<RadioStation> stations;
@@ -14,7 +42,8 @@ class AllStationsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final audioService = Provider.of<AudioPlayerService>(context, listen: false);
+    final audioService =
+        Provider.of<AudioPlayerService>(context, listen: false);
     return Scaffold(
       appBar: AppBar(
         title: const Text('All Radio Stations'),
@@ -61,13 +90,15 @@ class AllStationsPage extends StatelessWidget {
                                   errorBuilder: (_, __, ___) => Container(
                                     height: _kTileImageSize,
                                     color: Colors.deepPurple.shade200,
-                                    child: const Icon(Icons.radio, color: Colors.white, size: 60),
+                                    child: const Icon(Icons.radio,
+                                        color: Colors.white, size: 60),
                                   ),
                                 )
                               : Container(
                                   height: _kTileImageSize,
                                   color: Colors.deepPurple.shade200,
-                                  child: const Icon(Icons.radio, color: Colors.white, size: 60),
+                                  child: const Icon(Icons.radio,
+                                      color: Colors.white, size: 60),
                                 ),
                         ),
                         Positioned.fill(

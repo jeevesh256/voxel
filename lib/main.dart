@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:provider/provider.dart';
@@ -68,7 +69,6 @@ class _MyInitializerState extends State<MyInitializer> {
           _isLoading = false;
         });
       }
-
     } catch (e, stack) {
       debugPrint('Initialization error: $e');
       debugPrint('Stack trace: $stack');
@@ -139,7 +139,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     // Ensure audio service is initialized
     context.read<AudioPlayerService>();
-    
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Voxel Music Player',
@@ -163,7 +163,7 @@ class MyApp extends StatelessWidget {
 
 class MusicApp extends StatefulWidget {
   final int initialIndex;
-  
+
   const MusicApp({
     super.key,
     this.initialIndex = 0,
@@ -175,7 +175,7 @@ class MusicApp extends StatefulWidget {
 
 class _MusicAppState extends State<MusicApp> {
   late int _selectedIndex;
-  
+
   @override
   void initState() {
     super.initState();
@@ -198,13 +198,13 @@ class _MusicAppState extends State<MusicApp> {
 
   Future<bool> _onWillPop() async {
     final currentNavigator = _navigatorKeys[_selectedIndex].currentState;
-    
+
     // If we can pop the current navigator, do that first
     if (currentNavigator?.canPop() ?? false) {
       currentNavigator?.pop();
       return false;
     }
-    
+
     // If we're already on the home tab, allow the app to close
     // Otherwise, switch to home tab
     if (_selectedIndex == 0) {
@@ -235,10 +235,50 @@ class _MusicAppState extends State<MusicApp> {
         body: PersistentOverlay(
           currentIndex: _selectedIndex,
           onTabChanged: handleTabTap,
-          child: Navigator(
-            key: _navigatorKeys[_selectedIndex],
-            onGenerateRoute: (settings) => MaterialPageRoute(
-              builder: (context) => _pages[_selectedIndex],
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            switchInCurve: Curves.easeInOutCubic,
+            switchOutCurve: Curves.easeInOutCubic,
+            transitionBuilder: (Widget child, Animation<double> animation) {
+              return FadeTransition(
+                opacity: CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeInOutCubic,
+                ),
+                child: ScaleTransition(
+                  scale: Tween<double>(
+                    begin: 0.95,
+                    end: 1.0,
+                  ).animate(CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeInOutCubic,
+                  )),
+                  child: child,
+                ),
+              );
+            },
+            layoutBuilder: (currentChild, previousChildren) => Stack(
+              children: [
+                ...previousChildren,
+                if (currentChild != null) currentChild,
+              ],
+            ),
+            child: KeyedSubtree(
+              key: ValueKey<int>(_selectedIndex),
+              child: Navigator(
+                key: _navigatorKeys[_selectedIndex],
+                onGenerateRoute: (settings) => PageRouteBuilder(
+                  pageBuilder: (context, animation, secondaryAnimation) =>
+                      _pages[_selectedIndex],
+                  transitionsBuilder:
+                      (context, animation, secondaryAnimation, child) {
+                    return FadeTransition(
+                      opacity: animation,
+                      child: child,
+                    );
+                  },
+                ),
+              ),
             ),
           ),
         ),

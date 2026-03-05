@@ -1,14 +1,42 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import '../models/radio_station.dart';
 import '../services/audio_service.dart';
 import 'package:provider/provider.dart';
 
+// Helper for Cupertino-style page transitions
+void pushMaterialPage(BuildContext context, Widget page) {
+  Navigator.of(context).push(
+    PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => page,
+      transitionDuration: const Duration(milliseconds: 300),
+      reverseTransitionDuration: const Duration(milliseconds: 250),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        const begin = Offset(1.0, 0.0);
+        const end = Offset.zero;
+        final tween = Tween(begin: begin, end: end);
+        final curvedAnimation = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeInOutCubic,
+        );
+        return SlideTransition(
+          position: tween.animate(curvedAnimation),
+          child: FadeTransition(
+            opacity: curvedAnimation,
+            child: child,
+          ),
+        );
+      },
+    ),
+  );
+}
+
 class GenreStationsPage extends StatelessWidget {
   final String genre;
   final List<RadioStation> stations;
-  
+
   const GenreStationsPage({
-    super.key, 
+    super.key,
     required this.genre,
     required this.stations,
   });
@@ -22,27 +50,42 @@ class GenreStationsPage extends StatelessWidget {
   // Get genre-specific artwork
   String _getGenreArtwork(String genre) {
     final Map<String, String> genreArtwork = {
-      'Pop': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop',
-      'Rock': 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=400&h=400&fit=crop',
-      'Jazz': 'https://images.unsplash.com/photo-1415201364774-f6f0bb35f28f?w=400&h=400&fit=crop',
-      'Classical': 'https://images.unsplash.com/photo-1507838153414-b4b713384a76?w=400&h=400&fit=crop',
-      'Electronic': 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&h=400&fit=crop',
-      'Hip-Hop': 'https://images.unsplash.com/photo-1571330735066-03aaa9429d89?w=400&h=400&fit=crop',
-      'Country': 'https://images.unsplash.com/photo-1586348943529-beaae6c28db9?w=400&h=400&fit=crop',
-      'Blues': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop',
-      'Reggae': 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=400&h=400&fit=crop',
-      'Latin': 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=400&h=400&fit=crop',
-      'News': 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400&h=400&fit=crop',
-      'Talk': 'https://images.unsplash.com/photo-1589903308904-1010c2294adc?w=400&h=400&fit=crop',
-      'Sports': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=400&fit=crop',
+      'Pop':
+          'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop',
+      'Rock':
+          'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=400&h=400&fit=crop',
+      'Jazz':
+          'https://images.unsplash.com/photo-1415201364774-f6f0bb35f28f?w=400&h=400&fit=crop',
+      'Classical':
+          'https://images.unsplash.com/photo-1507838153414-b4b713384a76?w=400&h=400&fit=crop',
+      'Electronic':
+          'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&h=400&fit=crop',
+      'Hip-Hop':
+          'https://images.unsplash.com/photo-1571330735066-03aaa9429d89?w=400&h=400&fit=crop',
+      'Country':
+          'https://images.unsplash.com/photo-1586348943529-beaae6c28db9?w=400&h=400&fit=crop',
+      'Blues':
+          'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop',
+      'Reggae':
+          'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=400&h=400&fit=crop',
+      'Latin':
+          'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=400&h=400&fit=crop',
+      'News':
+          'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400&h=400&fit=crop',
+      'Talk':
+          'https://images.unsplash.com/photo-1589903308904-1010c2294adc?w=400&h=400&fit=crop',
+      'Sports':
+          'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=400&fit=crop',
     };
-    return genreArtwork[genre] ?? 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop';
+    return genreArtwork[genre] ??
+        'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop';
   }
 
   @override
   Widget build(BuildContext context) {
-    final audioService = Provider.of<AudioPlayerService>(context, listen: false);
-    
+    final audioService =
+        Provider.of<AudioPlayerService>(context, listen: false);
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Column(
@@ -68,7 +111,7 @@ class GenreStationsPage extends StatelessWidget {
                   top: MediaQuery.of(context).padding.top + 8,
                   left: 16,
                   child: GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
+                    onTap: () => Navigator.of(context).maybePop(),
                     child: Container(
                       width: 40,
                       height: 40,
@@ -104,25 +147,25 @@ class GenreStationsPage extends StatelessWidget {
                               blurRadius: 3,
                               color: Colors.black54,
                             ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${stations.length} stations',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w500,
-                      shadows: [
-                        Shadow(
-                          offset: Offset(1, 1),
-                          blurRadius: 3,
-                          color: Colors.black54,
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${stations.length} stations',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                          shadows: [
+                            Shadow(
+                              offset: Offset(1, 1),
+                              blurRadius: 3,
+                              color: Colors.black54,
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -132,11 +175,13 @@ class GenreStationsPage extends StatelessWidget {
           // Stations grid
           Expanded(
             child: GridView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 136), // Add bottom padding for mini player
+              padding: const EdgeInsets.fromLTRB(
+                  16, 16, 16, 136), // Add bottom padding for mini player
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
                 // width / height = _kTileWidth / (_kTileImageSize + textBlock)
-                childAspectRatio: _kTileWidth / (_kTileImageSize + _kTextBlockHeight),
+                childAspectRatio:
+                    _kTileWidth / (_kTileImageSize + _kTextBlockHeight),
                 crossAxisSpacing: 16,
                 mainAxisSpacing: 16,
               ),
@@ -144,7 +189,7 @@ class GenreStationsPage extends StatelessWidget {
               itemBuilder: (context, index) {
                 final station = stations[index];
                 final hasArt = station.artworkUrl.isNotEmpty;
-                
+
                 return GestureDetector(
                   onTap: () => audioService.playRadioStation(station),
                   child: Container(
@@ -171,13 +216,15 @@ class GenreStationsPage extends StatelessWidget {
                                         errorBuilder: (_, __, ___) => Container(
                                           height: _kTileImageSize,
                                           color: Colors.deepPurple.shade200,
-                                          child: const Icon(Icons.radio, color: Colors.white, size: 60),
+                                          child: const Icon(Icons.radio,
+                                              color: Colors.white, size: 60),
                                         ),
                                       )
                                     : Container(
                                         height: _kTileImageSize,
                                         color: Colors.deepPurple.shade200,
-                                        child: const Icon(Icons.radio, color: Colors.white, size: 60),
+                                        child: const Icon(Icons.radio,
+                                            color: Colors.white, size: 60),
                                       ),
                               ),
                               Positioned.fill(
@@ -211,7 +258,9 @@ class GenreStationsPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          station.country.isNotEmpty ? station.country : 'Unknown Country',
+                          station.country.isNotEmpty
+                              ? station.country
+                              : 'Unknown Country',
                           style: TextStyle(
                             color: Colors.grey[400],
                             fontSize: 14,
