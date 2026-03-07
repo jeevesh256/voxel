@@ -128,7 +128,7 @@ class _HomePageState extends State<HomePage> {
                                     errorBuilder: (_, __, ___) => Container(
                                       height: _homeTileImageSize,
                                       width: _homeTileImageSize,
-                                      color: Colors.deepPurple.shade200,
+                                      color: const Color(0xFFA855A8),
                                       child: const Icon(Icons.radio,
                                           color: Colors.white, size: 60),
                                     ),
@@ -136,7 +136,7 @@ class _HomePageState extends State<HomePage> {
                                 : Container(
                                     height: _homeTileImageSize,
                                     width: _homeTileImageSize,
-                                    color: Colors.deepPurple.shade200,
+                                    color: const Color(0xFFA855A8),
                                     child: const Icon(Icons.radio,
                                         color: Colors.white, size: 60),
                                   ),
@@ -305,7 +305,7 @@ class _HomePageState extends State<HomePage> {
                           errorBuilder: (_, __, ___) => Container(
                             height: _homeTileImageSize,
                             width: _homeTileImageSize,
-                            color: Colors.deepPurple.shade200,
+                            color: const Color(0xFFA855A8),
                             child: const Icon(Icons.radio,
                                 color: Colors.white, size: 60),
                           ),
@@ -572,7 +572,7 @@ class _HomePageState extends State<HomePage> {
                                   width: _homeTileImageSize,
                                   color: playlist.artworkColor != null
                                       ? Color(playlist.artworkColor!)
-                                      : Colors.deepPurple.shade200,
+                                      : const Color(0xFF80CBC4),
                                   child: const Icon(Icons.queue_music,
                                       color: Colors.white, size: 60),
                                 ),
@@ -584,7 +584,7 @@ class _HomePageState extends State<HomePage> {
                               decoration: BoxDecoration(
                                 color: playlist.artworkColor != null
                                     ? Color(playlist.artworkColor!)
-                                    : Colors.deepPurple.shade200,
+                                    : const Color(0xFF80CBC4),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: const Icon(Icons.queue_music,
@@ -670,7 +670,7 @@ class _HomePageState extends State<HomePage> {
               icon: Icons.queue_music,
               color: playlist.artworkColor != null
                   ? Color(playlist.artworkColor!)
-                  : Colors.deepPurple.shade200,
+                  : const Color(0xFF80CBC4),
               imagePath: playlist.artworkPath,
               onTap: () {
                 pushMaterialPage(

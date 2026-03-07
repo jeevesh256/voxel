@@ -56,6 +56,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
   final Color _playlistColor = Colors.deepPurple.shade400;
   late final Color _playlistColorSubtle;
   late final Color _playlistColorFaint;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -73,6 +74,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -1268,6 +1270,19 @@ class _PlaylistPageState extends State<PlaylistPage> {
                       SliverList(
                         delegate: SliverChildListDelegate([
                           _buildOptionTile(
+                            icon: audioService.isFileLiked(file.path)
+                                ? Icons.favorite
+                                : Icons.favorite_border,
+                            title: audioService.isFileLiked(file.path)
+                                ? 'Remove from Liked Songs'
+                                : 'Add to Liked Songs',
+                            color: Colors.deepPurple.shade200,
+                            onTap: () {
+                              audioService.toggleLikeFile(file.path);
+                              Navigator.pop(context);
+                            },
+                          ),
+                          _buildOptionTile(
                             icon: Icons.playlist_add,
                             title: 'Add to playlist',
                             color: Colors.tealAccent.shade400,
@@ -1600,134 +1615,50 @@ class _PlaylistPageState extends State<PlaylistPage> {
     final customPlaylist = audioService.getCustomPlaylist(widget.playlistId);
 
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 200,
-            pinned: true,
-            toolbarHeight: 72,
-            collapsedHeight: 86,
-            backgroundColor: Colors.black,
-            surfaceTintColor: Colors.transparent,
-            flexibleSpace: FlexibleSpaceBar(
-              title: Text(
-                widget.title,
-                textAlign: TextAlign.center,
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight),
+        child: AnimatedBuilder(
+          animation: _scrollController,
+          builder: (context, _) {
+            final opacity = ((_scrollController.hasClients
+                        ? _scrollController.offset
+                        : 0.0) /
+                    375.0)
+                .clamp(0.0, 1.0);
+            return AppBar(
+              backgroundColor: Colors.black.withOpacity(opacity),
+              elevation: 0,
+              surfaceTintColor: Colors.transparent,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
               ),
-              centerTitle: true,
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Background image if available
-                  if (customPlaylist?.artworkPath != null)
-                    Image.file(
-                      File(customPlaylist!.artworkPath!),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              _playlistColorSubtle,
-                              _playlistColorFaint,
-                            ],
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            _playlistColorSubtle,
-                            _playlistColorFaint,
-                          ],
-                        ),
-                      ),
-                    ),
-                  // Simple gradient overlay - darker for image playlists
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: customPlaylist?.artworkPath != null
-                            ? [
-                                Colors.black.withOpacity(0.1),
-                                Colors.black.withOpacity(0.7),
-                              ]
-                            : [
-                                Colors.black.withOpacity(0.2),
-                                Colors.black.withOpacity(0.6),
-                              ],
-                      ),
-                    ),
-                  ),
-                  // Icon overlay
-                  Center(
-                    child: customPlaylist?.artworkPath != null
-                        ? Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.4),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(
-                              widget.icon,
-                              size: 40,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Icon(
-                            widget.icon,
-                            size: 64,
-                            color: Colors.white.withOpacity(0.9),
-                          ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: _buildSortMenu(
+              actions: [
+                _buildSortMenu(
                   _playlistColor,
                   _playlistColorSubtle,
-                  iconColor: isCustomPlaylist ? Colors.white : null,
+                  iconColor: Colors.white,
                 ),
-              ),
-              if (isCustomPlaylist)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: IconButton(
-                    icon: const Icon(Icons.edit),
-                    color: Colors.white,
+                if (isCustomPlaylist)
+                  IconButton(
+                    icon: const Icon(Icons.edit, color: Colors.white),
                     tooltip: 'Edit playlist',
                     onPressed: () => _showEditPlaylistDialog(customPlaylist!),
                   ),
-                ),
-              if (!_isSearching)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: IconButton(
-                    icon: const Icon(Icons.search),
-                    color: isCustomPlaylist ? Colors.white : null,
+                if (!_isSearching)
+                  IconButton(
+                    icon: const Icon(Icons.search, color: Colors.white),
                     onPressed: () {
                       setState(() {
                         _isSearching = true;
                       });
                     },
                   ),
-                ),
-              if (_isSearching)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: IconButton(
-                    icon: const Icon(Icons.close),
+                if (_isSearching)
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
                     onPressed: () {
                       setState(() {
                         _isSearching = false;
@@ -1737,58 +1668,164 @@ class _PlaylistPageState extends State<PlaylistPage> {
                       _clearSongCache();
                     },
                   ),
+              ],
+            );
+          },
+        ),
+      ),
+      body: CustomScrollView(
+        controller: _scrollController,
+        slivers: [
+          // Hero header
+          SliverToBoxAdapter(
+            child: Stack(
+              children: [
+                Container(
+                  height: 380,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.grey[900]!,
+                        Colors.black,
+                      ],
+                    ),
+                  ),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Artwork or icon background
+                      if (customPlaylist?.artworkPath != null)
+                        Image.file(
+                          File(customPlaylist!.artworkPath!),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  _playlistColorSubtle,
+                                  _playlistColorFaint,
+                                ],
+                              ),
+                            ),
+                            child: Center(
+                              child: Icon(
+                                widget.icon,
+                                size: 100,
+                                color: Colors.white.withOpacity(0.15),
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                _playlistColorSubtle,
+                                _playlistColorFaint,
+                              ],
+                            ),
+                          ),
+                          child: Center(
+                            child: Icon(
+                              widget.icon,
+                              size: 100,
+                              color: Colors.white.withOpacity(0.15),
+                            ),
+                          ),
+                        ),
+                      // Gradient overlay
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            stops: const [0.0, 0.6, 1.0],
+                            colors: [
+                              Colors.black.withOpacity(0.1),
+                              Colors.black.withOpacity(0.6),
+                              Colors.black,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-            ],
+                // Playlist info at bottom of hero
+                Positioned(
+                  left: 24,
+                  right: 24,
+                  bottom: 24,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 40,
+                          fontWeight: FontWeight.w900,
+                          height: 1.0,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        _isLoadingSongs
+                            ? 'Loading...'
+                            : '${allSongs.length} ${allSongs.length == 1 ? 'song' : 'songs'}',
+                        style: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-          // Search Bar (only when searching)
+
+          // Search bar (when active)
           if (_isSearching)
             SliverToBoxAdapter(
               child: Container(
-                margin: const EdgeInsets.all(16),
+                margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                 decoration: BoxDecoration(
                   color: Colors.grey[900],
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        autofocus: true,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                        ),
-                        decoration: const InputDecoration(
-                          hintText: 'Search songs...',
-                          hintStyle: TextStyle(
-                            color: Colors.grey,
-                            fontSize: 16,
-                          ),
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 16,
-                          ),
-                          prefixIcon: Icon(
-                            Icons.search,
-                            color: Colors.grey,
-                            size: 20,
-                          ),
-                        ),
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                          });
-                          _clearSongCache();
-                        },
-                      ),
-                    ),
-                  ],
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                  decoration: const InputDecoration(
+                    hintText: 'Search songs...',
+                    hintStyle: TextStyle(color: Colors.grey, fontSize: 16),
+                    border: InputBorder.none,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    prefixIcon: Icon(Icons.search, color: Colors.grey, size: 20),
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value;
+                    });
+                    _clearSongCache();
+                  },
                 ),
               ),
             ),
-          // Loading indicator for large playlists
+
+          // Loading indicator
           if (_isLoadingSongs)
             const SliverToBoxAdapter(
               child: Padding(
@@ -1802,96 +1839,105 @@ class _PlaylistPageState extends State<PlaylistPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                     SizedBox(width: 12),
-                    Text(
-                      'Loading songs...',
-                      style: TextStyle(color: Colors.grey),
-                    ),
+                    Text('Loading songs...',
+                        style: TextStyle(color: Colors.grey)),
                   ],
                 ),
               ),
             ),
-          // Play All Button
+
+          // Play / shuffle buttons
           SliverToBoxAdapter(
-            child: RepaintBoundary(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(16, _isSearching ? 0 : 16, 16, 16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: (songs.isEmpty || _isLoadingSongs)
-                        ? null
-                        : () {
-                            // Play the filtered and sorted songs that the user actually sees
-                            audioService.playFilteredPlaylist(
-                                widget.playlistId, songs);
-                          },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.deepPurple.shade400,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 28, 24, 16),
+              child: Row(
+                children: [
+                  // Circular play button
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple.shade400,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.deepPurple.shade400.withOpacity(0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                    child: _isLoadingSongs 
-                        ? const Text('Loading...')
-                        : Text('Play All (${songs.length} songs)'),
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.play_arrow_rounded,
+                        size: 32,
+                        color: Colors.white,
+                      ),
+                      onPressed: (songs.isEmpty || _isLoadingSongs)
+                          ? null
+                          : () => audioService.playFilteredPlaylist(
+                              widget.playlistId, songs),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 20),
+                  // Shuffle button
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      border:
+                          Border.all(color: Colors.grey[800]!, width: 1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      icon: Icon(
+                        Icons.shuffle,
+                        size: 20,
+                        color: Colors.grey[400],
+                      ),
+                      padding: EdgeInsets.zero,
+                      onPressed: (songs.isEmpty || _isLoadingSongs)
+                          ? null
+                          : () {
+                              final shuffled = List<File>.from(songs)
+                                ..shuffle();
+                              audioService.playFilteredPlaylist(
+                                  widget.playlistId, shuffled);
+                            },
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          // Songs List
-          if (isCustomPlaylist && !_isSearching && _searchQuery.isEmpty)
-            SliverList.builder(
-              itemCount: songs.length,
-              itemBuilder: (context, index) {
-                final file = songs[index];
-                return RepaintBoundary(
-                  child: _OptimizedSongTile(
-                    key: ValueKey(file.path),
-                    file: file,
-                    audioService: audioService,
-                    metadataCache: _metadataCache,
-                    playlistColor: _playlistColorSubtle,
-                    onTap: () => audioService.playFileInContextWithPlaylistId(
-                        file, songs, widget.playlistId),
-                    onMoreTap: () =>
-                        _showSongOptionsSheet(file, _playlistColorSubtle),
-                  ),
-                );
-              },
-            )
-          else
-            SliverList.builder(
-              itemCount: songs.length,
-              itemBuilder: (context, index) {
-                final file = songs[index];
-                return RepaintBoundary(
-                  child: _OptimizedSongTile(
-                    key: ValueKey(file.path),
-                    file: file,
-                    audioService: audioService,
-                    metadataCache: _metadataCache,
-                    playlistColor: _playlistColorSubtle,
-                    onTap: () => audioService.playFileInContextWithPlaylistId(
-                        file, songs, widget.playlistId),
-                    onMoreTap: () =>
-                        _showSongOptionsSheet(file, _playlistColorSubtle),
-                  ),
-                );
-              },
-            ),
-          // Bottom padding to prevent mini player overlap
+
+          // Songs list
+          SliverList.builder(
+            itemCount: songs.length,
+            itemBuilder: (context, index) {
+              final file = songs[index];
+              return RepaintBoundary(
+                child: _OptimizedSongTile(
+                  key: ValueKey(file.path),
+                  file: file,
+                  audioService: audioService,
+                  metadataCache: _metadataCache,
+                  playlistColor: _playlistColorSubtle,
+                  onTap: () => audioService.playFileInContextWithPlaylistId(
+                      file, songs, widget.playlistId),
+                  onMoreTap: () =>
+                      _showSongOptionsSheet(file, _playlistColorSubtle),
+                ),
+              );
+            },
+          ),
+
+          // Bottom padding
           SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context)
-                        .padding
-                        .bottom + // Device bottom padding
-                    kBottomNavigationBarHeight + // Navigation bar height (usually 56)
-                    60.0, // Mini player height
-              ),
+            child: SizedBox(
+              height: MediaQuery.of(context).padding.bottom +
+                  kBottomNavigationBarHeight +
+                  80.0,
             ),
           ),
         ],
@@ -2055,7 +2101,7 @@ class _OptimizedSongTileState extends State<_OptimizedSongTile>
   Widget build(BuildContext context) {
     super.build(context);
     return ListTile(
-      contentPadding: const EdgeInsets.only(left: 16, right: 8),
+      contentPadding: const EdgeInsets.only(left: 16, right: 0),
       horizontalTitleGap: 12,
       leading: _buildAlbumArt(),
       title: Text(
@@ -2103,7 +2149,7 @@ class _OptimizedSongTileState extends State<_OptimizedSongTile>
               width: 50,
               height: 50,
               fit: BoxFit.cover,
-              cacheWidth: 150, // Higher cache for sharpness
+              cacheWidth: 150,
               cacheHeight: 150,
               errorBuilder: (_, __, ___) => _buildFallbackIcon(),
             ),

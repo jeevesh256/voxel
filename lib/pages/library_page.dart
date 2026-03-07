@@ -11,11 +11,13 @@ import 'playlist_page.dart';
 import 'favourite_radios_page.dart';
 import 'artist_page.dart';
 
-// Helper for Cupertino-style page transitions
+enum LibrarySortOption { name, songCount }
+
 void pushMaterialPage(BuildContext context, Widget page) {
   Navigator.of(context).push(
     PageRouteBuilder(
-      pageBuilder: (context, animation, secondaryAnimation) => RepaintBoundary(child: page),
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          RepaintBoundary(child: page),
       transitionDuration: const Duration(milliseconds: 250),
       reverseTransitionDuration: const Duration(milliseconds: 200),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -42,15 +44,26 @@ class LibraryPage extends StatefulWidget {
   State<LibraryPage> createState() => _LibraryPageState();
 }
 
-class _LibraryPageState extends State<LibraryPage> {
+class _LibraryPageState extends State<LibraryPage>
+    with SingleTickerProviderStateMixin {
   final StorageService _storageService = StorageService();
   final SongMetadataCache _metadataCache = SongMetadataCache();
+  late TabController _tabController;
+
+  String _searchQuery = '';
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
+  LibrarySortOption _sortOption = LibrarySortOption.name;
+  bool _isAscending = true;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this, animationDuration: const Duration(milliseconds: 220));
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) setState(() {});
+    });
     _metadataCache.initialize();
-    // Check if offline files are already loaded, if not, load them
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final audioService = context.read<AudioPlayerService>();
       final offlineSongs = audioService.getPlaylistSongs('offline');
@@ -60,311 +73,975 @@ class _LibraryPageState extends State<LibraryPage> {
     });
   }
 
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadAudioFiles() async {
     try {
       final entities = await _storageService.getAudioFiles();
       final files = entities.whereType<File>().toList();
-
       if (mounted) {
-        // Load files into offline playlist
         context.read<AudioPlayerService>().loadOfflineFiles(files);
       }
     } catch (e) {
-      if (mounted) {
-        // Error handling - could show a snackbar or error message
-        debugPrint('Error loading audio files: $e');
-      }
+      debugPrint('Error loading audio files: $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          bottom: TabBar(
-            tabs: const [
-              Tab(text: 'Playlists'),
-              Tab(text: 'Artists'),
-              Tab(text: 'Radios'),
-            ],
-            indicatorColor: Colors.deepPurple.shade400,
+    final bottomPad = MediaQuery.of(context).padding.bottom +
+        kBottomNavigationBarHeight +
+        70.0;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        toolbarHeight: 68,
+        title: const Padding(
+          padding: EdgeInsets.only(bottom: 8),
+          child: Text(
+            'Library',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              letterSpacing: -0.5,
+            ),
           ),
         ),
-        body: TabBarView(
-          children: [
-            _buildPlaylistsView(),
-            _buildArtistsView(),
-            _buildFavouriteRadiosView(),
-          ],
-        ),
-      ),
-    );
-    // ...existing code...
-  }
-
-  Widget _buildFavouriteRadiosView() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Consumer<AudioPlayerService>(
-        builder: (context, audioService, child) {
-          final radios = audioService.getPlaylistRadios('favourite_radios');
-
-          if (radios.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.radio,
-                    size: 64,
-                    color: Colors.grey[600],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No radios yet',
-                    style: TextStyle(color: Colors.grey[400], fontSize: 16),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Add stations by tapping the heart icon',
-                    style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return Column(
+        bottom: PreferredSize(
+          preferredSize: Size.fromHeight(_isSearching ? 112 : 52),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // Header with view all button (only if needed)
-              if (radios.length > 5)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '${radios.length} stations',
-                        style: TextStyle(
-                          color: Colors.grey[400],
-                          fontSize: 16,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TabBar(
+                        controller: _tabController,
+                        tabs: const [
+                          Tab(text: 'Playlists'),
+                          Tab(text: 'Artists'),
+                          Tab(text: 'Radios'),
+                        ],
+                        isScrollable: true,
+                        tabAlignment: TabAlignment.start,
+                        labelPadding:
+                            const EdgeInsets.symmetric(horizontal: 18, vertical: 0),
+                        indicator: BoxDecoration(
+                          borderRadius: BorderRadius.circular(22),
+                          color: Colors.deepPurple.shade500,
+                        ),
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        dividerColor: Colors.transparent,
+                        labelColor: Colors.white,
+                        unselectedLabelColor: Colors.grey[500],
+                        labelStyle: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                        unselectedLabelStyle: const TextStyle(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
                         ),
                       ),
-                      TextButton.icon(
-                        onPressed: () {
-                          pushMaterialPage(
-                              context, const FavouriteRadiosPage());
-                        },
-                        icon: Icon(
-                          Icons.arrow_forward,
-                          color: Colors.deepPurple.shade400,
-                          size: 16,
+                    ),
+                    if (!_isSearching) ...[
+                      SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          icon: Icon(Icons.search, color: Colors.grey[400], size: 20),
+                          onPressed: () => setState(() => _isSearching = true),
                         ),
-                        label: Text(
-                          'View All',
-                          style: TextStyle(
-                            color: Colors.deepPurple.shade400,
-                            fontSize: 14,
-                          ),
+                      ),
+                      SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          icon: Icon(Icons.sort, color: Colors.grey[400], size: 20),
+                          onPressed: _showLibrarySortSheet,
+                        ),
+                      ),
+                    ] else
+                      SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          icon: Icon(Icons.close, color: Colors.grey[400], size: 20),
+                          onPressed: () => setState(() {
+                            _isSearching = false;
+                            _searchQuery = '';
+                            _searchController.clear();
+                          }),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (_isSearching)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[900],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: TextField(
+                      controller: _searchController,
+                      autofocus: true,
+                      style: const TextStyle(color: Colors.white, fontSize: 15),
+                      decoration: const InputDecoration(
+                        hintText: 'Search...',
+                        hintStyle: TextStyle(color: Colors.grey, fontSize: 15),
+                        border: InputBorder.none,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        prefixIcon: Icon(Icons.search, color: Colors.grey, size: 18),
+                      ),
+                      onChanged: (v) => setState(() => _searchQuery = v),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        physics: const ClampingScrollPhysics(),
+        children: [
+          _buildPlaylistsView(bottomPad),
+          _buildArtistsView(bottomPad),
+          _buildFavouriteRadiosView(bottomPad),
+        ],
+      ),
+    );
+  }
+
+  // ─── RADIOS ──────────────────────────────────────────────────────────────────
+
+  Widget _buildFavouriteRadiosView(double bottomPad) {
+    return Consumer<AudioPlayerService>(
+      builder: (context, audioService, _) {
+        final List allRadios = audioService.getPlaylistRadios('favourite_radios');
+
+        // Filter by search query
+        List displayRadios = _searchQuery.isEmpty
+            ? List.from(allRadios)
+            : allRadios
+                .where((r) => (r.name as String)
+                    .toLowerCase()
+                    .contains(_searchQuery.toLowerCase()))
+                .toList();
+
+        // Sort by name, respecting _isAscending
+        displayRadios.sort((a, b) {
+          final cmp = (a.name as String)
+              .toLowerCase()
+              .compareTo((b.name as String).toLowerCase());
+          return _isAscending ? cmp : -cmp;
+        });
+
+        if (displayRadios.isEmpty) {
+          return Center(
+            child: _buildEmptyState(
+              icon: allRadios.isEmpty
+                  ? Icons.radio_rounded
+                  : Icons.search_off_rounded,
+              title: allRadios.isEmpty ? 'No saved radios' : 'No matches',
+              subtitle: allRadios.isEmpty
+                  ? 'Tap the heart on any station to save it here'
+                  : 'Try a different search term',
+            ),
+          );
+        }
+
+        // When searching, show all matches; otherwise cap at 5
+        final showAll = _searchQuery.isNotEmpty || displayRadios.length <= 5;
+        final displayCount = showAll ? displayRadios.length : 5;
+
+        return ListView.builder(
+          padding: EdgeInsets.only(top: 8, bottom: bottomPad),
+          itemCount: displayCount + (showAll ? 0 : 1),
+          itemBuilder: (context, index) {
+            if (index == displayCount) {
+              // View all row
+              return InkWell(
+                onTap: () =>
+                    pushMaterialPage(context, const FavouriteRadiosPage()),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[850],
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.more_horiz,
+                            color: Colors.grey[400], size: 24),
+                      ),
+                      const SizedBox(width: 14),
+                      Text(
+                        'View all ${allRadios.length} stations',
+                        style: TextStyle(
+                          color: Colors.deepPurple.shade300,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
                   ),
                 ),
-              // Show first 3-5 radios or all if less than 6
+              );
+            }
+            final radio = displayRadios[index];
+            return _buildRadioRow(radio, audioService);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildRadioRow(dynamic radio, AudioPlayerService audioService) {
+    final hasArt = (radio.artworkUrl as String).isNotEmpty;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => audioService.playRadioStation(radio),
+        splashColor: Colors.white.withOpacity(0.04),
+        highlightColor: Colors.white.withOpacity(0.03),
+        child: Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: hasArt
+                    ? Image.network(
+                        radio.artworkUrl as String,
+                        width: 56,
+                        height: 56,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _radioArtFallback(),
+                      )
+                    : _radioArtFallback(),
+              ),
+              const SizedBox(width: 14),
               Expanded(
-                child: ListView.builder(
-                  itemCount: radios.length > 5 ? 5 : radios.length,
-                  itemBuilder: (context, index) {
-                    final radio = radios[index];
-                    final hasArt = radio.artworkUrl.isNotEmpty;
-                    return Card(
-                      color: Colors.grey[900],
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        leading: hasArt
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.network(
-                                  radio.artworkUrl,
-                                  width: 48,
-                                  height: 48,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    width: 48,
-                                    height: 48,
-                                    color: Colors.deepPurple.shade200,
-                                    child: const Icon(Icons.radio,
-                                        color: Colors.white, size: 24),
-                                  ),
-                                ),
-                              )
-                            : Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  color: Colors.deepPurple.shade200,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(Icons.radio,
-                                    color: Colors.white, size: 24),
-                              ),
-                        title: Text(
-                          radio.name,
-                          style: const TextStyle(color: Colors.white),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      radio.name as String,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if ((radio.genre as String).isNotEmpty ||
+                        (radio.country as String).isNotEmpty) ...
+                      [
+                        const SizedBox(height: 3),
+                        Text(
+                          [
+                            if ((radio.genre as String).isNotEmpty)
+                              radio.genre as String,
+                            if ((radio.country as String).isNotEmpty)
+                              radio.country as String,
+                          ].join(' · '),
+                          style: TextStyle(
+                              color: Colors.grey[500], fontSize: 13),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        subtitle: Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                radio.genre,
-                                style: TextStyle(color: Colors.grey[400]),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (radio.country.isNotEmpty) ...[
-                              Text(
-                                ' • ',
-                                style: TextStyle(color: Colors.grey[400]),
-                              ),
-                              Flexible(
-                                child: Text(
-                                  radio.country,
-                                  style: TextStyle(color: Colors.grey[400]),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        trailing: IconButton(
-                          icon: Icon(
-                            Icons.favorite,
-                            color: Colors.deepPurple.shade400,
-                            size: 20,
-                          ),
-                          tooltip: 'Remove radio',
-                          onPressed: () {
-                            // Show confirmation dialog for better UX
-                            showDialog(
-                              context: context,
-                              builder: (BuildContext context) {
-                                return AlertDialog(
-                                  backgroundColor: Colors.grey[900],
-                                  title: Text(
-                                    'Remove radio?',
-                                    style: TextStyle(color: Colors.white),
-                                  ),
-                                  content: Text(
-                                    'Remove "${radio.name}" from your radios?',
-                                    style: TextStyle(color: Colors.grey[300]),
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () =>
-                                          Navigator.of(context).pop(),
-                                      child: Text(
-                                        'Cancel',
-                                        style:
-                                            TextStyle(color: Colors.grey[400]),
-                                      ),
-                                    ),
-                                    TextButton(
-                                      onPressed: () {
-                                        audioService.removeRadioFromPlaylist(
-                                            'favourite_radios', radio);
-                                        Navigator.of(context).pop();
-                                      },
-                                      child: Text(
-                                        'Remove',
-                                        style: TextStyle(
-                                            color: Colors.deepPurple.shade400),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            );
-                          },
-                        ),
-                        onTap: () => audioService.playRadioStation(radio),
-                      ),
-                    );
-                  },
+                      ],
+                  ],
                 ),
               ),
-              // Add spacing for mini player
-              const SizedBox(height: 100),
+              GestureDetector(
+                onTap: () =>
+                    _confirmRemoveRadio(context, radio, audioService),
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Icon(Icons.favorite_rounded,
+                      color: Colors.deepPurple.shade400, size: 20),
+                ),
+              ),
             ],
-          );
-        },
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildPlaylistsView() {
-    final audioService = context.watch<AudioPlayerService>();
-    final playlists = audioService.allPlaylists;
-    final customPlaylists = audioService.customPlaylists;
+  Widget _radioArtFallback() {
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        color: const Color(0xFFA855A8),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Icon(Icons.radio_rounded,
+          color: Colors.white, size: 26),
+    );
+  }
 
-    // Show liked songs in stack order (newest first)
-    final likedSongs = List<File>.from(playlists
-        .firstWhere(
-          (e) => e.key == 'liked',
-          orElse: () => const MapEntry('liked', []),
-        )
-        .value
-        .reversed);
-
-    return ListView(
-      children: [
-        // Default playlists
-        _buildPlaylistTile(
-          title: 'Liked Songs',
-          icon: Icons.favorite,
-          playlistId: 'liked',
-          songs: likedSongs,
+  void _confirmRemoveRadio(
+      BuildContext context, dynamic radio, AudioPlayerService audioService) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Remove station?',
+            style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Remove "${radio.name}" from your saved radios?',
+          style: TextStyle(color: Colors.grey[300]),
         ),
-        _buildPlaylistTile(
-          title: 'Offline',
-          icon: Icons.offline_pin,
-          playlistId: 'offline',
-          songs: playlists
-              .firstWhere(
-                (e) => e.key == 'offline',
-                orElse: () => const MapEntry('offline', []),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child:
+                Text('Cancel', style: TextStyle(color: Colors.grey[400])),
+          ),
+          TextButton(
+            onPressed: () {
+              audioService.removeRadioFromPlaylist('favourite_radios', radio);
+              Navigator.of(ctx).pop();
+            },
+            child: Text('Remove',
+                style: TextStyle(color: Colors.deepPurple.shade300)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── PLAYLISTS ───────────────────────────────────────────────────────────────
+
+  Widget _buildPlaylistsView(double bottomPad) {
+    return Consumer<AudioPlayerService>(
+      builder: (context, audioService, _) {
+        final playlists = audioService.allPlaylists;
+        final customPlaylists = audioService.customPlaylists;
+
+        final likedCount = playlists
+            .firstWhere(
+              (e) => e.key == 'liked',
+              orElse: () => const MapEntry('liked', []),
+            )
+            .value
+            .length;
+
+        final offlineCount = playlists
+            .firstWhere(
+              (e) => e.key == 'offline',
+              orElse: () => const MapEntry('offline', []),
+            )
+            .value
+            .length;
+
+        // Filter and sort custom playlists
+        var filteredCustom = _searchQuery.isEmpty
+            ? customPlaylists.toList()
+            : customPlaylists
+                .where((p) => p.name
+                    .toLowerCase()
+                    .contains(_searchQuery.toLowerCase()))
+                .toList();
+
+        if (_sortOption == LibrarySortOption.name) {
+          filteredCustom.sort((a, b) {
+            final cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+            return _isAscending ? cmp : -cmp;
+          });
+        } else {
+          filteredCustom.sort((a, b) {
+            final cmp = audioService
+                .getPlaylistSongs(a.id)
+                .length
+                .compareTo(audioService.getPlaylistSongs(b.id).length);
+            return _isAscending ? cmp : -cmp;
+          });
+        }
+
+        return ListView(
+          padding: EdgeInsets.only(top: 8, bottom: bottomPad),
+          children: [
+            // ── System playlists ──
+            if (_searchQuery.isEmpty ||
+                'liked songs'.contains(_searchQuery.toLowerCase()))
+              _buildPlaylistRow(
+                thumbnail: _solidThumbnail(
+                  color: Colors.deepPurple.shade200,
+                  icon: Icons.favorite_rounded,
+                ),
+                title: 'Liked Songs',
+                subtitle: '$likedCount songs',
+                onTap: () => pushMaterialPage(
+                  context,
+                  const PlaylistPage(
+                    playlistId: 'liked',
+                    title: 'Liked Songs',
+                    icon: Icons.favorite,
+                  ),
+                ),
+              ),
+            if (_searchQuery.isEmpty ||
+                'offline'.contains(_searchQuery.toLowerCase()))
+              _buildPlaylistRow(
+                thumbnail: _solidThumbnail(
+                  color: const Color(0xFF5573B8),
+                  icon: Icons.offline_pin_rounded,
+                ),
+                title: 'Offline',
+                subtitle: '$offlineCount songs',
+                onTap: () => pushMaterialPage(
+                  context,
+                  const PlaylistPage(
+                    playlistId: 'offline',
+                    title: 'Offline',
+                    icon: Icons.offline_pin,
+                  ),
+                ),
+              ),
+
+            // ── My Playlists header ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 4, 4),
+              child: Row(
+                children: [
+                  const Text(
+                    'My Playlists',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: _showCreatePlaylistDialog,
+                    icon: Icon(Icons.add_rounded,
+                        color: Colors.deepPurple.shade300, size: 24),
+                    tooltip: 'New playlist',
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Custom playlists ──
+            if (customPlaylists.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 24, bottom: 16),
+                child: _buildEmptyState(
+                  icon: Icons.library_music_rounded,
+                  title: 'No playlists yet',
+                  subtitle: 'Tap + to create your first playlist',
+                ),
               )
-              .value,
-        ),
-        const Divider(),
-        // Custom playlists
-        ...customPlaylists
-            .map((playlist) => _buildCustomPlaylistTile(playlist)),
-        // Create new playlist button at the bottom
-        ListTile(
-          leading: Icon(
-            Icons.add,
-            color: Colors.deepPurple.shade400,
+            else if (filteredCustom.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 24, bottom: 16),
+                child: _buildEmptyState(
+                  icon: Icons.search_off_rounded,
+                  title: 'No matches',
+                  subtitle: 'Try a different search term',
+                ),
+              )
+            else
+              ...filteredCustom.map(
+                (playlist) => _buildPlaylistRow(
+                  thumbnail: _playlistThumbnail(playlist, audioService),
+                  title: playlist.name,
+                  subtitle: () {
+                    final n =
+                        audioService.getPlaylistSongs(playlist.id).length;
+                    return '$n ${n == 1 ? 'song' : 'songs'}';
+                  }(),
+                  onTap: () => pushMaterialPage(
+                    context,
+                    PlaylistPage(
+                      playlistId: playlist.id,
+                      title: playlist.name,
+                      icon: Icons.queue_music,
+                      allowReorder: true,
+                    ),
+                  ),
+                  trailing: IconButton(
+                    onPressed: () => _showPlaylistOptionsSheet(playlist),
+                    icon: Icon(Icons.more_vert, color: Colors.grey[400]),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// A generic list row used for both system and custom playlists.
+  Widget _buildPlaylistRow({
+    required Widget thumbnail,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    Widget? trailing,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        splashColor: Colors.white.withOpacity(0.04),
+        highlightColor: Colors.white.withOpacity(0.03),
+        child: Padding(
+          padding: const EdgeInsets.only(left: 16, right: 0, top: 8, bottom: 8),
+          child: Row(
+            children: [
+              thumbnail,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: Colors.grey[500],
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) trailing,
+            ],
           ),
-          title: const Text(
-            'Create Playlist',
-            style: TextStyle(color: Colors.white),
-          ),
-          onTap: _showCreatePlaylistDialog,
         ),
-        const SizedBox(height: 100), // Extra space for mini player
+      ),
+    );
+  }
+
+  /// Square thumbnail with a solid muted background and a tinted icon.
+  Widget _solidThumbnail({
+    required Color color,
+    required IconData icon,
+  }) {
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Icon(icon, color: Colors.white, size: 26),
+    );
+  }
+
+  /// Thumbnail for a custom playlist — artwork if available, colored box otherwise.
+  Widget _playlistThumbnail(dynamic playlist, AudioPlayerService audioService) {
+    final accentColor = playlist.artworkColor != null
+        ? Color(playlist.artworkColor as int)
+        : const Color(0xFF80CBC4);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 56,
+        height: 56,
+        child: playlist.artworkPath != null &&
+                (playlist.artworkPath as String).isNotEmpty
+            ? Image.file(
+                File(playlist.artworkPath as String),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _coloredPlaylistThumb(accentColor),
+              )
+            : _coloredPlaylistThumb(accentColor),
+      ),
+    );
+  }
+
+  Widget _coloredPlaylistThumb(Color color) {
+    return Container(
+      color: color,
+      child: const Center(
+        child: Icon(Icons.queue_music_rounded, color: Colors.white, size: 32),
+      ),
+    );
+  }
+
+  // ─── ARTISTS ─────────────────────────────────────────────────────────────────
+
+  Widget _buildArtistsView(double bottomPad) {
+    final audioService = context.watch<AudioPlayerService>();
+    final audioFiles = audioService.getPlaylistSongs('offline');
+    final artistMap = <String, List<File>>{};
+    final artistAlbumArt = <String, String>{};
+
+    for (var file in audioFiles) {
+      final song = _metadataCache.createSongFromFile(file);
+      final rawArtist = song.artist;
+      if (rawArtist == 'Unknown Artist' || rawArtist.isEmpty) continue;
+
+      // Split compound artist strings into individual names
+      final artists = rawArtist
+          .split(RegExp(r'\s*,\s*|\s*&\s*|\s+(?:feat\.?|ft\.?|x)\s+', caseSensitive: false))
+          .map((a) => a.trim())
+          .where((a) => a.isNotEmpty)
+          .toList();
+
+      for (final artist in artists) {
+        artistMap.putIfAbsent(artist, () => []).add(file);
+        if (!artistAlbumArt.containsKey(artist) && song.albumArt.isNotEmpty) {
+          artistAlbumArt[artist] = song.albumArt;
+        }
+      }
+    }
+
+    final allArtistNames = artistMap.keys.toList();
+
+    // Filter by search query
+    var displayedArtists = _searchQuery.isEmpty
+        ? List<String>.from(allArtistNames)
+        : allArtistNames
+            .where((a) => a.toLowerCase().contains(_searchQuery.toLowerCase()))
+            .toList();
+
+    // Sort artists
+    if (_sortOption == LibrarySortOption.name) {
+      displayedArtists.sort((a, b) {
+        final cmp = a.toLowerCase().compareTo(b.toLowerCase());
+        return _isAscending ? cmp : -cmp;
+      });
+    } else {
+      displayedArtists.sort((a, b) {
+        final cmp = artistMap[a]!.length.compareTo(artistMap[b]!.length);
+        return _isAscending ? cmp : -cmp;
+      });
+    }
+
+    if (displayedArtists.isEmpty) {
+      return Center(
+        child: _buildEmptyState(
+          icon: allArtistNames.isEmpty
+              ? Icons.person_outline_rounded
+              : Icons.search_off_rounded,
+          title: allArtistNames.isEmpty ? 'No artists found' : 'No matches',
+          subtitle: allArtistNames.isEmpty
+              ? 'Add songs with artist metadata to see them here'
+              : 'Try a different search term',
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: EdgeInsets.only(top: 8, bottom: bottomPad),
+      itemCount: displayedArtists.length,
+      itemBuilder: (context, index) {
+        final artist = displayedArtists[index];
+        final songs = artistMap[artist]!;
+        final albumArt = artistAlbumArt[artist];
+
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => pushMaterialPage(
+              context,
+              ArtistPage(
+                artistName: artist,
+                songs: songs,
+                artistArtwork: albumArt,
+              ),
+            ),
+            splashColor: Colors.white.withOpacity(0.04),
+            highlightColor: Colors.white.withOpacity(0.03),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  _buildArtistAvatar(albumArt, artist),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          artist,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${songs.length} ${songs.length == 1 ? 'song' : 'songs'}',
+                          style:
+                              TextStyle(color: Colors.grey[500], fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildArtistAvatar(String? albumArt, String artistName) {
+    final initials =
+        artistName.isNotEmpty ? artistName[0].toUpperCase() : '?';
+    final hue = (artistName.codeUnits.fold(0, (a, b) => a + b) % 360)
+        .toDouble();
+    final avatarColor = HSLColor.fromAHSL(1, hue, 0.55, 0.38).toColor();
+
+    return SizedBox(
+      width: 56,
+      height: 56,
+      child: ClipOval(
+        child: albumArt != null && albumArt.isNotEmpty
+            ? Image.file(
+                File(albumArt),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                    _initialsAvatar(initials, avatarColor),
+              )
+            : _initialsAvatar(initials, avatarColor),
+      ),
+    );
+  }
+
+  Widget _initialsAvatar(String initials, Color color) {
+    return Container(
+      color: color,
+      alignment: Alignment.center,
+      child: Text(
+        initials,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 22,
+        ),
+      ),
+    );
+  }
+
+  // ─── SHARED HELPERS ───────────────────────────────────────────────────────────
+
+  void _showLibrarySortSheet() {
+    final isRadiosTab = _tabController.index == 2;
+    final options = [
+      (
+        icon: Icons.sort_by_alpha,
+        label: 'Name',
+        value: LibrarySortOption.name,
+      ),
+      if (!isRadiosTab)
+        (
+          icon: Icons.music_note_outlined,
+          label: 'Song count',
+          value: LibrarySortOption.songCount,
+        ),
+    ];
+    bool dismissed = false;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      builder: (ctx) {
+        void dismiss(BuildContext c) {
+          if (dismissed) return;
+          dismissed = true;
+          Navigator.of(c, rootNavigator: true).pop();
+        }
+
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                dragStartBehavior: DragStartBehavior.down,
+                onTap: () => dismiss(ctx),
+                onVerticalDragUpdate: (details) {
+                  if (details.primaryDelta != null && details.primaryDelta! > 8) {
+                    dismiss(ctx);
+                  }
+                },
+                onVerticalDragEnd: (details) {
+                  if (details.velocity.pixelsPerSecond.dy > 450) dismiss(ctx);
+                },
+              ),
+            ),
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: DraggableScrollableSheet(
+                initialChildSize: 0.3,
+                minChildSize: 0.25,
+                maxChildSize: 0.5,
+                snap: true,
+                snapSizes: const [0.3],
+                expand: false,
+                builder: (context, scrollController) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey[900],
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(20),
+                        topRight: Radius.circular(20),
+                      ),
+                    ),
+                    child: CustomScrollView(
+                      controller: scrollController,
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Center(
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 12),
+                              width: 40,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[700],
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          ),
+                        ),
+                        SliverList(
+                          delegate: SliverChildListDelegate(
+                            options.map((opt) {
+                              final isSelected = _sortOption == opt.value;
+                              return ListTile(
+                                leading: Icon(opt.icon,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : Colors.grey),
+                                title: Text(
+                                  opt.label,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                                trailing: isSelected
+                                    ? Icon(
+                                        _isAscending
+                                            ? Icons.arrow_upward
+                                            : Icons.arrow_downward,
+                                        color: Colors.white,
+                                      )
+                                    : null,
+                                onTap: () {
+                                  dismiss(ctx);
+                                  setState(() {
+                                    if (_sortOption == opt.value) {
+                                      _isAscending = !_isAscending;
+                                    } else {
+                                      _sortOption = opt.value;
+                                      _isAscending = true;
+                                    }
+                                  });
+                                },
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                        SliverToBoxAdapter(
+                          child: SizedBox(
+                              height:
+                                  MediaQuery.of(context).padding.bottom + 16),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptyState({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: 72, color: Colors.grey[800]),
+        const SizedBox(height: 16),
+        Text(
+          title,
+          style: TextStyle(
+            color: Colors.grey[400],
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Text(
+            subtitle,
+            style: TextStyle(color: Colors.grey[600], fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
+        ),
       ],
     );
   }
+
+  // ─── DIALOGS ────────────────────────────────────────────────────────────────
 
   Future<void> _showCreatePlaylistDialog() async {
     final result = await showModalBottomSheet<Map<String, dynamic>>(
@@ -424,87 +1101,6 @@ class _LibraryPageState extends State<LibraryPage> {
         artworkColor: result['color'],
       );
     }
-  }
-
-  Widget _buildCustomPlaylistTile(dynamic playlist) {
-    final audioService = context.watch<AudioPlayerService>();
-    final songs = audioService.getPlaylistSongs(playlist.id);
-
-    return ListTile(
-      contentPadding: const EdgeInsets.only(left: 16, right: 8),
-      horizontalTitleGap: 12,
-      leading: playlist.artworkPath != null
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.file(
-                File(playlist.artworkPath!),
-                width: 40,
-                height: 40,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => playlist.artworkColor != null
-                    ? Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Color(playlist.artworkColor!),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.queue_music,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      )
-                    : Icon(
-                        Icons.queue_music,
-                        color: Colors.deepPurple.shade400,
-                      ),
-              ),
-            )
-          : playlist.artworkColor != null
-              ? Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Color(playlist.artworkColor!),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.queue_music,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                )
-              : Icon(
-                  Icons.queue_music,
-                  color: Colors.deepPurple.shade400,
-                ),
-      title: Text(
-        playlist.name,
-        style: const TextStyle(color: Colors.white),
-      ),
-      subtitle: Text(
-        '${songs.length} songs',
-        style: TextStyle(color: Colors.grey[400]),
-      ),
-      trailing: IconButton(
-        icon: Icon(Icons.more_vert, color: Colors.grey[400]),
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-        onPressed: () => _showPlaylistOptionsSheet(playlist),
-      ),
-      onTap: () {
-        pushMaterialPage(
-          context,
-          PlaylistPage(
-            playlistId: playlist.id,
-            title: playlist.name,
-            icon: Icons.queue_music,
-            allowReorder: true,
-          ),
-        );
-      },
-    );
   }
 
   void _showPlaylistOptionsSheet(dynamic playlist) {
@@ -678,49 +1274,6 @@ class _LibraryPageState extends State<LibraryPage> {
     );
   }
 
-  Future<void> _showRenamePlaylistDialog(dynamic playlist) async {
-    final controller = TextEditingController(text: playlist.name);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text('Rename Playlist',
-            style: TextStyle(color: Colors.white)),
-        content: TextField(
-          controller: controller,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            labelText: 'Playlist Name',
-            labelStyle: TextStyle(color: Colors.grey[400]),
-            enabledBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: Colors.grey[600]!),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: Colors.deepPurple.shade400),
-            ),
-          ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: Text('Rename',
-                style: TextStyle(color: Colors.deepPurple.shade400)),
-          ),
-        ],
-      ),
-    );
-
-    if (result != null && result.isNotEmpty && result != playlist.name) {
-      final audioService = context.read<AudioPlayerService>();
-      await audioService.updateCustomPlaylist(playlist.id, name: result);
-    }
-  }
-
   Future<void> _showEditPlaylistDialog(dynamic playlist) async {
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -867,154 +1420,4 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
-  Widget _buildPlaylistTile({
-    required String title,
-    required IconData icon,
-    required String playlistId,
-    required List<File> songs,
-  }) {
-    return ListTile(
-      leading: Icon(
-        icon,
-        color: Colors.deepPurple.shade400,
-      ),
-      title: Text(title),
-      subtitle: Text('${songs.length} songs'),
-      onTap: () {
-        pushMaterialPage(
-          context,
-          PlaylistPage(
-            playlistId: playlistId,
-            title: title,
-            icon: icon,
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildArtistsView() {
-    final audioService = context.watch<AudioPlayerService>();
-    final audioFiles = audioService.getPlaylistSongs('offline');
-    
-    // Group songs by artist using metadata cache
-    final artistMap = <String, List<File>>{};
-    final artistAlbumArt = <String, String>{};
-
-    for (var file in audioFiles) {
-      final song = _metadataCache.createSongFromFile(file);
-      final artist = song.artist;
-      
-      // Skip Unknown Artist
-      if (artist == 'Unknown Artist' || artist.isEmpty) continue;
-      
-      artistMap.putIfAbsent(artist, () => []).add(file);
-      
-      // Store first album art found for this artist
-      if (!artistAlbumArt.containsKey(artist) && song.albumArt.isNotEmpty) {
-        artistAlbumArt[artist] = song.albumArt;
-      }
-    }
-
-    final sortedArtists = artistMap.keys.toList()..sort();
-
-    if (sortedArtists.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.person_outline,
-                size: 80,
-                color: Colors.grey[600],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'No artists found',
-                style: TextStyle(color: Colors.grey[400], fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Add songs with artist metadata to see them here',
-                style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 100), // Space for nav bar and mini player
-      itemCount: sortedArtists.length,
-      itemBuilder: (context, index) {
-        final artist = sortedArtists[index];
-        final songs = artistMap[artist]!;
-        final albumArt = artistAlbumArt[artist];
-
-        return ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          leading: albumArt != null && albumArt.isNotEmpty
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(25),
-                  child: Image.file(
-                    File(albumArt),
-                    width: 50,
-                    height: 50,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: Colors.deepPurple.shade400,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.person,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
-                  ),
-                )
-              : Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: Colors.deepPurple.shade400,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.person,
-                    color: Colors.white,
-                    size: 28,
-                  ),
-                ),
-          title: Text(
-            artist,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(
-            '${songs.length} ${songs.length == 1 ? 'song' : 'songs'}',
-            style: TextStyle(color: Colors.grey[400]),
-          ),
-          onTap: () {
-            pushMaterialPage(
-              context,
-              ArtistPage(
-                artistName: artist,
-                songs: songs,
-                artistArtwork: albumArt,
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
 }

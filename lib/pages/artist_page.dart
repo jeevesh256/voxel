@@ -31,9 +31,11 @@ class _ArtistPageState extends State<ArtistPage> {
   final SongMetadataCache _metadataCache = SongMetadataCache();
   final ITunesService _itunesService = ITunesService();
   final MetadataService _metadataService = MetadataService();
+  final ScrollController _scrollController = ScrollController();
   
   ITunesArtist? _artistInfo;
   List<ITunesAlbum> _albums = [];
+  bool _isLoadingAlbums = true;
 
   @override
   void initState() {
@@ -56,11 +58,14 @@ class _ArtistPageState extends State<ArtistPage> {
           setState(() {
             _artistInfo = artistInfo;
             _albums = albums;
+            _isLoadingAlbums = false;
           });
         }
+      } else {
+        if (mounted) setState(() => _isLoadingAlbums = false);
       }
     } catch (e) {
-      // Silently fail - artist info is optional
+      if (mounted) setState(() => _isLoadingAlbums = false);
     }
   }
 
@@ -70,21 +75,42 @@ class _ArtistPageState extends State<ArtistPage> {
   }
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
 
     return Scaffold(
       backgroundColor: Colors.black,
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight),
+        child: AnimatedBuilder(
+          animation: _scrollController,
+          builder: (context, _) {
+            final opacity = ((_scrollController.hasClients
+                        ? _scrollController.offset
+                        : 0.0) /
+                    375.0)
+                .clamp(0.0, 1.0);
+            return AppBar(
+              backgroundColor: Colors.black.withOpacity(opacity),
+              elevation: 0,
+              surfaceTintColor: Colors.transparent,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+            );
+          },
         ),
       ),
       body: CustomScrollView(
+        controller: _scrollController,
         slivers: [
           // Large hero header
           SliverToBoxAdapter(
@@ -279,7 +305,7 @@ class _ArtistPageState extends State<ArtistPage> {
                   audioService.playFileInContext(file, widget.songs);
                 },
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  padding: const EdgeInsets.only(left: 16, right: 0, top: 6, bottom: 6),
                   child: Row(
                     children: [
                       // Track number
@@ -325,6 +351,16 @@ class _ArtistPageState extends State<ArtistPage> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
+                            const SizedBox(height: 2),
+                            Text(
+                              song.artist.isNotEmpty ? song.artist : widget.artistName,
+                              style: TextStyle(
+                                color: Colors.grey[500],
+                                fontSize: 13,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ],
                         ),
                       ),
@@ -332,9 +368,10 @@ class _ArtistPageState extends State<ArtistPage> {
                       IconButton(
                         icon: Icon(
                           Icons.more_vert,
-                          color: Colors.grey[600],
-                          size: 20,
+                          color: Colors.grey[400],
                         ),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                         onPressed: () {
                           _showSongOptionsSheet(file);
                         },
@@ -347,7 +384,7 @@ class _ArtistPageState extends State<ArtistPage> {
           ),
           
           // Featured In section
-          if (_albums.isNotEmpty) ...[
+          if (_isLoadingAlbums || _albums.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
@@ -372,20 +409,51 @@ class _ArtistPageState extends State<ArtistPage> {
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
+                    // Show skeleton cards while loading
+                    if (_isLoadingAlbums) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: const _ShimmerBox(),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(3),
+                            child: _ShimmerBox(
+                              height: 12,
+                              width: (index % 3 == 0) ? 120.0 : (index % 3 == 1) ? 90.0 : 105.0,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(3),
+                            child: _ShimmerBox(
+                              height: 10,
+                              width: (index % 2 == 0) ? 70.0 : 55.0,
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+
                     final album = _albums[index];
                     return InkWell(
                       onTap: () {
                         final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(
+                            content: const Text(
                               'This album is not in your library',
-                              style: const TextStyle(color: Colors.white),
+                              style: TextStyle(color: Colors.white),
                             ),
                             backgroundColor: Colors.grey[900],
                             behavior: SnackBarBehavior.floating,
                             margin: EdgeInsets.only(
-                              bottom: MediaQuery.of(context).padding.bottom + 
+                              bottom: MediaQuery.of(context).padding.bottom +
                                   kBottomNavigationBarHeight + miniPlayerHeight,
                               left: 16,
                               right: 16,
@@ -404,15 +472,7 @@ class _ArtistPageState extends State<ArtistPage> {
                               child: CachedNetworkImage(
                                 imageUrl: album.artworkUrl,
                                 fit: BoxFit.cover,
-                                placeholder: (context, url) => Container(
-                                  color: Colors.grey[900],
-                                  child: Center(
-                                    child: CircularProgressIndicator(
-                                      color: Colors.deepPurple.shade400,
-                                      strokeWidth: 2,
-                                    ),
-                                  ),
-                                ),
+                                placeholder: (context, url) => const _ShimmerBox(),
                                 errorWidget: (_, __, ___) => Container(
                                   color: Colors.grey[900],
                                   child: Center(
@@ -441,7 +501,7 @@ class _ArtistPageState extends State<ArtistPage> {
                       ),
                     );
                   },
-                  childCount: _albums.length > 6 ? 6 : _albums.length,
+                  childCount: _isLoadingAlbums ? 4 : (_albums.length > 6 ? 6 : _albums.length),
                 ),
               ),
             ),
@@ -473,7 +533,7 @@ class _ArtistPageState extends State<ArtistPage> {
                     audioService.playFileInContext(file, widget.songs);
                   },
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                    padding: const EdgeInsets.only(left: 24, right: 0, top: 8, bottom: 8),
                     child: Row(
                       children: [
                         ClipRRect(
@@ -519,9 +579,10 @@ class _ArtistPageState extends State<ArtistPage> {
                         IconButton(
                           icon: Icon(
                             Icons.more_vert,
-                            color: Colors.grey[600],
-                            size: 20,
+                            color: Colors.grey[400],
                           ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                           onPressed: () {
                             _showSongOptionsSheet(file);
                           },
@@ -703,6 +764,19 @@ class _ArtistPageState extends State<ArtistPage> {
                       ),
                       SliverList(
                         delegate: SliverChildListDelegate([
+                          _buildOptionTile(
+                            icon: audioService.isFileLiked(file.path)
+                                ? Icons.favorite
+                                : Icons.favorite_border,
+                            title: audioService.isFileLiked(file.path)
+                                ? 'Remove from Liked Songs'
+                                : 'Add to Liked Songs',
+                            color: Colors.deepPurple.shade200,
+                            onTap: () {
+                              audioService.toggleLikeFile(file.path);
+                              Navigator.pop(context);
+                            },
+                          ),
                           _buildOptionTile(
                             icon: Icons.playlist_add,
                             title: 'Add to playlist',
@@ -1186,6 +1260,67 @@ class _ArtistPageState extends State<ArtistPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ShimmerBox extends StatefulWidget {
+  final double? height;
+  final double? width;
+
+  const _ShimmerBox({this.height, this.width});
+
+  @override
+  State<_ShimmerBox> createState() => _ShimmerBoxState();
+}
+
+class _ShimmerBoxState extends State<_ShimmerBox>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+    _animation = Tween<double>(begin: -1.5, end: 2.5).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOutSine),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Container(
+          height: widget.height,
+          width: widget.width,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment(_animation.value - 1, 0),
+              end: Alignment(_animation.value, 0),
+              colors: [
+                Colors.grey[900]!,
+                Colors.grey[850]!,
+                Colors.grey[800]!,
+                Colors.grey[850]!,
+                Colors.grey[900]!,
+              ],
+              stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
+            ),
+          ),
+        );
+      },
     );
   }
 }

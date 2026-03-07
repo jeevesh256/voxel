@@ -157,6 +157,9 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     return _likedTracks.contains(current.id);
   }
 
+  /// Check if any file path is in the liked playlist.
+  bool isFileLiked(String path) => _likedTracks.contains(path);
+
 
   Future<void> _initOfflineFiles() async {
     try {
@@ -263,6 +266,19 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   }
 
   // Toggle like status for current track
+  /// Toggle liked state for any file by path (not just currently playing).
+  Future<void> toggleLikeFile(String path) async {
+    if (_likedTracks.contains(path)) {
+      _likedTracks.remove(path);
+      _playlists['liked']?.removeWhere((f) => f.path == path);
+    } else {
+      _likedTracks.insert(0, path);
+      _playlists['liked']?.insert(0, File(path));
+    }
+    await _saveLikedTracks();
+    notifyListeners();
+  }
+
   Future<void> toggleLike() async {
     final current = currentTrack;
     if (current == null) return;
