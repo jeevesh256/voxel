@@ -102,6 +102,34 @@ class ITunesService {
     }
   }
 
+  Future<List<ITunesArtist>> searchArtists({required String term, int limit = 5}) async {
+    final uri = Uri.parse(_baseUrl).replace(queryParameters: {
+      'term': term,
+      'entity': 'musicArtist',
+      'limit': '$limit',
+    });
+
+    try {
+      final resp = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (resp.statusCode != 200) return [];
+
+      final decoded = json.decode(resp.body) as Map<String, dynamic>;
+      final results = decoded['results'] as List<dynamic>? ?? [];
+
+      return results
+          .map((item) => ITunesArtist(
+                artistName: item['artistName'] as String? ?? '',
+                primaryGenre: item['primaryGenreName'] as String? ?? '',
+                artistLinkUrl: item['artistLinkUrl'] as String? ?? '',
+                artistId: item['artistId'] as int? ?? 0,
+              ))
+          .where((a) => a.artistName.isNotEmpty)
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<List<ITunesAlbum>> getArtistAlbumArtworks({required int artistId, int limit = 10}) async {
     final uri = Uri.parse('https://itunes.apple.com/lookup').replace(queryParameters: {
       'id': '$artistId',

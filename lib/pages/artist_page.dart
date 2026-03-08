@@ -9,6 +9,12 @@ import '../services/metadata_service.dart';
 import '../widgets/create_playlist_dialog.dart';
 import '../models/song.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
+import '../widgets/voxel_toast.dart';
+import '../widgets/applyable_metadata_item.dart';
+import 'dart:typed_data';
 import 'dart:io';
 
 class ArtistPage extends StatefulWidget {
@@ -88,7 +94,7 @@ class _ArtistPageState extends State<ArtistPage> {
       backgroundColor: Colors.black,
       extendBodyBehindAppBar: true,
       appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(kToolbarHeight),
+        preferredSize: const Size.fromHeight(kToolbarHeight + 12),
         child: AnimatedBuilder(
           animation: _scrollController,
           builder: (context, _) {
@@ -101,6 +107,7 @@ class _ArtistPageState extends State<ArtistPage> {
               backgroundColor: Colors.black.withOpacity(opacity),
               elevation: 0,
               surfaceTintColor: Colors.transparent,
+              toolbarHeight: kToolbarHeight + 12,
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back, color: Colors.white),
                 onPressed: () => Navigator.pop(context),
@@ -203,9 +210,13 @@ class _ArtistPageState extends State<ArtistPage> {
                             ),
                           ],
                           Text(
-                            '${widget.songs.length} ${widget.songs.length == 1 ? 'song' : 'songs'}',
+                            widget.songs.isEmpty
+                                ? 'Not in your library'
+                                : '${widget.songs.length} ${widget.songs.length == 1 ? 'song' : 'songs'}',
                             style: TextStyle(
-                              color: Colors.grey[400],
+                              color: widget.songs.isEmpty
+                                  ? Colors.grey[600]
+                                  : Colors.grey[400],
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
                             ),
@@ -219,7 +230,8 @@ class _ArtistPageState extends State<ArtistPage> {
             ),
           ),
           
-          // Play and shuffle buttons
+          // Play and shuffle buttons — only when songs are in library
+          if (widget.songs.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
@@ -278,111 +290,111 @@ class _ArtistPageState extends State<ArtistPage> {
             ),
           ),
           
-          // Songs section
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-              child: Text(
-                'Songs',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
+          // Songs section — only shown when songs are in library
+          if (widget.songs.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+                child: const Text(
+                  'Songs',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
-          ),
-          
-          // Top 5 songs
-          SliverList.builder(
-            itemCount: widget.songs.length > 5 ? 5 : widget.songs.length,
-            itemBuilder: (context, index) {
-              final file = widget.songs[index];
-              final song = _metadataCache.createSongFromFile(file);
-              
-              return InkWell(
-                onTap: () {
-                  audioService.playFileInContext(file, widget.songs);
-                },
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 16, right: 0, top: 6, bottom: 6),
-                  child: Row(
-                    children: [
-                      // Track number
-                      SizedBox(
-                        width: 32,
-                        child: Text(
-                          '${index + 1}',
-                          style: TextStyle(
-                            color: Colors.grey[500],
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
+            SliverList.builder(
+              itemCount: widget.songs.length > 5 ? 5 : widget.songs.length,
+              itemBuilder: (context, index) {
+                final file = widget.songs[index];
+                final song = _metadataCache.createSongFromFile(file);
+                
+                return InkWell(
+                  onTap: () {
+                    audioService.playFileInContext(file, widget.songs);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 16, right: 0, top: 6, bottom: 6),
+                    child: Row(
+                      children: [
+                        // Track number
+                        SizedBox(
+                          width: 32,
+                          child: Text(
+                            '${index + 1}',
+                            style: TextStyle(
+                              color: Colors.grey[500],
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          textAlign: TextAlign.center,
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      // Album art
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: song.albumArt.isNotEmpty
-                            ? Image.file(
-                                File(song.albumArt),
-                                width: 48,
-                                height: 48,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _buildDefaultAlbumArt(48),
-                              )
-                            : _buildDefaultAlbumArt(48),
-                      ),
-                      const SizedBox(width: 16),
-                      // Song info
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              song.title,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w400,
+                        const SizedBox(width: 16),
+                        // Album art
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: song.albumArt.isNotEmpty
+                              ? Image.file(
+                                  File(song.albumArt),
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => _buildDefaultAlbumArt(48),
+                                )
+                              : _buildDefaultAlbumArt(48),
+                        ),
+                        const SizedBox(width: 16),
+                        // Song info
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                song.title,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              song.artist.isNotEmpty ? song.artist : widget.artistName,
-                              style: TextStyle(
-                                color: Colors.grey[500],
-                                fontSize: 13,
+                              const SizedBox(height: 2),
+                              Text(
+                                song.artist.isNotEmpty ? song.artist : widget.artistName,
+                                style: TextStyle(
+                                  color: Colors.grey[500],
+                                  fontSize: 13,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      // More options
-                      IconButton(
-                        icon: Icon(
-                          Icons.more_vert,
-                          color: Colors.grey[400],
+                        // More options
+                        IconButton(
+                          icon: Icon(
+                            Icons.more_vert,
+                            color: Colors.grey[400],
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                          onPressed: () {
+                            _showSongOptionsSheet(file);
+                          },
                         ),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                        onPressed: () {
-                          _showSongOptionsSheet(file);
-                        },
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
-          
+                );
+              },
+            ),
+          ],
+
           // Featured In section
           if (_isLoadingAlbums || _albums.isNotEmpty) ...[
             SliverToBoxAdapter(
@@ -444,22 +456,12 @@ class _ArtistPageState extends State<ArtistPage> {
                     return InkWell(
                       onTap: () {
                         final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text(
-                              'This album is not in your library',
-                              style: TextStyle(color: Colors.white),
-                            ),
-                            backgroundColor: Colors.grey[900],
-                            behavior: SnackBarBehavior.floating,
-                            margin: EdgeInsets.only(
-                              bottom: MediaQuery.of(context).padding.bottom +
-                                  kBottomNavigationBarHeight + miniPlayerHeight,
-                              left: 16,
-                              right: 16,
-                            ),
-                            duration: const Duration(seconds: 2),
-                          ),
+                        final bottomPad = MediaQuery.of(context).padding.bottom +
+                            kBottomNavigationBarHeight + miniPlayerHeight;
+                        VoxelToast.show(
+                          context,
+                          'This album is not in your library',
+                          bottomPadding: bottomPad,
                         );
                       },
                       child: Column(
@@ -844,11 +846,13 @@ class _ArtistPageState extends State<ArtistPage> {
                           ),
                           _buildOptionTile(
                             icon: Icons.edit,
-                            title: 'Update metadata',
+                            title: 'Edit metadata',
                             color: Colors.orange.shade400,
-                            onTap: () {
+                            onTap: () async {
                               Navigator.pop(context);
-                              _updateMetadata(file);
+                              final song = _metadataCache.createSongFromFile(file);
+                              await _showManualEditDialog(
+                                  file, song, Colors.deepPurple.shade400);
                             },
                           ),
                           SizedBox(
@@ -1223,14 +1227,405 @@ class _ArtistPageState extends State<ArtistPage> {
           ),
           actions: [
             TextButton(
+              onPressed: () async {
+                Navigator.of(dialogContext).pop();
+                await _showManualEditDialog(file, song, Colors.deepPurple.shade400);
+              },
+              child: Text('Edit', style: TextStyle(color: Colors.deepPurple.shade400)),
+            ),
+            TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text('Close',
-                  style: TextStyle(color: Colors.deepPurple.shade400)),
+              child: Text('OK', style: TextStyle(color: Colors.deepPurple.shade400)),
             ),
           ],
         ),
       );
     }
+  }
+
+  Future<void> _showManualEditDialog(
+      File file, Song song, Color accentColor) async {
+    final titleController = TextEditingController(text: song.title);
+    final artistController = TextEditingController(text: song.artist);
+    final albumController = TextEditingController(
+        text: song.album.isEmpty ? 'Unknown' : song.album);
+    String? selectedAlbumArt = song.albumArt.isNotEmpty ? song.albumArt : null;
+
+    final result = await showDialog<Map<String, dynamic>?>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: Row(
+            children: [
+              Icon(Icons.edit, color: accentColor),
+              const SizedBox(width: 8),
+              const Text('Edit Metadata',
+                  style: TextStyle(color: Colors.white)),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: () async {
+                    final ImagePicker picker = ImagePicker();
+                    final XFile? image =
+                        await picker.pickImage(source: ImageSource.gallery);
+                    if (image != null) {
+                      final appDir = await getApplicationDocumentsDirectory();
+                      final fileName =
+                          'album_art_${DateTime.now().millisecondsSinceEpoch}.jpg';
+                      final savedImage =
+                          await File(image.path).copy('${appDir.path}/$fileName');
+                      setDialogState(() => selectedAlbumArt = savedImage.path);
+                    }
+                  },
+                  child: Container(
+                    width: 180,
+                    height: 180,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[800],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: selectedAlbumArt != null &&
+                            selectedAlbumArt!.isNotEmpty
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(
+                              File(selectedAlbumArt!),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Icon(
+                                Icons.add_photo_alternate,
+                                size: 50,
+                                color: accentColor,
+                              ),
+                            ),
+                          )
+                        : Icon(Icons.add_photo_alternate,
+                            size: 50, color: accentColor),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text('Tap to change album art',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                const SizedBox(height: 24),
+                TextField(
+                  controller: titleController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Title',
+                    labelStyle: TextStyle(color: accentColor),
+                    enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.grey.shade700)),
+                    focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: accentColor)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: artistController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Artist',
+                    labelStyle: TextStyle(color: accentColor),
+                    enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.grey.shade700)),
+                    focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: accentColor)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: albumController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Album',
+                    labelStyle: TextStyle(color: accentColor),
+                    enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.grey.shade700)),
+                    focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: accentColor)),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.grey[850],
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                    ),
+                    icon: const Icon(Icons.travel_explore, size: 18),
+                    label: const Text('Advanced search'),
+                    onPressed: () async {
+                      await _showMusicBrainzSurfer(
+                        context: context,
+                        accentColor: accentColor,
+                        setParentState: setDialogState,
+                        onApply: (res, artPath) {
+                          titleController.text = res.title;
+                          artistController.text = res.artist;
+                          albumController.text =
+                              res.album.isNotEmpty ? res.album : 'Unknown';
+                          setDialogState(() {
+                            selectedAlbumArt =
+                                artPath ?? selectedAlbumArt ?? song.albumArt;
+                          });
+                        },
+                        currentTitle: titleController.text,
+                        currentArtist: artistController.text,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop({
+                'title': titleController.text.trim(),
+                'artist': artistController.text.trim(),
+                'album': albumController.text.trim(),
+                'albumArt': selectedAlbumArt ?? song.albumArt,
+              }),
+              child: Text('Save', style: TextStyle(color: accentColor)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      final editedSong = song.copyWith(
+        title: result['title'] as String,
+        artist: result['artist'] as String,
+        album: result['album'] as String,
+        albumArt: result['albumArt'] as String,
+      );
+      await _metadataCache.saveMetadata(editedSong);
+      final audioService = context.read<AudioPlayerService>();
+      await audioService.refreshCurrentMetadata();
+      if (mounted) setState(() {});
+      if (mounted) {
+        final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
+        final bottomPad = MediaQuery.of(context).padding.bottom +
+            kBottomNavigationBarHeight + miniPlayerHeight;
+        VoxelToast.show(context, 'Metadata updated', bottomPadding: bottomPad);
+      }
+    }
+  }
+
+  Future<void> _showMusicBrainzSurfer({
+    required BuildContext context,
+    required Color accentColor,
+    required void Function(void Function()) setParentState,
+    required void Function(MetadataResult result, String? artPath) onApply,
+    required String currentTitle,
+    required String currentArtist,
+  }) async {
+    final titleController = TextEditingController(text: currentTitle);
+    final artistController = TextEditingController(text: currentArtist);
+    Future<List<MetadataResult>>? futureResults;
+    final Map<String, Future<Uint8List?>> artPreviewCache = {};
+
+    Future<Uint8List?> fetchCoverArtPreview(String? url) async {
+      if (url == null || url.isEmpty) return null;
+      final candidates = <String>{
+        url,
+        url.replaceAll('1000x1000', '600x600'),
+        url.replaceAll('1000x1000', '300x300'),
+        url.replaceFirst('front-500', 'front-250'),
+      }.where((e) => e.isNotEmpty).toList();
+      for (final candidate in candidates) {
+        try {
+          final uri = Uri.parse(candidate);
+          final response =
+              await http.get(uri).timeout(const Duration(seconds: 3));
+          if (response.statusCode >= 200 &&
+              response.statusCode < 300 &&
+              response.bodyBytes.isNotEmpty) {
+            return response.bodyBytes;
+          }
+        } catch (_) {}
+      }
+      return null;
+    }
+
+    Future<Uint8List?> getPreviewFuture(String? url) {
+      if (url == null || url.isEmpty) return Future.value(null);
+      return artPreviewCache.putIfAbsent(url, () => fetchCoverArtPreview(url));
+    }
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) {
+          void triggerSearch() {
+            setState(() {
+              futureResults = _metadataService.searchMetadataOptions(
+                title: titleController.text.trim(),
+                artist: artistController.text.trim(),
+                limit: 12,
+              );
+            });
+          }
+
+          return AlertDialog(
+            backgroundColor: Colors.grey[900],
+            title: Row(
+              children: [
+                Icon(Icons.travel_explore, color: accentColor),
+                const SizedBox(width: 8),
+                const Text('Suggestions',
+                    style: TextStyle(color: Colors.white)),
+              ],
+            ),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: titleController,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: 'Title',
+                            labelStyle: TextStyle(color: accentColor),
+                            enabledBorder: UnderlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Colors.grey.shade700)),
+                            focusedBorder: UnderlineInputBorder(
+                                borderSide: BorderSide(color: accentColor)),
+                          ),
+                          textInputAction: TextInputAction.search,
+                          onSubmitted: (_) => triggerSearch(),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: artistController,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: 'Artist (optional)',
+                            labelStyle: TextStyle(color: accentColor),
+                            enabledBorder: UnderlineInputBorder(
+                                borderSide:
+                                    BorderSide(color: Colors.grey.shade700)),
+                            focusedBorder: UnderlineInputBorder(
+                                borderSide: BorderSide(color: accentColor)),
+                          ),
+                          textInputAction: TextInputAction.search,
+                          onSubmitted: (_) => triggerSearch(),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: accentColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                      ),
+                      icon: const Icon(Icons.search, size: 18),
+                      label: const Text('Search'),
+                      onPressed: triggerSearch,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: FutureBuilder<List<MetadataResult>>(
+                      future: futureResults,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          );
+                        }
+                        if (futureResults == null) {
+                          return const Center(
+                            child: Text('Enter a title/artist to search',
+                                style: TextStyle(color: Colors.white70)),
+                          );
+                        }
+                        if (snapshot.hasError) {
+                          return Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(
+                                'Search failed: ${snapshot.error}',
+                                style: const TextStyle(
+                                    color: Colors.redAccent)),
+                          );
+                        }
+                        final results = snapshot.data ?? [];
+                        if (results.isEmpty) {
+                          return const Center(
+                            child: Text('No results found',
+                                style: TextStyle(color: Colors.white70)),
+                          );
+                        }
+                        return ListView.separated(
+                          itemCount: results.length,
+                          physics: const BouncingScrollPhysics(),
+                          separatorBuilder: (_, __) =>
+                              const Divider(color: Colors.grey),
+                          itemBuilder: (context, index) {
+                            final res = results[index];
+                            final isITunes =
+                                (res.source ?? '').toLowerCase() == 'itunes';
+                            return RepaintBoundary(
+                              child: ApplyableMetadataItem(
+                                result: res,
+                                isITunes: isITunes,
+                                metadataService: _metadataService,
+                                onApply: (artPath) {
+                                  Navigator.of(ctx).pop();
+                                  onApply(res, artPath);
+                                },
+                                getPreviewFuture: getPreviewFuture,
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child:
+                    const Text('Close', style: TextStyle(color: Colors.grey)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildMetadataRow(String label, String value) {

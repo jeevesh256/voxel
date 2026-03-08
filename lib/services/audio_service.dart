@@ -482,14 +482,21 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     try {
       // Clear radio station when playing files
       _currentRadioStation = null;
-      
+
+      final songsList = files.map((f) => _metadataCache.createSongFromFile(f)).toList();
+      _playlistHandler.updateQueue(songsList, playlistContext: 'offline');
+
       final playlist = ConcatenatingAudioSource(
-        children: files.map((file) => 
+        children: songsList.map((song) =>
           AudioSource.file(
-            file.path,
+            song.filePath,
             tag: MediaItem(
-              id: file.path,
-              title: file.path.split('/').last,
+              id: song.id,
+              title: song.title,
+              artist: song.artist,
+              album: song.album,
+              artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+              duration: song.duration,
             ),
           ),
         ).toList(),

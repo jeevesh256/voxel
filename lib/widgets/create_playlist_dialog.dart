@@ -1,6 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'dart:math' as math;
+
+/// Curated pool of playlist accent colors — medium-brightness tones
+/// similar in feel to the app's deepPurple.shade400, but distinct from it.
+const List<Color> kPlaylistColors = [
+  Color(0xFF26A69A), // Teal 400
+  Color(0xFF42A5F5), // Blue 400
+  Color(0xFFEC407A), // Pink 400
+  Color(0xFF66BB6A), // Green 400
+  Color(0xFFFF7043), // Deep Orange 400
+  Color(0xFF5C6BC0), // Indigo 400
+  Color(0xFF26C6DA), // Cyan 400
+  Color(0xFFAB47BC), // Purple 400
+  Color(0xFFEF5350), // Red 400
+  Color(0xFF29B6F6), // Light Blue 400
+  Color(0xFFFFCA28), // Amber 400
+  Color(0xFF9CCC65), // Light Green 400
+  Color(0xFF8D6E63), // Brown 300
+  Color(0xFF78909C), // Blue Grey 400
+  Color(0xFFF06292), // Pink 300
+  Color(0xFF4DD0E1), // Cyan 300
+];
 
 class CreatePlaylistDialog extends StatefulWidget {
   final String? initialName;
@@ -37,7 +59,12 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
     super.initState();
     _nameController = TextEditingController(text: widget.initialName ?? '');
     _selectedImagePath = widget.initialArtworkPath;
-    _selectedColor = widget.initialColor != null ? Color(widget.initialColor!) : null;
+    if (widget.initialColor != null) {
+      _selectedColor = Color(widget.initialColor!);
+    } else if (widget.initialArtworkPath == null || widget.initialArtworkPath!.isEmpty) {
+      // Auto-assign a random color from the curated pool
+      _selectedColor = kPlaylistColors[math.Random().nextInt(kPlaylistColors.length)];
+    }
   }
 
   @override
@@ -149,20 +176,9 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
   }
   
   void _showColorPicker() {
-    if (!mounted) return; // Check if widget is still mounted
-    
-    final colors = [
-      Colors.deepPurple,
-      Colors.blue,
-      Colors.teal,
-      Colors.green,
-      Colors.orange,
-      Colors.red,
-      Colors.pink,
-      Colors.indigo,
-      Colors.cyan,
-      Colors.amber,
-    ];
+    if (!mounted) return;
+
+    final colors = kPlaylistColors;
     
     showDialog(
       context: context,

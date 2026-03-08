@@ -6,6 +6,7 @@ import '../services/playlist_handler.dart';
 import '../services/metadata_service.dart';
 import '../services/song_metadata_cache.dart';
 import '../widgets/create_playlist_dialog.dart';
+import '../widgets/applyable_metadata_item.dart';
 import '../models/custom_playlist.dart';
 import '../models/song.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -493,144 +494,6 @@ class _PlaylistPageState extends State<PlaylistPage> {
     }
   }
 
-  Future<void> _updateMetadata(File file) async {
-    final audioService = context.read<AudioPlayerService>();
-
-    // Get current song data from cache or file
-    final currentSong = await _metadataCache.createSongFromFile(file);
-
-    Song? updatedSong;
-    String? errorMessage;
-
-    try {
-      // Fetch from API by default
-      updatedSong =
-          await _metadataService.updateSongMetadata(currentSong).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () {
-          print('Metadata update timed out');
-          return currentSong;
-        },
-      );
-
-      // Save the updated metadata to cache
-      await _metadataCache.saveMetadata(updatedSong);
-
-      // Refresh player and queue metadata
-      await audioService.refreshCurrentMetadata();
-
-      print('Metadata update completed successfully and saved to cache');
-
-      // Clear song cache to force refresh
-      _clearSongCache();
-
-      // Trigger UI refresh
-      if (mounted) {
-        setState(() {});
-      }
-    } catch (e) {
-      print('Error in _updateMetadata: $e');
-      errorMessage = e.toString();
-    }
-
-    // Show results or error - no loading dialog needed
-    if (errorMessage != null) {
-      if (context.mounted) {
-        final audioService = context.read<AudioPlayerService>();
-        final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
-        final bottomMargin = (MediaQuery.of(context).padding.bottom) + kBottomNavigationBarHeight + miniPlayerHeight;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            margin: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              bottom: bottomMargin,
-            ),
-            content: Text('Error updating metadata: $errorMessage'),
-            backgroundColor: Colors.red.shade400,
-          ),
-        );
-      }
-    } else if (updatedSong != null && context.mounted) {
-      final song = updatedSong; // Non-null variable for safe access
-      await showDialog(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          backgroundColor: Colors.grey[900],
-          title: Row(
-            children: [
-              Icon(Icons.info_outline, color: _playlistColor),
-              const SizedBox(width: 8),
-              const Text('Updated Metadata',
-                  style: TextStyle(color: Colors.white)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (song.albumArt.isNotEmpty) ...[
-                Center(
-                  child: Container(
-                    width: 180,
-                    height: 180,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black26,
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.file(
-                        File(song.albumArt),
-                        width: 180,
-                        height: 180,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-              _buildMetadataRow('Title', song.title, _playlistColor),
-              const SizedBox(height: 8),
-              _buildMetadataRow('Artist', song.artist, _playlistColor),
-              const SizedBox(height: 8),
-              _buildMetadataRow('Album',
-                  song.album.isNotEmpty ? song.album : 'Unknown', _playlistColor),
-              if (song.duration != const Duration(minutes: 3)) ...[
-                const SizedBox(height: 8),
-                _buildMetadataRow(
-                    'Duration', _formatDuration(song.duration), _playlistColor),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                Navigator.of(dialogContext).pop();
-                // Show edit dialog for manual correction
-                await _showManualEditDialog(file, song, _playlistColor);
-              },
-              child: Text('Edit', style: TextStyle(color: _playlistColor)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text('OK', style: TextStyle(color: _playlistColor)),
-            ),
-          ],
-        ),
-      );
-    }
-  }
-
   Future<void> _showManualEditDialog(
       File file, Song song, Color accentColor) async {
     final titleController = TextEditingController(text: song.title);
@@ -1050,7 +913,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                                       'itunes';
 
                               return RepaintBoundary(
-                                child: _ApplyableMetadataItem(
+                                child: ApplyableMetadataItem(
                                   result: result,
                                   isITunes: isITunes,
                                   metadataService: _metadataService,
@@ -1081,37 +944,6 @@ class _PlaylistPageState extends State<PlaylistPage> {
     );
 
     // Intentionally not disposing controllers here to avoid use-after-dispose during closing animations
-  }
-
-  Widget _buildMetadataRow(String label, String value, Color accentColor) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 70,
-          child: Text(
-            '$label:',
-            style: TextStyle(
-              color: accentColor,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(color: Colors.white),
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return '$minutes:$seconds';
   }
 
   void _showSongOptionsSheet(File file, Color accentColor) {
@@ -1351,11 +1183,12 @@ class _PlaylistPageState extends State<PlaylistPage> {
                           ),
                           _buildOptionTile(
                             icon: Icons.edit,
-                            title: 'Update metadata',
+                            title: 'Edit metadata',
                             color: Colors.orange.shade400,
-                            onTap: () {
+                            onTap: () async {
                               Navigator.pop(context);
-                              _updateMetadata(file);
+                              final song = _metadataCache.createSongFromFile(file);
+                              await _showManualEditDialog(file, song, _playlistColor);
                             },
                           ),
                           _buildOptionTile(
@@ -1618,7 +1451,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
       backgroundColor: Colors.black,
       extendBodyBehindAppBar: true,
       appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(kToolbarHeight),
+        preferredSize: const Size.fromHeight(kToolbarHeight + 12),
         child: AnimatedBuilder(
           animation: _scrollController,
           builder: (context, _) {
@@ -1631,6 +1464,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
               backgroundColor: Colors.black.withOpacity(opacity),
               elevation: 0,
               surfaceTintColor: Colors.transparent,
+              toolbarHeight: kToolbarHeight + 12,
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back, color: Colors.white),
                 onPressed: () => Navigator.pop(context),
@@ -2175,152 +2009,4 @@ class _OptimizedSongTileState extends State<_OptimizedSongTile>
   }
 }
 
-/// Widget for a metadata search result item with apply functionality
-class _ApplyableMetadataItem extends StatefulWidget {
-  final MetadataResult result;
-  final bool isITunes;
-  final MetadataService metadataService;
-  final Function(String? artPath) onApply;
-  final Future<Uint8List?> Function(String? url) getPreviewFuture;
-
-  const _ApplyableMetadataItem({
-    required this.result,
-    required this.isITunes,
-    required this.metadataService,
-    required this.onApply,
-    required this.getPreviewFuture,
-  });
-
-  @override
-  State<_ApplyableMetadataItem> createState() => _ApplyableMetadataItemState();
-}
-
-class _ApplyableMetadataItemState extends State<_ApplyableMetadataItem> {
-  bool _isApplying = false;
-
-  Future<void> _applyMetadata() async {
-    if (_isApplying) return;
-
-    setState(() {
-      _isApplying = true;
-    });
-
-    String? artPath;
-    if (widget.result.coverArtUrl != null && widget.result.coverArtUrl!.isNotEmpty) {
-      if (widget.isITunes) {
-        artPath = await widget.metadataService.downloadCoverArtFromUrl(
-          url: widget.result.coverArtUrl!,
-          identifier: '${widget.result.artist}_${widget.result.album.isNotEmpty ? widget.result.album : widget.result.title}',
-        );
-      } else if (widget.result.releaseId != null) {
-        artPath = await widget.metadataService.downloadCoverArtForRelease(
-          releaseId: widget.result.releaseId!,
-          identifier: '${widget.result.artist}_${widget.result.album.isNotEmpty ? widget.result.album : widget.result.title}',
-        );
-      }
-    }
-
-    if (mounted) {
-      widget.onApply(artPath);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: SizedBox(
-        width: 56,
-        height: 56,
-        child: FutureBuilder<Uint8List?>(
-          future: widget.getPreviewFuture(widget.result.coverArtUrl),
-          builder: (context, artSnap) {
-            if (artSnap.connectionState == ConnectionState.waiting) {
-              return Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey[850],
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Center(
-                  child: SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              );
-            }
-
-            if (artSnap.data != null) {
-              return Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(6),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: Image.memory(
-                    artSnap.data!,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              );
-            }
-
-            return Container(
-              decoration: BoxDecoration(
-                color: Colors.grey[800],
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Icon(Icons.album, color: Colors.white54),
-            );
-          },
-        ),
-      ),
-      title: Text(
-        widget.result.title,
-        style: const TextStyle(color: Colors.white),
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            [widget.result.artist, widget.result.album]
-                .where((e) => e.isNotEmpty)
-                .join(' • '),
-            style: TextStyle(color: Colors.grey[400]),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Icon(
-                Icons.public,
-                size: 16,
-                color: widget.isITunes
-                    ? Colors.red.shade300
-                    : Colors.green.shade300,
-              ),
-            ],
-          ),
-        ],
-      ),
-      trailing: _isApplying
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : IconButton(
-              icon: Icon(Icons.check_circle_outline, color: Colors.grey[400]),
-              onPressed: _applyMetadata,
-            ),
-      onTap: _applyMetadata,
-    );
-  }
-}
+// _ApplyableMetadataItem has been moved to lib/widgets/applyable_metadata_item.dart

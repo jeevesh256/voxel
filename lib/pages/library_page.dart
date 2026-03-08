@@ -55,14 +55,13 @@ class _LibraryPageState extends State<LibraryPage>
   final TextEditingController _searchController = TextEditingController();
   LibrarySortOption _sortOption = LibrarySortOption.name;
   bool _isAscending = true;
+  late PageController _pageController;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this, animationDuration: const Duration(milliseconds: 220));
-    _tabController.addListener(() {
-      if (!_tabController.indexIsChanging) setState(() {});
-    });
+    _tabController = TabController(length: 3, vsync: this, animationDuration: const Duration(milliseconds: 300));
+    _pageController = PageController();
     _metadataCache.initialize();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final audioService = context.read<AudioPlayerService>();
@@ -76,6 +75,7 @@ class _LibraryPageState extends State<LibraryPage>
   @override
   void dispose() {
     _tabController.dispose();
+    _pageController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -129,6 +129,13 @@ class _LibraryPageState extends State<LibraryPage>
                     Expanded(
                       child: TabBar(
                         controller: _tabController,
+                        onTap: (index) {
+                          _pageController.animateToPage(
+                            index,
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOutCubic,
+                          );
+                        },
                         tabs: const [
                           Tab(text: 'Playlists'),
                           Tab(text: 'Artists'),
@@ -221,14 +228,36 @@ class _LibraryPageState extends State<LibraryPage>
           ),
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        physics: const ClampingScrollPhysics(),
-        children: [
-          _buildPlaylistsView(bottomPad),
-          _buildArtistsView(bottomPad),
-          _buildFavouriteRadiosView(bottomPad),
-        ],
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        // Only claim the gesture when it is clearly horizontal
+        onHorizontalDragEnd: (details) {
+          final vx = details.primaryVelocity ?? 0;
+          final current = _tabController.index;
+          final int next;
+          if (vx < -300 && current < 2) {
+            next = current + 1;
+          } else if (vx > 300 && current > 0) {
+            next = current - 1;
+          } else {
+            return;
+          }
+          _pageController.animateToPage(
+            next,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOutCubic,
+          );
+          _tabController.animateTo(next);
+        },
+        child: PageView(
+          controller: _pageController,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            _KeepAliveTabView(child: _buildPlaylistsView(bottomPad)),
+            _KeepAliveTabView(child: _buildArtistsView(bottomPad)),
+            _KeepAliveTabView(child: _buildFavouriteRadiosView(bottomPad)),
+          ],
+        ),
       ),
     );
   }
@@ -1420,4 +1449,25 @@ class _LibraryPageState extends State<LibraryPage>
     }
   }
 
+}
+
+// Keeps a tab page alive in PageView so scroll state is preserved across switches.
+class _KeepAliveTabView extends StatefulWidget {
+  const _KeepAliveTabView({required this.child});
+  final Widget child;
+
+  @override
+  State<_KeepAliveTabView> createState() => _KeepAliveTabViewState();
+}
+
+class _KeepAliveTabViewState extends State<_KeepAliveTabView>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
+  }
 }

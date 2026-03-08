@@ -175,11 +175,19 @@ class MusicApp extends StatefulWidget {
 
 class _MusicAppState extends State<MusicApp> {
   late int _selectedIndex;
+  final _searchKey = GlobalKey<SearchPageState>();
+  late final List<Widget> _pages;
 
   @override
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
+    _pages = [
+      const HomePage(),
+      SearchPage(key: _searchKey),
+      const LibraryPage(),
+      SettingsPage(),
+    ];
   }
 
   final List<GlobalKey<NavigatorState>> _navigatorKeys = [
@@ -189,29 +197,25 @@ class _MusicAppState extends State<MusicApp> {
     GlobalKey<NavigatorState>(),
   ];
 
-  final List<Widget> _pages = [
-    const HomePage(),
-    const SearchPage(),
-    const LibraryPage(),
-    SettingsPage(),
-  ];
-
   Future<bool> _onWillPop() async {
     final currentNavigator = _navigatorKeys[_selectedIndex].currentState;
 
-    // If we can pop the current navigator, do that first
+    // Pop sub-routes first (e.g. ArtistPage pushed on top of SearchPage)
     if (currentNavigator?.canPop() ?? false) {
       currentNavigator?.pop();
       return false;
     }
 
-    // If we're already on the home tab, allow the app to close
-    // Otherwise, switch to home tab
+    // Let the current page handle back softly (e.g. SearchPage clearing query)
+    if (_searchKey.currentState?.handleBack() ?? false) {
+      return false;
+    }
+
     if (_selectedIndex == 0) {
-      return true; // Exit app when on home tab
+      return true; // exit app
     } else {
       setState(() => _selectedIndex = 0);
-      return false; // Don't exit app, just switched tabs
+      return false;
     }
   }
 
