@@ -4,6 +4,40 @@ import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
 import '../models/radio_station.dart';
 
+bool _isValidArtwork(String url) {
+  if (url.isEmpty) return false;
+  final uri = Uri.tryParse(url);
+  if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+    return false;
+  }
+
+  final host = uri.host.toLowerCase();
+  final path = uri.path.toLowerCase();
+
+  // These Google thumbnail URLs are often short-lived and return 404s.
+  if (host.startsWith('encrypted-tbn') && host.endsWith('gstatic.com')) {
+    return false;
+  }
+
+  // Known station-logo CDN entries that frequently fail DNS resolution.
+  if (host == 'de8as167a043l.cloudfront.net' ||
+      path.contains('/styles/images/logosplus/')) {
+    return false;
+  }
+
+  // Reject generic /icon.png and favicon-like paths that often return HTTP errors
+  if (path.endsWith('/icon.png') || 
+      path.endsWith('/icon.ico') ||
+      path.endsWith('/favicon.ico')) {
+    return false;
+  }
+
+  return host.isNotEmpty &&
+      !path.endsWith('.ico') &&
+      !path.endsWith('.svg') &&
+      !path.endsWith('.bmp');
+}
+
 // Helper for Cupertino-style page transitions
 void pushMaterialPage(BuildContext context, Widget page) {
   Navigator.of(context).push(
@@ -247,7 +281,7 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                         itemCount: radios.length,
                         itemBuilder: (context, index) {
                           final radio = radios[index];
-                          final hasArt = radio.artworkUrl.isNotEmpty;
+                          final hasArt = _isValidArtwork(radio.artworkUrl);
                           return ListTile(
                             leading: hasArt
                                 ? ClipRRect(

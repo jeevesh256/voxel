@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 
 import '../models/radio_station.dart';
@@ -61,35 +62,39 @@ class _HomePageState extends State<HomePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 0),
+          padding: const EdgeInsets.fromLTRB(16, 16, 4, 0),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const Text(
                 'Radio Stations',
                 style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  letterSpacing: -0.3,
                 ),
               ),
               const Spacer(),
-              TextButton(
-                style: TextButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                  foregroundColor: Colors.deepPurple,
-                  textStyle: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600),
+              GestureDetector(
+                onTap: () => pushMaterialPage(
+                    context, AllStationsPage(stations: validStations)),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'See all',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white70,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
                 ),
-                onPressed: () {
-                  pushMaterialPage(
-                    context,
-                    AllStationsPage(stations: validStations),
-                  );
-                },
-                child: const Text('See All'),
               ),
             ],
           ),
@@ -103,7 +108,7 @@ class _HomePageState extends State<HomePage> {
             itemCount: topStations.length,
             itemBuilder: (context, index) {
               final station = topStations[index];
-              final hasArt = station.artworkUrl.isNotEmpty;
+              final hasArt = _isValidArtwork(station.artworkUrl);
               return GestureDetector(
                 onTap: () => context
                     .read<AudioPlayerService>()
@@ -114,49 +119,35 @@ class _HomePageState extends State<HomePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Stack(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: hasArt
-                                ? Image.network(
-                                    station.artworkUrl,
-                                    height: _homeTileImageSize,
-                                    width: _homeTileImageSize,
-                                    fit: BoxFit.cover,
-                                    filterQuality: FilterQuality.high,
-                                    errorBuilder: (_, __, ___) => Container(
-                                      height: _homeTileImageSize,
-                                      width: _homeTileImageSize,
-                                      color: const Color(0xFFA855A8),
-                                      child: const Icon(Icons.radio,
-                                          color: Colors.white, size: 60),
-                                    ),
-                                  )
-                                : Container(
-                                    height: _homeTileImageSize,
-                                    width: _homeTileImageSize,
-                                    color: const Color(0xFFA855A8),
-                                    child: const Icon(Icons.radio,
-                                        color: Colors.white, size: 60),
-                                  ),
-                          ),
-                          Positioned.fill(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(10),
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Colors.black.withOpacity(0.15),
-                                    Colors.deepPurple.withOpacity(0.25),
-                                  ],
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: hasArt
+                            ? CachedNetworkImage(
+                                imageUrl: station.artworkUrl,
+                                height: _homeTileImageSize,
+                                width: _homeTileImageSize,
+                                fit: BoxFit.cover,
+                                filterQuality: FilterQuality.high,
+                                errorWidget: (_, __, ___) => Container(
+                                  height: _homeTileImageSize,
+                                  width: _homeTileImageSize,
+                                  color: const Color(0xFF6A5B8E),
+                                  child: const Icon(Icons.radio,
+                                      color: Colors.white, size: 60),
                                 ),
+                                placeholder: (_, __) => Container(
+                                  height: _homeTileImageSize,
+                                  width: _homeTileImageSize,
+                                  color: const Color(0xFF2A1A3A),
+                                ),
+                              )
+                            : Container(
+                                height: _homeTileImageSize,
+                                width: _homeTileImageSize,
+                                color: const Color(0xFF6A5B8E),
+                                child: const Icon(Icons.radio,
+                                    color: Colors.white, size: 60),
                               ),
-                            ),
-                          ),
-                        ],
                       ),
                       const SizedBox(height: 12),
                       Text(
@@ -263,12 +254,16 @@ class _HomePageState extends State<HomePage> {
     // Use the defined order from allGenres, only including genres that have stations
     final displayedGenres =
         allGenres.where((genre) => genreMap.containsKey(genre)).toList();
-    return SizedBox(
-      height: _homeRowHeight,
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        scrollDirection: Axis.horizontal,
-        itemCount: displayedGenres.length,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSection('Genre Radios'),
+        SizedBox(
+          height: _homeRowHeight,
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            scrollDirection: Axis.horizontal,
+            itemCount: displayedGenres.length,
         itemBuilder: (context, index) {
           final genre = displayedGenres[index];
           final stations = genreMap[genre]!;
@@ -292,41 +287,27 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.network(
-                          artworkUrl,
-                          height: _homeTileImageSize,
-                          width: _homeTileImageSize,
-                          fit: BoxFit.cover,
-                          filterQuality: FilterQuality.high,
-                          errorBuilder: (_, __, ___) => Container(
-                            height: _homeTileImageSize,
-                            width: _homeTileImageSize,
-                            color: const Color(0xFFA855A8),
-                            child: const Icon(Icons.radio,
-                                color: Colors.white, size: 60),
-                          ),
-                        ),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: CachedNetworkImage(
+                      imageUrl: artworkUrl,
+                      height: _homeTileImageSize,
+                      width: _homeTileImageSize,
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.high,
+                      errorWidget: (_, __, ___) => Container(
+                        height: _homeTileImageSize,
+                        width: _homeTileImageSize,
+                        color: const Color(0xFF6A5B8E),
+                        child: const Icon(Icons.radio,
+                            color: Colors.white, size: 60),
                       ),
-                      Positioned.fill(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(10),
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.black.withOpacity(0.15),
-                                Colors.deepPurple.withOpacity(0.25),
-                              ],
-                            ),
-                          ),
-                        ),
+                      placeholder: (_, __) => Container(
+                        height: _homeTileImageSize,
+                        width: _homeTileImageSize,
+                        color: const Color(0xFF2A1A3A),
                       ),
-                    ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Text(
@@ -354,7 +335,9 @@ class _HomePageState extends State<HomePage> {
             ),
           );
         },
-      ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -396,18 +379,23 @@ class _HomePageState extends State<HomePage> {
       slivers: [
         SliverAppBar(
           floating: true,
+          snap: true,
           backgroundColor: Colors.black,
-          title: Row(
-            children: [
-              Text(
-                'Listen Now',
-                style: TextStyle(
-                  color: Colors.deepPurple.shade200,
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                ),
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          titleSpacing: 0,
+          toolbarHeight: 68,
+          title: const Padding(
+            padding: EdgeInsets.fromLTRB(20, 0, 0, 0),
+            child: Text(
+              'Listen Now',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
               ),
-            ],
+            ),
           ),
         ),
         SliverToBoxAdapter(
@@ -416,7 +404,6 @@ class _HomePageState extends State<HomePage> {
             children: [
               _buildRecentlyPlayedRow(),
               _buildRadioStationRow(),
-              _buildSection('Genre Radios'),
               _buildGenreRadioRow(),
               _buildForYouRow(),
               _buildUserPlaylistsRow(),
@@ -430,12 +417,14 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildSection(String title) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       child: Text(
         title,
         style: const TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.w700,
+          fontSize: 22,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+          letterSpacing: -0.3,
         ),
       ),
     );
@@ -480,7 +469,7 @@ class _HomePageState extends State<HomePage> {
                         height: _homeTileImageSize,
                         width: _homeTileImageSize,
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(12),
                           color: Colors.deepPurple.shade200,
                         ),
                         child: const Icon(Icons.favorite,
@@ -561,7 +550,7 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       hasArt
                           ? ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(12),
                               child: Image.file(
                                 File(playlist.artworkPath!),
                                 height: _homeTileImageSize,
@@ -585,7 +574,7 @@ class _HomePageState extends State<HomePage> {
                                 color: playlist.artworkColor != null
                                     ? Color(playlist.artworkColor!)
                                     : const Color(0xFF80CBC4),
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                               child: const Icon(Icons.queue_music,
                                   color: Colors.white, size: 60),
@@ -713,7 +702,7 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       item.imagePath != null && item.imagePath!.isNotEmpty
                           ? ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(12),
                               child: Image.file(
                                 File(item.imagePath!),
                                 height: _homeTileImageSize,
@@ -733,7 +722,7 @@ class _HomePageState extends State<HomePage> {
                               width: _homeTileImageSize,
                               decoration: BoxDecoration(
                                 color: item.color,
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                               child: Icon(item.icon,
                                   color: Colors.white, size: 60),
@@ -766,7 +755,7 @@ class _HomePageState extends State<HomePage> {
             },
           ),
         ),
-        const SizedBox(height: 32), // Add extra gap below Recently Played
+        const SizedBox(height: 16),
       ],
     );
   }
@@ -790,7 +779,40 @@ class _RecentlyPlayedItem {
   });
 }
 
-// Helper method to match genres with common variations
+bool _isValidArtwork(String url) {
+  if (url.isEmpty) return false;
+  final uri = Uri.tryParse(url);
+  if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+    return false;
+  }
+
+  final host = uri.host.toLowerCase();
+  final path = uri.path.toLowerCase();
+
+  // These Google thumbnail URLs are often short-lived and return 404s.
+  if (host.startsWith('encrypted-tbn') && host.endsWith('gstatic.com')) {
+    return false;
+  }
+
+  // Known station-logo CDN entries that frequently fail DNS resolution.
+  if (host == 'de8as167a043l.cloudfront.net' ||
+      path.contains('/styles/images/logosplus/')) {
+    return false;
+  }
+
+  // Reject generic /icon.png and favicon-like paths that often return HTTP errors
+  if (path.endsWith('/icon.png') || 
+      path.endsWith('/icon.ico') ||
+      path.endsWith('/favicon.ico')) {
+    return false;
+  }
+
+  return host.isNotEmpty &&
+      !path.endsWith('.ico') &&
+      !path.endsWith('.svg') &&
+      !path.endsWith('.bmp');
+}
+
 bool _isGenreMatch(String stationGenre, String targetGenre) {
   switch (targetGenre) {
     case 'pop':

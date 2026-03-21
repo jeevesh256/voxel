@@ -13,6 +13,40 @@ import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/voxel_toast.dart';
 
+bool _isValidArtwork(String url) {
+  if (url.isEmpty) return false;
+  final uri = Uri.tryParse(url);
+  if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+    return false;
+  }
+
+  final host = uri.host.toLowerCase();
+  final path = uri.path.toLowerCase();
+
+  // These Google thumbnail URLs are often short-lived and return 404s.
+  if (host.startsWith('encrypted-tbn') && host.endsWith('gstatic.com')) {
+    return false;
+  }
+
+  // Known station-logo CDN entries that frequently fail DNS resolution.
+  if (host == 'de8as167a043l.cloudfront.net' ||
+      path.contains('/styles/images/logosplus/')) {
+    return false;
+  }
+
+  // Reject generic /icon.png and favicon-like paths that often return HTTP errors
+  if (path.endsWith('/icon.png') || 
+      path.endsWith('/icon.ico') ||
+      path.endsWith('/favicon.ico')) {
+    return false;
+  }
+
+  return host.isNotEmpty &&
+      !path.endsWith('.ico') &&
+      !path.endsWith('.svg') &&
+      !path.endsWith('.bmp');
+}
+
 // Helper for Cupertino-style page transitions
 void pushMaterialPage(BuildContext context, Widget page) {
   Navigator.of(context).push(
@@ -1281,7 +1315,7 @@ class SearchPageState extends State<SearchPage>
     final isPlaying =
         audioService.currentRadioStation?.id == station.id;
     final isLiked = audioService.isRadioLiked(station);
-    final hasArt = station.artworkUrl.isNotEmpty;
+    final hasArt = _isValidArtwork(station.artworkUrl);
 
     return Material(
       color: Colors.transparent,
