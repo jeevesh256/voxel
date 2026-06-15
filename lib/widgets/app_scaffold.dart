@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'bottom_chrome_metrics.dart';
 import 'player.dart';
 import '../main.dart';
 
@@ -16,6 +17,7 @@ class AppScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = BottomChromeMetrics.of(context);
     return Scaffold(
       appBar: appBar,
       body: body,
@@ -28,40 +30,47 @@ class AppScaffold extends StatelessWidget {
               splashColor: Colors.transparent,
               highlightColor: Colors.transparent,
             ),
-            child: BottomNavigationBar(
-              type: BottomNavigationBarType.fixed,
-              backgroundColor: Colors.black,
-              selectedItemColor: Colors.deepPurple.shade400,
-              unselectedItemColor: Colors.grey,
-              currentIndex: selectedIndex,
-              elevation: 0,
-              enableFeedback: false,
-              onTap: (index) {
-                // Pop to root and navigate to selected tab
-                Navigator.of(context).pop();
-                Navigator.of(context).pushReplacement(
-                  PageRouteBuilder(
-                    pageBuilder: (context, animation, secondaryAnimation) =>
-                        const MusicApp(),
-                    transitionsBuilder:
-                        (context, animation, secondaryAnimation, child) {
-                      return FadeTransition(
-                        opacity: animation,
-                        child: child,
-                      );
-                    },
-                  ),
-                );
-              },
-              items: const [
-                BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-                BottomNavigationBarItem(
-                    icon: Icon(Icons.search), label: 'Search'),
-                BottomNavigationBarItem(
-                    icon: Icon(Icons.library_music), label: 'Library'),
-                BottomNavigationBarItem(
-                    icon: Icon(Icons.settings), label: 'Settings'),
-              ],
+            child: SizedBox(
+              height: metrics.navBarHeight,
+              child: BottomNavigationBar(
+                type: BottomNavigationBarType.fixed,
+                backgroundColor: Colors.black,
+                selectedItemColor: Colors.deepPurple.shade400,
+                unselectedItemColor: Colors.grey,
+                selectedFontSize: metrics.navLabelFontSize,
+                unselectedFontSize: metrics.navLabelFontSize,
+                iconSize: metrics.navIconSize,
+                currentIndex: selectedIndex,
+                elevation: 0,
+                enableFeedback: false,
+                onTap: (index) {
+                  // Pop to root and navigate to selected tab
+                  Navigator.of(context).pop();
+                  Navigator.of(context).pushReplacement(
+                    PageRouteBuilder(
+                      pageBuilder: (context, animation, secondaryAnimation) =>
+                          const MusicApp(),
+                      transitionsBuilder:
+                          (context, animation, secondaryAnimation, child) {
+                        return FadeTransition(
+                          opacity: animation,
+                          child: child,
+                        );
+                      },
+                    ),
+                  );
+                },
+                items: const [
+                  BottomNavigationBarItem(
+                      icon: Icon(Icons.home), label: 'Home'),
+                  BottomNavigationBarItem(
+                      icon: Icon(Icons.search), label: 'Search'),
+                  BottomNavigationBarItem(
+                      icon: Icon(Icons.library_music), label: 'Library'),
+                  BottomNavigationBarItem(
+                      icon: Icon(Icons.settings), label: 'Settings'),
+                ],
+              ),
             ),
           ),
         ],

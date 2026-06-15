@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:provider/provider.dart';
@@ -177,11 +178,44 @@ class _MusicAppState extends State<MusicApp> {
   late int _selectedIndex;
   final _searchKey = GlobalKey<SearchPageState>();
   late final List<Widget> _pages;
+  bool _stackRefreshScheduled = false;
+
+  late final List<_OverlayNavigatorObserver> _navigatorObservers;
+
+  bool get _isOnSubPage {
+    final nav = _navigatorKeys[_selectedIndex].currentState;
+    return nav?.canPop() ?? false;
+  }
+
+  void _onNavigatorStackChanged() {
+    if (!mounted || _stackRefreshScheduled) return;
+
+    void refresh() {
+      _stackRefreshScheduled = false;
+      if (mounted) {
+        setState(() {});
+      }
+    }
+
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.idle ||
+        phase == SchedulerPhase.postFrameCallbacks) {
+      refresh();
+      return;
+    }
+
+    _stackRefreshScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) => refresh());
+  }
 
   @override
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
+    _navigatorObservers = List.generate(
+      _navigatorKeys.length,
+      (_) => _OverlayNavigatorObserver(onStackChanged: _onNavigatorStackChanged),
+    );
     _pages = [
       const HomePage(),
       SearchPage(key: _searchKey),
@@ -239,6 +273,8 @@ class _MusicAppState extends State<MusicApp> {
         body: PersistentOverlay(
           currentIndex: _selectedIndex,
           onTabChanged: handleTabTap,
+          hideOfflineIndicator:
+              _isOnSubPage || _selectedIndex == 1,
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 180),
             switchInCurve: Curves.fastOutSlowIn,
@@ -255,6 +291,7 @@ class _MusicAppState extends State<MusicApp> {
               key: ValueKey<int>(_selectedIndex),
               child: Navigator(
                 key: _navigatorKeys[_selectedIndex],
+                observers: [_navigatorObservers[_selectedIndex]],
                 onGenerateRoute: (settings) => PageRouteBuilder(
                   pageBuilder: (context, animation, secondaryAnimation) =>
                       _pages[_selectedIndex],
@@ -270,5 +307,35 @@ class _MusicAppState extends State<MusicApp> {
         ),
       ),
     );
+  }
+}
+
+class _OverlayNavigatorObserver extends NavigatorObserver {
+  final VoidCallback onStackChanged;
+
+  _OverlayNavigatorObserver({required this.onStackChanged});
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPush(route, previousRoute);
+    onStackChanged();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPop(route, previousRoute);
+    onStackChanged();
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didRemove(route, previousRoute);
+    onStackChanged();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+    onStackChanged();
   }
 }

@@ -1,12 +1,16 @@
-import 'package:flutter/material.dart';
+ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
+import '../models/settings_model.dart';
 import '../services/audio_service.dart';
+import '../services/radio_playback_guard.dart';
 import '../services/storage_service.dart';
 import '../services/song_metadata_cache.dart';
+import '../widgets/voxel_toast.dart';
 import '../widgets/create_playlist_dialog.dart';
 import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'playlist_page.dart';
 import 'favourite_radios_page.dart';
 import 'artist_page.dart';
@@ -49,6 +53,7 @@ class _LibraryPageState extends State<LibraryPage>
   final StorageService _storageService = StorageService();
   final SongMetadataCache _metadataCache = SongMetadataCache();
   late TabController _tabController;
+  String? _appDocumentsPath;
 
   String _searchQuery = '';
   bool _isSearching = false;
@@ -60,9 +65,13 @@ class _LibraryPageState extends State<LibraryPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this, animationDuration: const Duration(milliseconds: 300));
+    _tabController = TabController(
+        length: 3,
+        vsync: this,
+        animationDuration: const Duration(milliseconds: 300));
     _pageController = PageController();
     _metadataCache.initialize();
+    _loadAppDocumentsPath();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final audioService = context.read<AudioPlayerService>();
       final offlineSongs = audioService.getPlaylistSongs('offline');
@@ -78,6 +87,26 @@ class _LibraryPageState extends State<LibraryPage>
     _pageController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadAppDocumentsPath() async {
+    final directory = await getApplicationDocumentsDirectory();
+    if (!mounted) {
+      _appDocumentsPath = directory.path;
+      return;
+    }
+    setState(() {
+      _appDocumentsPath = directory.path;
+    });
+  }
+
+  String? _cachedArtistImagePath(String artistName) {
+    final appPath = _appDocumentsPath;
+    if (appPath == null || appPath.isEmpty) return null;
+    final safeName = artistName.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+    final filePath = '$appPath/artist_img_$safeName.jpg';
+    if (File(filePath).existsSync()) return filePath;
+    return null;
   }
 
   Future<void> _loadAudioFiles() async {
@@ -143,8 +172,8 @@ class _LibraryPageState extends State<LibraryPage>
                         ],
                         isScrollable: true,
                         tabAlignment: TabAlignment.start,
-                        labelPadding:
-                            const EdgeInsets.symmetric(horizontal: 18, vertical: 0),
+                        labelPadding: const EdgeInsets.symmetric(
+                            horizontal: 18, vertical: 0),
                         indicator: BoxDecoration(
                           borderRadius: BorderRadius.circular(22),
                           color: Colors.deepPurple.shade500,
@@ -169,7 +198,8 @@ class _LibraryPageState extends State<LibraryPage>
                         height: 36,
                         child: IconButton(
                           padding: EdgeInsets.zero,
-                          icon: Icon(Icons.search, color: Colors.grey[400], size: 20),
+                          icon: Icon(Icons.search,
+                              color: Colors.grey[400], size: 20),
                           onPressed: () => setState(() => _isSearching = true),
                         ),
                       ),
@@ -178,7 +208,8 @@ class _LibraryPageState extends State<LibraryPage>
                         height: 36,
                         child: IconButton(
                           padding: EdgeInsets.zero,
-                          icon: Icon(Icons.sort, color: Colors.grey[400], size: 20),
+                          icon: Icon(Icons.sort,
+                              color: Colors.grey[400], size: 20),
                           onPressed: _showLibrarySortSheet,
                         ),
                       ),
@@ -188,7 +219,8 @@ class _LibraryPageState extends State<LibraryPage>
                         height: 36,
                         child: IconButton(
                           padding: EdgeInsets.zero,
-                          icon: Icon(Icons.close, color: Colors.grey[400], size: 20),
+                          icon: Icon(Icons.close,
+                              color: Colors.grey[400], size: 20),
                           onPressed: () => setState(() {
                             _isSearching = false;
                             _searchQuery = '';
@@ -218,7 +250,8 @@ class _LibraryPageState extends State<LibraryPage>
                         border: InputBorder.none,
                         contentPadding:
                             EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                        prefixIcon: Icon(Icons.search, color: Colors.grey, size: 18),
+                        prefixIcon:
+                            Icon(Icons.search, color: Colors.grey, size: 18),
                       ),
                       onChanged: (v) => setState(() => _searchQuery = v),
                     ),
@@ -267,7 +300,8 @@ class _LibraryPageState extends State<LibraryPage>
   Widget _buildFavouriteRadiosView(double bottomPad) {
     return Consumer<AudioPlayerService>(
       builder: (context, audioService, _) {
-        final List allRadios = audioService.getPlaylistRadios('favourite_radios');
+        final List allRadios =
+            audioService.getPlaylistRadios('favourite_radios');
 
         // Filter by search query
         List displayRadios = _searchQuery.isEmpty
@@ -314,8 +348,8 @@ class _LibraryPageState extends State<LibraryPage>
                 onTap: () =>
                     pushMaterialPage(context, const FavouriteRadiosPage()),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   child: Row(
                     children: [
                       Container(
@@ -351,16 +385,31 @@ class _LibraryPageState extends State<LibraryPage>
   }
 
   Widget _buildRadioRow(dynamic radio, AudioPlayerService audioService) {
-    final hasArt = (radio.artworkUrl as String).isNotEmpty;
+    final offlineMode = context.watch<SettingsModel>().offlineMode;
+    final hasArt = !offlineMode && (radio.artworkUrl as String).isNotEmpty;
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => audioService.playRadioStation(radio),
+        onTap: () async {
+          final blockReason = await RadioPlaybackGuard.blockingMessage();
+          if (blockReason != null) {
+            final miniPlayerActive = audioService.isMiniPlayerVisible;
+            final bottomPad = MediaQuery.of(context).padding.bottom +
+                kBottomNavigationBarHeight +
+                (miniPlayerActive ? 70.0 : 0.0);
+            VoxelToast.show(
+              context,
+              blockReason,
+              bottomPadding: bottomPad,
+            );
+            return;
+          }
+          audioService.playRadioStation(radio);
+        },
         splashColor: Colors.white.withOpacity(0.04),
         highlightColor: Colors.white.withOpacity(0.03),
         child: Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: [
               ClipRRect(
@@ -391,28 +440,25 @@ class _LibraryPageState extends State<LibraryPage>
                       overflow: TextOverflow.ellipsis,
                     ),
                     if ((radio.genre as String).isNotEmpty ||
-                        (radio.country as String).isNotEmpty) ...
-                      [
-                        const SizedBox(height: 3),
-                        Text(
-                          [
-                            if ((radio.genre as String).isNotEmpty)
-                              radio.genre as String,
-                            if ((radio.country as String).isNotEmpty)
-                              radio.country as String,
-                          ].join(' · '),
-                          style: TextStyle(
-                              color: Colors.grey[500], fontSize: 13),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                        (radio.country as String).isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        [
+                          if ((radio.genre as String).isNotEmpty)
+                            radio.genre as String,
+                          if ((radio.country as String).isNotEmpty)
+                            radio.country as String,
+                        ].join(' · '),
+                        style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
                 ),
               ),
               GestureDetector(
-                onTap: () =>
-                    _confirmRemoveRadio(context, radio, audioService),
+                onTap: () => _confirmRemoveRadio(context, radio, audioService),
                 child: Padding(
                   padding: const EdgeInsets.only(left: 8),
                   child: Icon(Icons.favorite_rounded,
@@ -434,8 +480,7 @@ class _LibraryPageState extends State<LibraryPage>
         color: const Color(0xFFA855A8),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: const Icon(Icons.radio_rounded,
-          color: Colors.white, size: 26),
+      child: const Icon(Icons.radio_rounded, color: Colors.white, size: 26),
     );
   }
 
@@ -455,8 +500,7 @@ class _LibraryPageState extends State<LibraryPage>
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child:
-                Text('Cancel', style: TextStyle(color: Colors.grey[400])),
+            child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
           ),
           TextButton(
             onPressed: () {
@@ -499,9 +543,8 @@ class _LibraryPageState extends State<LibraryPage>
         var filteredCustom = _searchQuery.isEmpty
             ? customPlaylists.toList()
             : customPlaylists
-                .where((p) => p.name
-                    .toLowerCase()
-                    .contains(_searchQuery.toLowerCase()))
+                .where((p) =>
+                    p.name.toLowerCase().contains(_searchQuery.toLowerCase()))
                 .toList();
 
         if (_sortOption == LibrarySortOption.name) {
@@ -609,8 +652,7 @@ class _LibraryPageState extends State<LibraryPage>
                   thumbnail: _playlistThumbnail(playlist, audioService),
                   title: playlist.name,
                   subtitle: () {
-                    final n =
-                        audioService.getPlaylistSongs(playlist.id).length;
+                    final n = audioService.getPlaylistSongs(playlist.id).length;
                     return '$n ${n == 1 ? 'song' : 'songs'}';
                   }(),
                   onTap: () => pushMaterialPage(
@@ -626,7 +668,8 @@ class _LibraryPageState extends State<LibraryPage>
                     onPressed: () => _showPlaylistOptionsSheet(playlist),
                     icon: Icon(Icons.more_vert, color: Colors.grey[400]),
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                    constraints:
+                        const BoxConstraints(minWidth: 40, minHeight: 40),
                   ),
                 ),
               ),
@@ -721,7 +764,8 @@ class _LibraryPageState extends State<LibraryPage>
             ? Image.file(
                 File(playlist.artworkPath as String),
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _coloredPlaylistThumb(accentColor),
+                errorBuilder: (_, __, ___) =>
+                    _coloredPlaylistThumb(accentColor),
               )
             : _coloredPlaylistThumb(accentColor),
       ),
@@ -739,28 +783,99 @@ class _LibraryPageState extends State<LibraryPage>
 
   // ─── ARTISTS ─────────────────────────────────────────────────────────────────
 
+  String _normalizeArtistToken(String raw) {
+    var cleaned = raw.trim();
+    // Remove leading/trailing whitespace and punctuation
+    cleaned = cleaned.replaceAll(
+      RegExp(r'^[\s\(\[\{]+|[\s\)\]\}\.,;:!]+$'),
+      '',
+    );
+    // Remove trailing unmatched parenthesis/bracket fragments
+    cleaned =
+        cleaned.replaceAll(RegExp(r'[\)\]\}]?\s*\[.*|[\)\]\}]?\s*\(.*'), '');
+    // Remove any trailing bracketed/parenthesized content (e.g., [radio edit], (radio edit))
+    cleaned = cleaned.replaceAll(RegExp(r'\s*\(.*?\) $'), '');
+    cleaned = cleaned.replaceAll(RegExp(r'\s*\[.*?\] $'), '');
+    cleaned = cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (cleaned.isEmpty || cleaned.toLowerCase() == 'unknown artist') {
+      return '';
+    }
+    return cleaned;
+  }
+
+  List<String> _splitCompoundArtists(String rawArtist) {
+    return rawArtist
+        .split(RegExp(r'\s*,\s*|\s*&\s*|\s+(?:feat\.?|ft\.?|x)\s+',
+            caseSensitive: false))
+        .map(_normalizeArtistToken)
+        .where((a) => a.isNotEmpty)
+        .toList();
+  }
+
+  List<String> _extractFeaturedArtistsFromTitle(String title) {
+    final featured = <String>[];
+
+    final bracketedFeat = RegExp(
+      r'\((?:feat\.?|ft\.?)\s+([^\)]+)\)|\[(?:feat\.?|ft\.?)\s+([^\]]+)\]',
+      caseSensitive: false,
+    );
+
+    for (final match in bracketedFeat.allMatches(title)) {
+      final names = (match.group(1) ?? match.group(2) ?? '').trim();
+      if (names.isEmpty) continue;
+      featured.addAll(_splitCompoundArtists(names));
+    }
+
+    // Support non-bracket forms like "Song Title feat. Artist".
+    final inlineFeat =
+        RegExp(r'\b(?:feat\.?|ft\.?)\s+(.+)$', caseSensitive: false)
+            .firstMatch(title)
+            ?.group(1)
+            ?.trim();
+    if (inlineFeat != null && inlineFeat.isNotEmpty) {
+      featured.addAll(_splitCompoundArtists(inlineFeat));
+    }
+
+    final unique = <String, String>{};
+    for (final name in featured) {
+      final normalized = _normalizeArtistToken(name);
+      if (normalized.isEmpty) continue;
+      unique.putIfAbsent(normalized.toLowerCase(), () => normalized);
+    }
+    return unique.values.toList();
+  }
+
   Widget _buildArtistsView(double bottomPad) {
     final audioService = context.watch<AudioPlayerService>();
     final audioFiles = audioService.getPlaylistSongs('offline');
     final artistMap = <String, List<File>>{};
     final artistAlbumArt = <String, String>{};
 
+    // For each artist, find the first song with a local album art file (from iTunes enrichment)
     for (var file in audioFiles) {
       final song = _metadataCache.createSongFromFile(file);
       final rawArtist = song.artist;
       if (rawArtist == 'Unknown Artist' || rawArtist.isEmpty) continue;
 
-      // Split compound artist strings into individual names
-      final artists = rawArtist
-          .split(RegExp(r'\s*,\s*|\s*&\s*|\s+(?:feat\.?|ft\.?|x)\s+', caseSensitive: false))
-          .map((a) => a.trim())
-          .where((a) => a.isNotEmpty)
-          .toList();
+      final artistsByKey = <String, String>{};
+      for (final artist in [
+        ..._splitCompoundArtists(rawArtist),
+        ..._extractFeaturedArtistsFromTitle(song.title),
+      ]) {
+        final normalized = _normalizeArtistToken(artist);
+        if (normalized.isEmpty) continue;
+        artistsByKey.putIfAbsent(normalized.toLowerCase(), () => normalized);
+      }
 
-      for (final artist in artists) {
+      for (final artist in artistsByKey.values) {
         artistMap.putIfAbsent(artist, () => []).add(file);
+        // Prefer local file album art (downloaded from iTunes enrichment)
         if (!artistAlbumArt.containsKey(artist) && song.albumArt.isNotEmpty) {
-          artistAlbumArt[artist] = song.albumArt;
+          // Only use if it's a local file path (not a URL)
+          if (!song.albumArt.startsWith('http') &&
+              File(song.albumArt).existsSync()) {
+            artistAlbumArt[artist] = song.albumArt;
+          }
         }
       }
     }
@@ -807,7 +922,8 @@ class _LibraryPageState extends State<LibraryPage>
       itemBuilder: (context, index) {
         final artist = displayedArtists[index];
         final songs = artistMap[artist]!;
-        final albumArt = artistAlbumArt[artist];
+        final cachedArtistImage = _cachedArtistImagePath(artist);
+        final albumArt = cachedArtistImage ?? artistAlbumArt[artist];
 
         return Material(
           color: Colors.transparent,
@@ -823,8 +939,7 @@ class _LibraryPageState extends State<LibraryPage>
             splashColor: Colors.white.withOpacity(0.04),
             highlightColor: Colors.white.withOpacity(0.03),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
                   _buildArtistAvatar(albumArt, artist),
@@ -862,10 +977,9 @@ class _LibraryPageState extends State<LibraryPage>
   }
 
   Widget _buildArtistAvatar(String? albumArt, String artistName) {
-    final initials =
-        artistName.isNotEmpty ? artistName[0].toUpperCase() : '?';
-    final hue = (artistName.codeUnits.fold(0, (a, b) => a + b) % 360)
-        .toDouble();
+    final initials = artistName.isNotEmpty ? artistName[0].toUpperCase() : '?';
+    final hue =
+        (artistName.codeUnits.fold(0, (a, b) => a + b) % 360).toDouble();
     final avatarColor = HSLColor.fromAHSL(1, hue, 0.55, 0.38).toColor();
 
     return SizedBox(
@@ -938,7 +1052,8 @@ class _LibraryPageState extends State<LibraryPage>
                 dragStartBehavior: DragStartBehavior.down,
                 onTap: () => dismiss(ctx),
                 onVerticalDragUpdate: (details) {
-                  if (details.primaryDelta != null && details.primaryDelta! > 8) {
+                  if (details.primaryDelta != null &&
+                      details.primaryDelta! > 8) {
                     dismiss(ctx);
                   }
                 },
@@ -1448,7 +1563,6 @@ class _LibraryPageState extends State<LibraryPage>
       await audioService.deleteCustomPlaylist(playlist.id);
     }
   }
-
 }
 
 // Keeps a tab page alive in PageView so scroll state is preserved across switches.

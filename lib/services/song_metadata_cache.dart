@@ -4,6 +4,11 @@ import '../models/song.dart';
 import 'dart:io';
 
 class SongMetadataCache {
+    /// Remove cached metadata for a song (revert to original)
+    Future<void> removeMetadata(String filePath) async {
+      _cache.remove(filePath);
+      await _saveCache();
+    }
   // Singleton so all callers share the same in-memory cache
   static final SongMetadataCache _instance = SongMetadataCache._internal();
   factory SongMetadataCache() => _instance;
@@ -60,19 +65,23 @@ class SongMetadataCache {
   /// Create a Song from file with cached metadata if available
   Song createSongFromFile(File file) {
     final cached = getMetadata(file.path);
-    
+
     if (cached != null) {
       return Song(
         id: file.path,
         filePath: file.path,
-        title: cached['title'] ?? file.path.split('/').last.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), ''),
+        title: cached['title'] ??
+            file.path
+                .split('/')
+                .last
+                .replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), ''),
         artist: cached['artist'] ?? 'Unknown Artist',
         album: cached['album'] ?? '',
         albumArt: cached['albumArt'] ?? '',
         duration: Duration(milliseconds: cached['duration'] ?? 180000),
       );
     }
-    
+
     // No cached metadata, use default Song.fromFile
     return Song.fromFile(file);
   }

@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/radio_station.dart';
+import 'network_policy.dart';
 
 class RadioBrowserService {
   static const String _mirrorsUrl =
@@ -13,6 +14,7 @@ class RadioBrowserService {
 
   /// Background refresh for top stations (does not trigger UI update)
   Future<void> refreshTopStationsInBackground({int limit = 200}) async {
+    if (await NetworkPolicy.isOfflineModeEnabled()) return;
     final prefs = await SharedPreferences.getInstance();
     final cacheKey = 'stations_top_$limit';
     final baseUrl = await _getActiveBaseUrl();
@@ -27,6 +29,7 @@ class RadioBrowserService {
 
   /// Background refresh for genres (does not trigger UI update)
   Future<void> refreshGenresInBackground() async {
+    if (await NetworkPolicy.isOfflineModeEnabled()) return;
     final prefs = await SharedPreferences.getInstance();
     const cacheKey = 'genres_all';
     final baseUrl = await _getActiveBaseUrl();
@@ -41,6 +44,7 @@ class RadioBrowserService {
 
   /// Background refresh for stations by genre (does not trigger UI update)
   Future<void> refreshStationsByGenreInBackground({String? genre, int limit = 20}) async {
+    if (await NetworkPolicy.isOfflineModeEnabled()) return;
     final prefs = await SharedPreferences.getInstance();
     final cacheKey = genre == null || genre.isEmpty
         ? 'stations_all_$limit'
@@ -58,6 +62,16 @@ class RadioBrowserService {
   }
 
   Future<String> _getActiveBaseUrl() async {
+    if (await NetworkPolicy.isOfflineModeEnabled()) {
+      final prefs = await SharedPreferences.getInstance();
+      final savedUrl = prefs.getString(_prefsKey);
+      if (savedUrl != null && savedUrl.isNotEmpty) {
+        _activeBaseUrl = savedUrl;
+        return _activeBaseUrl!;
+      }
+      return 'https://de1.api.radio-browser.info/json';
+    }
+
     if (_activeBaseUrl != null) return _activeBaseUrl!;
     // Try to load from shared preferences first
     final prefs = await SharedPreferences.getInstance();
@@ -101,6 +115,7 @@ class RadioBrowserService {
         return data.map((e) => RadioStation.fromJson(e)).where((s) => s.streamUrl.isNotEmpty).toList();
       } catch (_) {}
     }
+    if (await NetworkPolicy.isOfflineModeEnabled()) return [];
     // Fetch from network
     final baseUrl = await _getActiveBaseUrl();
     final uri = Uri.parse(genre == null || genre.isEmpty
@@ -127,6 +142,7 @@ class RadioBrowserService {
         return data.map((e) => RadioStation.fromJson(e)).where((s) => s.streamUrl.isNotEmpty).toList();
       } catch (_) {}
     }
+    if (await NetworkPolicy.isOfflineModeEnabled()) return [];
     // Fetch from network
     final baseUrl = await _getActiveBaseUrl();
     final uri = Uri.parse('$baseUrl/stations/topclick/$limit');
@@ -151,6 +167,7 @@ class RadioBrowserService {
         return data.map((e) => e['name'] as String).toList();
       } catch (_) {}
     }
+    if (await NetworkPolicy.isOfflineModeEnabled()) return [];
     // Fetch from network
     final baseUrl = await _getActiveBaseUrl();
     final uri = Uri.parse('$baseUrl/tags');

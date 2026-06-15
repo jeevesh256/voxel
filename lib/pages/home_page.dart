@@ -10,13 +10,16 @@ import 'genre_stations_page.dart';
 import '../models/settings_model.dart';
 import '../services/audio_service.dart';
 import '../services/radio_browser_service.dart';
+import '../services/radio_playback_guard.dart';
+import '../widgets/voxel_toast.dart';
 import 'playlist_page.dart'; // <-- Missing import added here
 import 'package:voxel/models/custom_playlist.dart';
 
 void pushMaterialPage(BuildContext context, Widget page) {
   Navigator.of(context).push(
     PageRouteBuilder(
-      pageBuilder: (context, animation, secondaryAnimation) => RepaintBoundary(child: page),
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          RepaintBoundary(child: page),
       transitionDuration: const Duration(milliseconds: 250),
       reverseTransitionDuration: const Duration(milliseconds: 200),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -44,14 +47,24 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // Homepage tile sizing constants (smaller than before)
-  static const double _homeTileImageSize = 150.0;
-  static const double _homeTileWidth = 150.0;
-  static const double _homeRowHeight = 220.0;
+  _HomeTileMetrics _homeTileMetrics(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final tileWidth = ((screenWidth - 32.0) * 0.42).clamp(136.0, 168.0);
+    final textScale = MediaQuery.textScaleFactorOf(context).clamp(1.0, 1.3);
+    final rowHeight = tileWidth + 70.0 + ((textScale - 1.0) * 10.0);
+
+    return _HomeTileMetrics(
+      tileWidth: tileWidth,
+      tileImageSize: tileWidth,
+      rowHeight: rowHeight,
+    );
+  }
   // Removed direct getter for audioService. Use context.watch or context.read everywhere.
 
   // List all radios in the top section, with a "See All" button
   Widget _buildRadioStationRow() {
+    final metrics = _homeTileMetrics(context);
+    final offlineMode = context.watch<SettingsModel>().offlineMode;
     final validStations = _stations.where((station) {
       final streamUrl = station.streamUrl;
       return streamUrl.startsWith('https://') ||
@@ -76,24 +89,24 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               const Spacer(),
-              GestureDetector(
-                onTap: () => pushMaterialPage(
-                    context, AllStationsPage(stations: validStations)),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(20),
+              TextButton(
+                onPressed: () =>
+                    pushMaterialPage(context, AllStationsPage(stations: validStations)),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white70,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  shape: const StadiumBorder(),
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.2,
                   ),
-                  child: const Text(
-                    'See all',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white70,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Text(
+                  'See all',
                 ),
               ),
             ],
@@ -101,20 +114,36 @@ class _HomePageState extends State<HomePage> {
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: _homeRowHeight,
+          height: metrics.rowHeight,
           child: ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             scrollDirection: Axis.horizontal,
             itemCount: topStations.length,
             itemBuilder: (context, index) {
               final station = topStations[index];
-              final hasArt = _isValidArtwork(station.artworkUrl);
+              final hasArt =
+                  !offlineMode && _isValidArtwork(station.artworkUrl);
               return GestureDetector(
-                onTap: () => context
-                    .read<AudioPlayerService>()
-                    .playRadioStation(station),
+                onTap: () async {
+                  final blockReason =
+                      await RadioPlaybackGuard.blockingMessage();
+                  if (blockReason != null) {
+                    final audioService = context.read<AudioPlayerService>();
+                    final miniPlayerActive = audioService.isMiniPlayerVisible;
+                    final bottomPad = MediaQuery.of(context).padding.bottom +
+                        kBottomNavigationBarHeight +
+                        (miniPlayerActive ? 70.0 : 0.0);
+                    VoxelToast.show(
+                      context,
+                      blockReason,
+                      bottomPadding: bottomPad,
+                    );
+                    return;
+                  }
+                  context.read<AudioPlayerService>().playRadioStation(station);
+                },
                 child: Container(
-                  width: _homeTileWidth,
+                  width: metrics.tileWidth,
                   margin: const EdgeInsets.only(right: 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,26 +153,26 @@ class _HomePageState extends State<HomePage> {
                         child: hasArt
                             ? CachedNetworkImage(
                                 imageUrl: station.artworkUrl,
-                                height: _homeTileImageSize,
-                                width: _homeTileImageSize,
+                                height: metrics.tileImageSize,
+                                width: metrics.tileImageSize,
                                 fit: BoxFit.cover,
                                 filterQuality: FilterQuality.high,
                                 errorWidget: (_, __, ___) => Container(
-                                  height: _homeTileImageSize,
-                                  width: _homeTileImageSize,
+                                  height: metrics.tileImageSize,
+                                  width: metrics.tileImageSize,
                                   color: const Color(0xFF6A5B8E),
                                   child: const Icon(Icons.radio,
                                       color: Colors.white, size: 60),
                                 ),
                                 placeholder: (_, __) => Container(
-                                  height: _homeTileImageSize,
-                                  width: _homeTileImageSize,
+                                  height: metrics.tileImageSize,
+                                  width: metrics.tileImageSize,
                                   color: const Color(0xFF2A1A3A),
                                 ),
                               )
                             : Container(
-                                height: _homeTileImageSize,
-                                width: _homeTileImageSize,
+                                height: metrics.tileImageSize,
+                                width: metrics.tileImageSize,
                                 color: const Color(0xFF6A5B8E),
                                 child: const Icon(Icons.radio,
                                     color: Colors.white, size: 60),
@@ -185,12 +214,14 @@ class _HomePageState extends State<HomePage> {
   // Removed _showNonMusicGenres, now using Provider
 
   Widget _buildGenreRadioRow() {
+    final metrics = _homeTileMetrics(context);
     final validStations = _stations.where((station) {
       final streamUrl = station.streamUrl;
       return streamUrl.startsWith('https://') ||
           streamUrl.startsWith('http://');
     }).toList();
     final settings = context.watch<SettingsModel>();
+    final offlineMode = settings.offlineMode;
 
     // Simplified generic genres with artwork
     final Map<String, String> genreArtwork = {
@@ -259,82 +290,90 @@ class _HomePageState extends State<HomePage> {
       children: [
         _buildSection('Genre Radios'),
         SizedBox(
-          height: _homeRowHeight,
+          height: metrics.rowHeight,
           child: ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             scrollDirection: Axis.horizontal,
             itemCount: displayedGenres.length,
-        itemBuilder: (context, index) {
-          final genre = displayedGenres[index];
-          final stations = genreMap[genre]!;
-          final artworkUrl = genreArtwork[genre] ??
-              'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop';
+            itemBuilder: (context, index) {
+              final genre = displayedGenres[index];
+              final stations = genreMap[genre]!;
+              final artworkUrl = genreArtwork[genre] ??
+                  'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop';
 
-          return GestureDetector(
-            onTap: () {
-              // Navigate to genre stations page with Cupertino transition
-              pushMaterialPage(
-                context,
-                GenreStationsPage(
-                  genre: genre,
-                  stations: stations,
+              return GestureDetector(
+                onTap: () {
+                  // Navigate to genre stations page with Cupertino transition
+                  pushMaterialPage(
+                    context,
+                    GenreStationsPage(
+                      genre: genre,
+                      stations: stations,
+                    ),
+                  );
+                },
+                child: Container(
+                  width: metrics.tileWidth,
+                  margin: const EdgeInsets.only(right: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: offlineMode
+                            ? Container(
+                                height: metrics.tileImageSize,
+                                width: metrics.tileImageSize,
+                                color: const Color(0xFF6A5B8E),
+                                child: const Icon(Icons.radio,
+                                    color: Colors.white, size: 60),
+                              )
+                            : CachedNetworkImage(
+                                imageUrl: artworkUrl,
+                                height: metrics.tileImageSize,
+                                width: metrics.tileImageSize,
+                                fit: BoxFit.cover,
+                                filterQuality: FilterQuality.high,
+                                errorWidget: (_, __, ___) => Container(
+                                  height: metrics.tileImageSize,
+                                  width: metrics.tileImageSize,
+                                  color: const Color(0xFF6A5B8E),
+                                  child: const Icon(Icons.radio,
+                                      color: Colors.white, size: 60),
+                                ),
+                                placeholder: (_, __) => Container(
+                                  height: metrics.tileImageSize,
+                                  width: metrics.tileImageSize,
+                                  color: const Color(0xFF2A1A3A),
+                                ),
+                              ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        genre,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                          color: Colors.white,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${stations.length} stations',
+                        style: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
               );
             },
-            child: Container(
-              width: _homeTileWidth,
-              margin: const EdgeInsets.only(right: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: CachedNetworkImage(
-                      imageUrl: artworkUrl,
-                      height: _homeTileImageSize,
-                      width: _homeTileImageSize,
-                      fit: BoxFit.cover,
-                      filterQuality: FilterQuality.high,
-                      errorWidget: (_, __, ___) => Container(
-                        height: _homeTileImageSize,
-                        width: _homeTileImageSize,
-                        color: const Color(0xFF6A5B8E),
-                        child: const Icon(Icons.radio,
-                            color: Colors.white, size: 60),
-                      ),
-                      placeholder: (_, __) => Container(
-                        height: _homeTileImageSize,
-                        width: _homeTileImageSize,
-                        color: const Color(0xFF2A1A3A),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    genre,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                      color: Colors.white,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${stations.length} stations',
-                    style: TextStyle(
-                      color: Colors.grey[400],
-                      fontSize: 14,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
           ),
         ),
       ],
@@ -432,6 +471,7 @@ class _HomePageState extends State<HomePage> {
 
   // --- For You Row (Liked Songs Playlist) ---
   Widget _buildForYouRow() {
+    final metrics = _homeTileMetrics(context);
     final audioService = context.watch<AudioPlayerService>();
     final likedFiles = audioService.getPlaylistSongs('liked').reversed.toList();
     if (likedFiles.isEmpty) {
@@ -442,7 +482,7 @@ class _HomePageState extends State<HomePage> {
       children: [
         _buildSection('For You'),
         SizedBox(
-          height: _homeRowHeight,
+          height: metrics.rowHeight,
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             scrollDirection: Axis.horizontal,
@@ -460,14 +500,14 @@ class _HomePageState extends State<HomePage> {
                   );
                 },
                 child: Container(
-                  width: _homeTileWidth,
+                  width: metrics.tileWidth,
                   margin: const EdgeInsets.only(right: 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
-                        height: _homeTileImageSize,
-                        width: _homeTileImageSize,
+                        height: metrics.tileImageSize,
+                        width: metrics.tileImageSize,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
                           color: Colors.deepPurple.shade200,
@@ -509,6 +549,7 @@ class _HomePageState extends State<HomePage> {
 
   // --- User Playlists Row ---
   Widget _buildUserPlaylistsRow() {
+    final metrics = _homeTileMetrics(context);
     final audioService = context.watch<AudioPlayerService>();
     final customPlaylists = audioService.customPlaylists;
     if (customPlaylists.isEmpty) {
@@ -519,7 +560,7 @@ class _HomePageState extends State<HomePage> {
       children: [
         _buildSection('Your Playlists'),
         SizedBox(
-          height: _homeRowHeight,
+          height: metrics.rowHeight,
           child: ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             scrollDirection: Axis.horizontal,
@@ -543,7 +584,7 @@ class _HomePageState extends State<HomePage> {
                   );
                 },
                 child: Container(
-                  width: _homeTileWidth,
+                  width: metrics.tileWidth,
                   margin: const EdgeInsets.only(right: 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -553,12 +594,12 @@ class _HomePageState extends State<HomePage> {
                               borderRadius: BorderRadius.circular(12),
                               child: Image.file(
                                 File(playlist.artworkPath!),
-                                height: _homeTileImageSize,
-                                width: _homeTileImageSize,
+                                height: metrics.tileImageSize,
+                                width: metrics.tileImageSize,
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => Container(
-                                  height: _homeTileImageSize,
-                                  width: _homeTileImageSize,
+                                  height: metrics.tileImageSize,
+                                  width: metrics.tileImageSize,
                                   color: playlist.artworkColor != null
                                       ? Color(playlist.artworkColor!)
                                       : const Color(0xFF80CBC4),
@@ -568,8 +609,8 @@ class _HomePageState extends State<HomePage> {
                               ),
                             )
                           : Container(
-                              height: _homeTileImageSize,
-                              width: _homeTileImageSize,
+                              height: metrics.tileImageSize,
+                              width: metrics.tileImageSize,
                               decoration: BoxDecoration(
                                 color: playlist.artworkColor != null
                                     ? Color(playlist.artworkColor!)
@@ -613,6 +654,7 @@ class _HomePageState extends State<HomePage> {
 
   // --- Recently Played Row ---
   Widget _buildRecentlyPlayedRow() {
+    final metrics = _homeTileMetrics(context);
     final audioService = context.watch<AudioPlayerService>();
     final List<_RecentlyPlayedItem> items = [];
     // Use the new recently played playlist IDs for ordering
@@ -685,7 +727,7 @@ class _HomePageState extends State<HomePage> {
       children: [
         _buildSection('Recently Played'),
         SizedBox(
-          height: _homeRowHeight,
+          height: metrics.rowHeight,
           child: ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             scrollDirection: Axis.horizontal,
@@ -695,7 +737,7 @@ class _HomePageState extends State<HomePage> {
               return GestureDetector(
                 onTap: item.onTap,
                 child: Container(
-                  width: _homeTileWidth,
+                  width: metrics.tileWidth,
                   margin: const EdgeInsets.only(right: 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -705,12 +747,12 @@ class _HomePageState extends State<HomePage> {
                               borderRadius: BorderRadius.circular(12),
                               child: Image.file(
                                 File(item.imagePath!),
-                                height: _homeTileImageSize,
-                                width: _homeTileImageSize,
+                                height: metrics.tileImageSize,
+                                width: metrics.tileImageSize,
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => Container(
-                                  height: _homeTileImageSize,
-                                  width: _homeTileImageSize,
+                                  height: metrics.tileImageSize,
+                                  width: metrics.tileImageSize,
                                   color: item.color,
                                   child: Icon(item.icon,
                                       color: Colors.white, size: 60),
@@ -718,8 +760,8 @@ class _HomePageState extends State<HomePage> {
                               ),
                             )
                           : Container(
-                              height: _homeTileImageSize,
-                              width: _homeTileImageSize,
+                              height: metrics.tileImageSize,
+                              width: metrics.tileImageSize,
                               decoration: BoxDecoration(
                                 color: item.color,
                                 borderRadius: BorderRadius.circular(12),
@@ -779,6 +821,18 @@ class _RecentlyPlayedItem {
   });
 }
 
+class _HomeTileMetrics {
+  const _HomeTileMetrics({
+    required this.tileWidth,
+    required this.tileImageSize,
+    required this.rowHeight,
+  });
+
+  final double tileWidth;
+  final double tileImageSize;
+  final double rowHeight;
+}
+
 bool _isValidArtwork(String url) {
   if (url.isEmpty) return false;
   final uri = Uri.tryParse(url);
@@ -788,6 +842,7 @@ bool _isValidArtwork(String url) {
 
   final host = uri.host.toLowerCase();
   final path = uri.path.toLowerCase();
+  final thumbParam = uri.queryParameters['t']?.toLowerCase() ?? '';
 
   // These Google thumbnail URLs are often short-lived and return 404s.
   if (host.startsWith('encrypted-tbn') && host.endsWith('gstatic.com')) {
@@ -800,8 +855,13 @@ bool _isValidArtwork(String url) {
     return false;
   }
 
+  // Some laut.fm thumbnail variants are unstable and frequently return 404.
+  if (host == 'assets.laut.fm' && thumbParam.startsWith('_')) {
+    return false;
+  }
+
   // Reject generic /icon.png and favicon-like paths that often return HTTP errors
-  if (path.endsWith('/icon.png') || 
+  if (path.endsWith('/icon.png') ||
       path.endsWith('/icon.ico') ||
       path.endsWith('/favicon.ico')) {
     return false;

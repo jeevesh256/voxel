@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'network_policy.dart';
 
 class ITunesTrack {
   final String trackName;
@@ -43,6 +44,7 @@ class ITunesService {
   static const String _baseUrl = 'https://itunes.apple.com/search';
 
   Future<List<ITunesTrack>> searchTracks({required String term, int limit = 10}) async {
+    if (await NetworkPolicy.isOfflineModeEnabled()) return [];
     final uri = Uri.parse(_baseUrl).replace(queryParameters: {
       'term': term,
       'entity': 'song',
@@ -75,6 +77,7 @@ class ITunesService {
   }
 
   Future<ITunesArtist?> searchArtist({required String artistName}) async {
+    if (await NetworkPolicy.isOfflineModeEnabled()) return null;
     final uri = Uri.parse(_baseUrl).replace(queryParameters: {
       'term': artistName,
       'entity': 'musicArtist',
@@ -103,6 +106,7 @@ class ITunesService {
   }
 
   Future<List<ITunesArtist>> searchArtists({required String term, int limit = 5}) async {
+    if (await NetworkPolicy.isOfflineModeEnabled()) return [];
     final uri = Uri.parse(_baseUrl).replace(queryParameters: {
       'term': term,
       'entity': 'musicArtist',
@@ -131,6 +135,7 @@ class ITunesService {
   }
 
   Future<List<ITunesAlbum>> getArtistAlbumArtworks({required int artistId, int limit = 10}) async {
+    if (await NetworkPolicy.isOfflineModeEnabled()) return [];
     final uri = Uri.parse('https://itunes.apple.com/lookup').replace(queryParameters: {
       'id': '$artistId',
       'entity': 'album',

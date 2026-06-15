@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'network_policy.dart';
 
 class MusicBrainzRecording {
   final String id;
@@ -58,6 +59,7 @@ class MusicBrainzService {
     String? artist,
     int limit = 10,
   }) async {
+    if (await NetworkPolicy.isOfflineModeEnabled()) return [];
     await _enforceRateLimit();
 
     // Build query string
@@ -110,6 +112,7 @@ class MusicBrainzService {
   /// Check if cover art exists for a release
   Future<bool> hasCoverArt(String releaseId) async {
     if (releaseId.isEmpty) return false;
+    if (await NetworkPolicy.isOfflineModeEnabled()) return false;
     
     await _enforceRateLimit();
 
@@ -127,6 +130,7 @@ class MusicBrainzService {
   Future<List<int>?> downloadCoverArt(String releaseId, {int size = 500}) async {
     final url = getCoverArtUrl(releaseId, size: size);
     if (url == null) return null;
+    if (await NetworkPolicy.isOfflineModeEnabled()) return null;
 
     try {
       final response = await http.get(Uri.parse(url));

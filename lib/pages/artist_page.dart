@@ -38,28 +38,66 @@ class _ArtistPageState extends State<ArtistPage> {
   final ITunesService _itunesService = ITunesService();
   final MetadataService _metadataService = MetadataService();
   final ScrollController _scrollController = ScrollController();
-  
+
   ITunesArtist? _artistInfo;
   List<ITunesAlbum> _albums = [];
   bool _isLoadingAlbums = true;
+
+  String? _cachedArtistImagePath;
 
   @override
   void initState() {
     super.initState();
     _metadataCache.initialize();
     _fetchArtistInfo();
+    _loadOrFetchArtistImage();
+  }
+
+  Future<void> _loadOrFetchArtistImage() async {
+    final cacheDir = await getApplicationDocumentsDirectory();
+    final safeName = widget.artistName.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+    final filePath = '${cacheDir.path}/artist_img_$safeName.jpg';
+    final file = File(filePath);
+    if (await file.exists()) {
+      setState(() {
+        _cachedArtistImagePath = filePath;
+      });
+      return;
+    }
+    // Try to fetch from iTunes
+    final artistInfo =
+        await _itunesService.searchArtist(artistName: widget.artistName);
+    if (artistInfo != null && artistInfo.artistLinkUrl.isNotEmpty) {
+      // Try to get image from artistLinkUrl (iTunes API does not provide direct artist image, but try to get from albums)
+      final albums = await _itunesService.getArtistAlbumArtworks(
+          artistId: artistInfo.artistId, limit: 1);
+      if (albums.isNotEmpty && albums.first.artworkUrl.isNotEmpty) {
+        try {
+          final resp = await http.get(Uri.parse(albums.first.artworkUrl));
+          if (resp.statusCode >= 200 && resp.statusCode < 300) {
+            await file.writeAsBytes(resp.bodyBytes);
+            setState(() {
+              _cachedArtistImagePath = filePath;
+            });
+            return;
+          }
+        } catch (_) {}
+      }
+    }
+    // If not available, fallback will be handled in build
   }
 
   Future<void> _fetchArtistInfo() async {
     try {
-      final artistInfo = await _itunesService.searchArtist(artistName: widget.artistName);
-      
+      final artistInfo =
+          await _itunesService.searchArtist(artistName: widget.artistName);
+
       if (artistInfo != null && artistInfo.artistId != 0) {
         final albums = await _itunesService.getArtistAlbumArtworks(
           artistId: artistInfo.artistId,
           limit: 8,
         );
-        
+
         if (mounted) {
           setState(() {
             _artistInfo = artistInfo;
@@ -139,7 +177,15 @@ class _ArtistPageState extends State<ArtistPage> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      if (widget.artistArtwork != null && widget.artistArtwork!.isNotEmpty)
+                      if (_cachedArtistImagePath != null &&
+                          _cachedArtistImagePath!.isNotEmpty)
+                        Image.file(
+                          File(_cachedArtistImagePath!),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const SizedBox(),
+                        )
+                      else if (widget.artistArtwork != null &&
+                          widget.artistArtwork!.isNotEmpty)
                         Image.file(
                           File(widget.artistArtwork!),
                           fit: BoxFit.cover,
@@ -154,7 +200,7 @@ class _ArtistPageState extends State<ArtistPage> {
                           ),
                           errorWidget: (_, __, ___) => const SizedBox(),
                         ),
-                      
+
                       // Gradient overlay
                       Container(
                         decoration: BoxDecoration(
@@ -173,7 +219,7 @@ class _ArtistPageState extends State<ArtistPage> {
                     ],
                   ),
                 ),
-                
+
                 // Artist name at bottom
                 Positioned(
                   left: 24,
@@ -195,7 +241,8 @@ class _ArtistPageState extends State<ArtistPage> {
                       const SizedBox(height: 12),
                       Row(
                         children: [
-                          if (_artistInfo?.primaryGenre.isNotEmpty ?? false) ...[
+                          if (_artistInfo?.primaryGenre.isNotEmpty ??
+                              false) ...[
                             Text(
                               _artistInfo!.primaryGenre,
                               style: TextStyle(
@@ -229,67 +276,68 @@ class _ArtistPageState extends State<ArtistPage> {
               ],
             ),
           ),
-          
+
           // Play and shuffle buttons — only when songs are in library
           if (widget.songs.isNotEmpty)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
-              child: Row(
-                children: [
-                  // Large circular play button (Spotify style)
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: Colors.deepPurple.shade400,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.deepPurple.shade400.withOpacity(0.3),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+                child: Row(
+                  children: [
+                    // Large circular play button (Spotify style)
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: Colors.deepPurple.shade400,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.deepPurple.shade400.withOpacity(0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.play_arrow_rounded,
+                          size: 32,
+                          color: Colors.white,
                         ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.play_arrow_rounded,
-                        size: 32,
-                        color: Colors.white,
+                        onPressed: () {
+                          audioService.playFiles(widget.songs);
+                        },
                       ),
-                      onPressed: () {
-                        audioService.playFiles(widget.songs);
-                      },
                     ),
-                  ),
-                  const SizedBox(width: 20),
-                  // Shuffle button
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey[800]!, width: 1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: Icon(
-                        Icons.shuffle,
-                        size: 20,
-                        color: Colors.grey[400],
+                    const SizedBox(width: 20),
+                    // Shuffle button
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[800]!, width: 1),
+                        shape: BoxShape.circle,
                       ),
-                      padding: EdgeInsets.zero,
-                      onPressed: () {
-                        final shuffledSongs = List<File>.from(widget.songs)..shuffle();
-                        audioService.playFiles(shuffledSongs);
-                      },
+                      child: IconButton(
+                        icon: Icon(
+                          Icons.shuffle,
+                          size: 20,
+                          color: Colors.grey[400],
+                        ),
+                        padding: EdgeInsets.zero,
+                        onPressed: () {
+                          final shuffledSongs = List<File>.from(widget.songs)
+                            ..shuffle();
+                          audioService.playFiles(shuffledSongs);
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-          
+
           // Songs section — only shown when songs are in library
           if (widget.songs.isNotEmpty) ...[
             SliverToBoxAdapter(
@@ -310,13 +358,14 @@ class _ArtistPageState extends State<ArtistPage> {
               itemBuilder: (context, index) {
                 final file = widget.songs[index];
                 final song = _metadataCache.createSongFromFile(file);
-                
+
                 return InkWell(
                   onTap: () {
                     audioService.playFileInContext(file, widget.songs);
                   },
                   child: Padding(
-                    padding: const EdgeInsets.only(left: 16, right: 0, top: 6, bottom: 6),
+                    padding: const EdgeInsets.only(
+                        left: 16, right: 0, top: 6, bottom: 6),
                     child: Row(
                       children: [
                         // Track number
@@ -342,7 +391,8 @@ class _ArtistPageState extends State<ArtistPage> {
                                   width: 48,
                                   height: 48,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => _buildDefaultAlbumArt(48),
+                                  errorBuilder: (_, __, ___) =>
+                                      _buildDefaultAlbumArt(48),
                                 )
                               : _buildDefaultAlbumArt(48),
                         ),
@@ -364,7 +414,9 @@ class _ArtistPageState extends State<ArtistPage> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                song.artist.isNotEmpty ? song.artist : widget.artistName,
+                                song.artist.isNotEmpty
+                                    ? song.artist
+                                    : widget.artistName,
                                 style: TextStyle(
                                   color: Colors.grey[500],
                                   fontSize: 13,
@@ -382,7 +434,8 @@ class _ArtistPageState extends State<ArtistPage> {
                             color: Colors.grey[400],
                           ),
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                          constraints:
+                              const BoxConstraints(minWidth: 40, minHeight: 40),
                           onPressed: () {
                             _showSongOptionsSheet(file);
                           },
@@ -437,7 +490,11 @@ class _ArtistPageState extends State<ArtistPage> {
                             borderRadius: BorderRadius.circular(3),
                             child: _ShimmerBox(
                               height: 12,
-                              width: (index % 3 == 0) ? 120.0 : (index % 3 == 1) ? 90.0 : 105.0,
+                              width: (index % 3 == 0)
+                                  ? 120.0
+                                  : (index % 3 == 1)
+                                      ? 90.0
+                                      : 105.0,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -455,9 +512,12 @@ class _ArtistPageState extends State<ArtistPage> {
                     final album = _albums[index];
                     return InkWell(
                       onTap: () {
-                        final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
-                        final bottomPad = MediaQuery.of(context).padding.bottom +
-                            kBottomNavigationBarHeight + miniPlayerHeight;
+                        final miniPlayerHeight =
+                            _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
+                        final bottomPad =
+                            MediaQuery.of(context).padding.bottom +
+                                kBottomNavigationBarHeight +
+                                miniPlayerHeight;
                         VoxelToast.show(
                           context,
                           'This album is not in your library',
@@ -474,7 +534,8 @@ class _ArtistPageState extends State<ArtistPage> {
                               child: CachedNetworkImage(
                                 imageUrl: album.artworkUrl,
                                 fit: BoxFit.cover,
-                                placeholder: (context, url) => const _ShimmerBox(),
+                                placeholder: (context, url) =>
+                                    const _ShimmerBox(),
                                 errorWidget: (_, __, ___) => Container(
                                   color: Colors.grey[900],
                                   child: Center(
@@ -503,12 +564,14 @@ class _ArtistPageState extends State<ArtistPage> {
                       ),
                     );
                   },
-                  childCount: _isLoadingAlbums ? 4 : (_albums.length > 6 ? 6 : _albums.length),
+                  childCount: _isLoadingAlbums
+                      ? 4
+                      : (_albums.length > 6 ? 6 : _albums.length),
                 ),
               ),
             ),
           ],
-          
+
           // All songs section (if more than 5)
           if (widget.songs.length > 5) ...[
             SliverToBoxAdapter(
@@ -529,13 +592,14 @@ class _ArtistPageState extends State<ArtistPage> {
               itemBuilder: (context, index) {
                 final file = widget.songs[index];
                 final song = _metadataCache.createSongFromFile(file);
-                
+
                 return InkWell(
                   onTap: () {
                     audioService.playFileInContext(file, widget.songs);
                   },
                   child: Padding(
-                    padding: const EdgeInsets.only(left: 24, right: 0, top: 8, bottom: 8),
+                    padding: const EdgeInsets.only(
+                        left: 24, right: 0, top: 8, bottom: 8),
                     child: Row(
                       children: [
                         ClipRRect(
@@ -546,7 +610,8 @@ class _ArtistPageState extends State<ArtistPage> {
                                   width: 48,
                                   height: 48,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => _buildDefaultAlbumArt(48),
+                                  errorBuilder: (_, __, ___) =>
+                                      _buildDefaultAlbumArt(48),
                                 )
                               : _buildDefaultAlbumArt(48),
                         ),
@@ -567,7 +632,9 @@ class _ArtistPageState extends State<ArtistPage> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                song.album.isNotEmpty ? song.album : 'Unknown Album',
+                                song.album.isNotEmpty
+                                    ? song.album
+                                    : 'Unknown Album',
                                 style: TextStyle(
                                   color: Colors.grey[500],
                                   fontSize: 14,
@@ -584,7 +651,8 @@ class _ArtistPageState extends State<ArtistPage> {
                             color: Colors.grey[400],
                           ),
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                          constraints:
+                              const BoxConstraints(minWidth: 40, minHeight: 40),
                           onPressed: () {
                             _showSongOptionsSheet(file);
                           },
@@ -596,7 +664,7 @@ class _ArtistPageState extends State<ArtistPage> {
               },
             ),
           ],
-          
+
           // Bottom padding
           SliverToBoxAdapter(
             child: SizedBox(
@@ -806,7 +874,8 @@ class _ArtistPageState extends State<ArtistPage> {
                                     _metadataCache.createSongFromFile(file);
                                 final insertIndex =
                                     (audioService.player.currentIndex ?? 0) + 1;
-                                playlistHandler.insertAtQueue(song, insertIndex);
+                                playlistHandler.insertAtQueue(
+                                    song, insertIndex);
 
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
@@ -822,7 +891,9 @@ class _ArtistPageState extends State<ArtistPage> {
                                 );
                               } else {
                                 audioService.playFileInContextWithPlaylistId(
-                                    file, widget.songs, 'artist-${widget.artistName}');
+                                    file,
+                                    widget.songs,
+                                    'artist-${widget.artistName}');
 
                                 final bottomMargin =
                                     (MediaQuery.of(context).padding.bottom) +
@@ -850,7 +921,8 @@ class _ArtistPageState extends State<ArtistPage> {
                             color: Colors.orange.shade400,
                             onTap: () async {
                               Navigator.pop(context);
-                              final song = _metadataCache.createSongFromFile(file);
+                              final song =
+                                  _metadataCache.createSongFromFile(file);
                               await _showManualEditDialog(
                                   file, song, Colors.deepPurple.shade400);
                             },
@@ -954,7 +1026,8 @@ class _ArtistPageState extends State<ArtistPage> {
                                             width: 48,
                                             height: 48,
                                             decoration: BoxDecoration(
-                                              color: Color(playlist.artworkColor!),
+                                              color:
+                                                  Color(playlist.artworkColor!),
                                               borderRadius:
                                                   BorderRadius.circular(6),
                                             ),
@@ -995,7 +1068,8 @@ class _ArtistPageState extends State<ArtistPage> {
                       Navigator.of(context).pop();
                       audioService.addSongToCustomPlaylist(playlist.id, song);
                       Future.delayed(const Duration(milliseconds: 100), () {
-                        final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
+                        final miniPlayerHeight =
+                            _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
                         final bottomMargin =
                             (MediaQuery.of(context).padding.bottom) +
                                 kBottomNavigationBarHeight +
@@ -1181,8 +1255,7 @@ class _ArtistPageState extends State<ArtistPage> {
           backgroundColor: Colors.grey[900],
           title: Row(
             children: [
-              Icon(Icons.info_outline,
-                  color: Colors.deepPurple.shade400),
+              Icon(Icons.info_outline, color: Colors.deepPurple.shade400),
               const SizedBox(width: 8),
               const Text('Updated Metadata',
                   style: TextStyle(color: Colors.white)),
@@ -1229,13 +1302,16 @@ class _ArtistPageState extends State<ArtistPage> {
             TextButton(
               onPressed: () async {
                 Navigator.of(dialogContext).pop();
-                await _showManualEditDialog(file, song, Colors.deepPurple.shade400);
+                await _showManualEditDialog(
+                    file, song, Colors.deepPurple.shade400);
               },
-              child: Text('Edit', style: TextStyle(color: Colors.deepPurple.shade400)),
+              child: Text('Edit',
+                  style: TextStyle(color: Colors.deepPurple.shade400)),
             ),
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text('OK', style: TextStyle(color: Colors.deepPurple.shade400)),
+              child: Text('OK',
+                  style: TextStyle(color: Colors.deepPurple.shade400)),
             ),
           ],
         ),
@@ -1250,156 +1326,403 @@ class _ArtistPageState extends State<ArtistPage> {
     final albumController = TextEditingController(
         text: song.album.isEmpty ? 'Unknown' : song.album);
     String? selectedAlbumArt = song.albumArt.isNotEmpty ? song.albumArt : null;
+    bool isAutoUpdating = false;
 
-    final result = await showDialog<Map<String, dynamic>?>(
+    InputDecoration metadataFieldDecoration(String label) {
+      return InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: accentColor),
+        filled: true,
+        fillColor: const Color(0xFF232327),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+      );
+    }
+
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: Colors.grey[900],
-          title: Row(
-            children: [
-              Icon(Icons.edit, color: accentColor),
-              const SizedBox(width: 8),
-              const Text('Edit Metadata',
-                  style: TextStyle(color: Colors.white)),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                GestureDetector(
-                  onTap: () async {
-                    final ImagePicker picker = ImagePicker();
-                    final XFile? image =
-                        await picker.pickImage(source: ImageSource.gallery);
-                    if (image != null) {
-                      final appDir = await getApplicationDocumentsDirectory();
-                      final fileName =
-                          'album_art_${DateTime.now().millisecondsSinceEpoch}.jpg';
-                      final savedImage =
-                          await File(image.path).copy('${appDir.path}/$fileName');
-                      setDialogState(() => selectedAlbumArt = savedImage.path);
-                    }
-                  },
-                  child: Container(
-                    width: 180,
-                    height: 180,
+        builder: (context, setDialogState) => DraggableScrollableSheet(
+          initialChildSize: 0.9,
+          minChildSize: 0.6,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (context, scrollController) => Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF1B1B1F),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 36,
+                    height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.grey[800],
-                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.grey[700],
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    child: selectedAlbumArt != null &&
-                            selectedAlbumArt!.isNotEmpty
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.file(
-                              File(selectedAlbumArt!),
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Icon(
-                                Icons.add_photo_alternate,
-                                size: 50,
-                                color: accentColor,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit, color: accentColor),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Edit Metadata',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          icon: const Icon(Icons.close_rounded,
+                              color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      physics: const BouncingScrollPhysics(),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          GestureDetector(
+                            onTap: () async {
+                              final ImagePicker picker = ImagePicker();
+                              final XFile? image = await picker.pickImage(
+                                  source: ImageSource.gallery);
+                              if (image != null) {
+                                final appDir =
+                                    await getApplicationDocumentsDirectory();
+                                final fileName =
+                                    'album_art_${DateTime.now().millisecondsSinceEpoch}.jpg';
+                                final savedImage = await File(image.path)
+                                    .copy('${appDir.path}/$fileName');
+                                setDialogState(
+                                    () => selectedAlbumArt = savedImage.path);
+                              }
+                            },
+                            child: Container(
+                              width: 180,
+                              height: 180,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[800],
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: selectedAlbumArt != null &&
+                                      selectedAlbumArt!.isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.file(
+                                        File(selectedAlbumArt!),
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Icon(
+                                          Icons.add_photo_alternate,
+                                          size: 50,
+                                          color: accentColor,
+                                        ),
+                                      ),
+                                    )
+                                  : Icon(Icons.add_photo_alternate,
+                                      size: 50, color: accentColor),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text('Tap to change album art',
+                              style: TextStyle(
+                                  color: Colors.grey[600], fontSize: 12)),
+                          const SizedBox(height: 24),
+                          TextField(
+                            controller: titleController,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: metadataFieldDecoration('Title'),
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: artistController,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: metadataFieldDecoration('Artist'),
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: albumController,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: metadataFieldDecoration('Album'),
+                          ),
+                          const SizedBox(height: 20),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: Column(
+                                children: [
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 46,
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor:
+                                            accentColor.withValues(alpha: 0.22),
+                                        foregroundColor: Colors.white,
+                                        elevation: 0,
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 14, vertical: 12),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          side: BorderSide(
+                                              color: accentColor.withValues(
+                                                  alpha: 0.55)),
+                                        ),
+                                      ),
+                                      onPressed: isAutoUpdating
+                                          ? null
+                                          : () async {
+                                              setDialogState(
+                                                  () => isAutoUpdating = true);
+                                              try {
+                                                final seedSong = song.copyWith(
+                                                  title: titleController.text
+                                                          .trim()
+                                                          .isEmpty
+                                                      ? song.title
+                                                      : titleController.text
+                                                          .trim(),
+                                                  artist: artistController.text
+                                                          .trim()
+                                                          .isEmpty
+                                                      ? song.artist
+                                                      : artistController.text
+                                                          .trim(),
+                                                  album: albumController.text
+                                                      .trim(),
+                                                  albumArt: selectedAlbumArt ??
+                                                      song.albumArt,
+                                                );
+
+                                                final updated =
+                                                    await _metadataService
+                                                        .updateSongMetadata(
+                                                            seedSong)
+                                                        .timeout(
+                                                          const Duration(
+                                                              seconds: 15),
+                                                          onTimeout: () =>
+                                                              seedSong,
+                                                        );
+
+                                                if (!dialogContext.mounted ||
+                                                    !mounted) {
+                                                  return;
+                                                }
+                                                setDialogState(() {
+                                                  titleController.text =
+                                                      updated.title;
+                                                  artistController.text =
+                                                      updated.artist;
+                                                  albumController.text =
+                                                      updated.album.isNotEmpty
+                                                          ? updated.album
+                                                          : 'Unknown';
+                                                  if (updated
+                                                      .albumArt.isNotEmpty) {
+                                                    selectedAlbumArt =
+                                                        updated.albumArt;
+                                                  }
+                                                });
+                                              } catch (e) {
+                                                if (!dialogContext.mounted ||
+                                                    !mounted) {
+                                                  return;
+                                                }
+                                                final audioService = this
+                                                    .context
+                                                    .read<AudioPlayerService>();
+                                                final miniPlayerHeight =
+                                                    _isMiniPlayerActive(
+                                                            audioService)
+                                                        ? 70.0
+                                                        : 0.0;
+                                                final bottomMargin = (MediaQuery
+                                                            .of(this.context)
+                                                        .padding
+                                                        .bottom) +
+                                                    kBottomNavigationBarHeight +
+                                                    miniPlayerHeight;
+                                                ScaffoldMessenger.of(
+                                                        this.context)
+                                                    .showSnackBar(
+                                                  SnackBar(
+                                                    behavior: SnackBarBehavior
+                                                        .floating,
+                                                    margin: EdgeInsets.only(
+                                                      left: 16,
+                                                      right: 16,
+                                                      bottom: bottomMargin,
+                                                    ),
+                                                    content: Text(
+                                                        'Auto update failed: $e'),
+                                                    backgroundColor:
+                                                        Colors.red.shade400,
+                                                  ),
+                                                );
+                                              } finally {
+                                                if (dialogContext.mounted) {
+                                                  setDialogState(() =>
+                                                      isAutoUpdating = false);
+                                                }
+                                              }
+                                            },
+                                      icon: isAutoUpdating
+                                          ? SizedBox(
+                                              width: 18,
+                                              height: 18,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: accentColor,
+                                              ),
+                                            )
+                                          : Icon(Icons.auto_fix_high_rounded,
+                                              color: accentColor),
+                                      label: Text(
+                                        isAutoUpdating
+                                            ? 'Updating...'
+                                            : 'Auto update',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 46,
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.grey[850],
+                                        foregroundColor: Colors.white,
+                                        elevation: 0,
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 14, vertical: 12),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          side: BorderSide(
+                                              color: Colors.grey.shade700),
+                                        ),
+                                      ),
+                                      icon: const Icon(Icons.travel_explore,
+                                          size: 18),
+                                      label: const Text(
+                                        'Advanced search',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      onPressed: () async {
+                                        await _showMetadataSearchSheet(
+                                          context: context,
+                                          accentColor: accentColor,
+                                          setParentState: setDialogState,
+                                          onApply: (res, artPath) {
+                                            titleController.text = res.title;
+                                            artistController.text = res.artist;
+                                            albumController.text =
+                                                res.album.isNotEmpty
+                                                    ? res.album
+                                                    : 'Unknown';
+                                            setDialogState(() {
+                                              selectedAlbumArt = artPath ??
+                                                  selectedAlbumArt ??
+                                                  song.albumArt;
+                                            });
+                                          },
+                                          currentTitle: titleController.text,
+                                          currentArtist: artistController.text,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          )
-                        : Icon(Icons.add_photo_alternate,
-                            size: 50, color: accentColor),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text('Tap to change album art',
-                    style: TextStyle(color: Colors.grey[600], fontSize: 12)),
-                const SizedBox(height: 24),
-                TextField(
-                  controller: titleController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: 'Title',
-                    labelStyle: TextStyle(color: accentColor),
-                    enabledBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.grey.shade700)),
-                    focusedBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: accentColor)),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: artistController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: 'Artist',
-                    labelStyle: TextStyle(color: accentColor),
-                    enabledBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.grey.shade700)),
-                    focusedBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: accentColor)),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: albumController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: 'Album',
-                    labelStyle: TextStyle(color: accentColor),
-                    enabledBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.grey.shade700)),
-                    focusedBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: accentColor)),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey[850],
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
+                          ),
+                        ],
+                      ),
                     ),
-                    icon: const Icon(Icons.travel_explore, size: 18),
-                    label: const Text('Advanced search'),
-                    onPressed: () async {
-                      await _showMusicBrainzSurfer(
-                        context: context,
-                        accentColor: accentColor,
-                        setParentState: setDialogState,
-                        onApply: (res, artPath) {
-                          titleController.text = res.title;
-                          artistController.text = res.artist;
-                          albumController.text =
-                              res.album.isNotEmpty ? res.album : 'Unknown';
-                          setDialogState(() {
-                            selectedAlbumArt =
-                                artPath ?? selectedAlbumArt ?? song.albumArt;
-                          });
-                        },
-                        currentTitle: titleController.text,
-                        currentArtist: artistController.text,
-                      );
-                    },
                   ),
-                ),
-              ],
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.grey[300],
+                              side: BorderSide(color: Colors.grey.shade700),
+                              minimumSize: const Size.fromHeight(44),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: const Text('Cancel'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () => Navigator.of(dialogContext).pop({
+                              'title': titleController.text.trim(),
+                              'artist': artistController.text.trim(),
+                              'album': albumController.text.trim(),
+                              'albumArt': selectedAlbumArt ?? song.albumArt,
+                            }),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: accentColor,
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size.fromHeight(44),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: const Text('Save'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop({
-                'title': titleController.text.trim(),
-                'artist': artistController.text.trim(),
-                'album': albumController.text.trim(),
-                'albumArt': selectedAlbumArt ?? song.albumArt,
-              }),
-              child: Text('Save', style: TextStyle(color: accentColor)),
-            ),
-          ],
         ),
       ),
     );
@@ -1418,13 +1741,14 @@ class _ArtistPageState extends State<ArtistPage> {
       if (mounted) {
         final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
         final bottomPad = MediaQuery.of(context).padding.bottom +
-            kBottomNavigationBarHeight + miniPlayerHeight;
+            kBottomNavigationBarHeight +
+            miniPlayerHeight;
         VoxelToast.show(context, 'Metadata updated', bottomPadding: bottomPad);
       }
     }
   }
 
-  Future<void> _showMusicBrainzSurfer({
+  Future<void> _showMetadataSearchSheet({
     required BuildContext context,
     required Color accentColor,
     required void Function(void Function()) setParentState,
@@ -1436,6 +1760,29 @@ class _ArtistPageState extends State<ArtistPage> {
     final artistController = TextEditingController(text: currentArtist);
     Future<List<MetadataResult>>? futureResults;
     final Map<String, Future<Uint8List?>> artPreviewCache = {};
+
+    InputDecoration searchFieldDecoration(String hint) {
+      return InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(color: Colors.grey[500]),
+        filled: true,
+        fillColor: const Color(0xFF232327),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+      );
+    }
 
     Future<Uint8List?> fetchCoverArtPreview(String? url) async {
       if (url == null || url.isEmpty) return null;
@@ -1465,8 +1812,11 @@ class _ArtistPageState extends State<ArtistPage> {
       return artPreviewCache.putIfAbsent(url, () => fetchCoverArtPreview(url));
     }
 
-    await showDialog(
+    await showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setState) {
           void triggerSearch() {
@@ -1479,149 +1829,191 @@ class _ArtistPageState extends State<ArtistPage> {
             });
           }
 
-          return AlertDialog(
-            backgroundColor: Colors.grey[900],
-            title: Row(
-              children: [
-                Icon(Icons.travel_explore, color: accentColor),
-                const SizedBox(width: 8),
-                const Text('Suggestions',
-                    style: TextStyle(color: Colors.white)),
-              ],
-            ),
-            content: SizedBox(
-              width: 420,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
+          final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+          return SafeArea(
+            top: false,
+            child: AnimatedPadding(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              padding: EdgeInsets.only(bottom: bottomInset),
+              child: FractionallySizedBox(
+                heightFactor: 0.88,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF151518),
+                    borderRadius:
+                        const BorderRadius.vertical(top: Radius.circular(24)),
+                  ),
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: titleController,
-                          style: const TextStyle(color: Colors.white),
-                          decoration: InputDecoration(
-                            labelText: 'Title',
-                            labelStyle: TextStyle(color: accentColor),
-                            enabledBorder: UnderlineInputBorder(
-                                borderSide:
-                                    BorderSide(color: Colors.grey.shade700)),
-                            focusedBorder: UnderlineInputBorder(
-                                borderSide: BorderSide(color: accentColor)),
-                          ),
-                          textInputAction: TextInputAction.search,
-                          onSubmitted: (_) => triggerSearch(),
+                      const SizedBox(height: 10),
+                      Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[700],
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 10, 10),
+                        child: Row(
+                          children: [
+                            Icon(Icons.travel_explore, color: accentColor),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Text(
+                                'Find Metadata',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.of(ctx).pop(),
+                              icon: const Icon(Icons.close_rounded,
+                                  color: Colors.white70),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
+                          children: [
+                            TextField(
+                              controller: titleController,
+                              style: const TextStyle(color: Colors.white),
+                              decoration: searchFieldDecoration('Song title'),
+                              textInputAction: TextInputAction.next,
+                            ),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: artistController,
+                              style: const TextStyle(color: Colors.white),
+                              decoration:
+                                  searchFieldDecoration('Artist (optional)'),
+                              textInputAction: TextInputAction.search,
+                              onSubmitted: (_) => triggerSearch(),
+                            ),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 44,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: accentColor,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                onPressed: triggerSearch,
+                                icon:
+                                    const Icon(Icons.search_rounded, size: 18),
+                                label: const Text('Search metadata'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       Expanded(
-                        child: TextField(
-                          controller: artistController,
-                          style: const TextStyle(color: Colors.white),
-                          decoration: InputDecoration(
-                            labelText: 'Artist (optional)',
-                            labelStyle: TextStyle(color: accentColor),
-                            enabledBorder: UnderlineInputBorder(
-                                borderSide:
-                                    BorderSide(color: Colors.grey.shade700)),
-                            focusedBorder: UnderlineInputBorder(
-                                borderSide: BorderSide(color: accentColor)),
+                        child: Container(
+                          margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF131316),
+                            borderRadius: BorderRadius.circular(14),
                           ),
-                          textInputAction: TextInputAction.search,
-                          onSubmitted: (_) => triggerSearch(),
+                          child: FutureBuilder<List<MetadataResult>>(
+                            future: futureResults,
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return const Center(
+                                  child: SizedBox(
+                                    width: 26,
+                                    height: 26,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2.2),
+                                  ),
+                                );
+                              }
+
+                              if (futureResults == null) {
+                                return Center(
+                                  child: Text(
+                                    'Search by title and artist to get matches',
+                                    style: TextStyle(
+                                        color: Colors.grey[500], fontSize: 13),
+                                  ),
+                                );
+                              }
+
+                              if (snapshot.hasError) {
+                                return Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Text(
+                                    'Search failed: ${snapshot.error}',
+                                    style: const TextStyle(
+                                        color: Colors.redAccent),
+                                  ),
+                                );
+                              }
+
+                              final results = snapshot.data ?? [];
+                              if (results.isEmpty) {
+                                return Center(
+                                  child: Text(
+                                    'No matches found. Try different keywords.',
+                                    style: TextStyle(
+                                        color: Colors.grey[500], fontSize: 13),
+                                  ),
+                                );
+                              }
+
+                              return ListView.separated(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 6),
+                                itemCount: results.length,
+                                physics: const BouncingScrollPhysics(),
+                                separatorBuilder: (_, __) => Divider(
+                                    color: Colors.grey.shade800, height: 1),
+                                itemBuilder: (context, index) {
+                                  final res = results[index];
+                                  final isITunes =
+                                      (res.source ?? '').toLowerCase() ==
+                                          'itunes';
+
+                                  return Padding(
+                                    padding: const EdgeInsets.only(left: 8),
+                                    child: RepaintBoundary(
+                                      child: ApplyableMetadataItem(
+                                        result: res,
+                                        isITunes: isITunes,
+                                        metadataService: _metadataService,
+                                        onApply: (artPath) {
+                                          Navigator.of(ctx).pop();
+                                          onApply(res, artPath);
+                                        },
+                                        getPreviewFuture: getPreviewFuture,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: accentColor,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
-                      ),
-                      icon: const Icon(Icons.search, size: 18),
-                      label: const Text('Search'),
-                      onPressed: triggerSearch,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: FutureBuilder<List<MetadataResult>>(
-                      future: futureResults,
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                            child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          );
-                        }
-                        if (futureResults == null) {
-                          return const Center(
-                            child: Text('Enter a title/artist to search',
-                                style: TextStyle(color: Colors.white70)),
-                          );
-                        }
-                        if (snapshot.hasError) {
-                          return Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Text(
-                                'Search failed: ${snapshot.error}',
-                                style: const TextStyle(
-                                    color: Colors.redAccent)),
-                          );
-                        }
-                        final results = snapshot.data ?? [];
-                        if (results.isEmpty) {
-                          return const Center(
-                            child: Text('No results found',
-                                style: TextStyle(color: Colors.white70)),
-                          );
-                        }
-                        return ListView.separated(
-                          itemCount: results.length,
-                          physics: const BouncingScrollPhysics(),
-                          separatorBuilder: (_, __) =>
-                              const Divider(color: Colors.grey),
-                          itemBuilder: (context, index) {
-                            final res = results[index];
-                            final isITunes =
-                                (res.source ?? '').toLowerCase() == 'itunes';
-                            return RepaintBoundary(
-                              child: ApplyableMetadataItem(
-                                result: res,
-                                isITunes: isITunes,
-                                metadataService: _metadataService,
-                                onApply: (artPath) {
-                                  Navigator.of(ctx).pop();
-                                  onApply(res, artPath);
-                                },
-                                getPreviewFuture: getPreviewFuture,
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child:
-                    const Text('Close', style: TextStyle(color: Colors.grey)),
-              ),
-            ],
           );
         },
       ),

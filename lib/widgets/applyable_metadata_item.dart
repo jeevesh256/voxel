@@ -55,7 +55,7 @@ class _ApplyableMetadataItemState extends State<ApplyableMetadataItem> {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      contentPadding: EdgeInsets.zero,
+      contentPadding: const EdgeInsets.only(right: 8),
       leading: SizedBox(
         width: 56,
         height: 56,
@@ -125,16 +125,26 @@ class _ApplyableMetadataItemState extends State<ApplyableMetadataItem> {
           ]),
         ],
       ),
-      trailing: _isApplying
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : IconButton(
-              icon: Icon(Icons.check_circle_outline, color: Colors.grey[400]),
-              onPressed: _applyMetadata,
-            ),
+      trailing: SizedBox(
+        width: 40,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: _isApplying
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : IconButton(
+                  icon:
+                      Icon(Icons.check_circle_outline, color: Colors.grey[400]),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
+                  onPressed: _applyMetadata,
+                ),
+        ),
+      ),
       onTap: _applyMetadata,
     );
   }

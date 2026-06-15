@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../services/audio_service.dart';
+import '../services/radio_playback_guard.dart';
 import '../models/radio_station.dart';
+import '../models/settings_model.dart';
+import '../widgets/voxel_toast.dart';
 
 bool _isValidArtwork(String url) {
   if (url.isEmpty) return false;
@@ -13,6 +16,7 @@ bool _isValidArtwork(String url) {
 
   final host = uri.host.toLowerCase();
   final path = uri.path.toLowerCase();
+  final thumbParam = uri.queryParameters['t']?.toLowerCase() ?? '';
 
   // These Google thumbnail URLs are often short-lived and return 404s.
   if (host.startsWith('encrypted-tbn') && host.endsWith('gstatic.com')) {
@@ -22,6 +26,11 @@ bool _isValidArtwork(String url) {
   // Known station-logo CDN entries that frequently fail DNS resolution.
   if (host == 'de8as167a043l.cloudfront.net' ||
       path.contains('/styles/images/logosplus/')) {
+    return false;
+  }
+
+  // Some laut.fm thumbnail variants are unstable and frequently return 404.
+  if (host == 'assets.laut.fm' && thumbParam.startsWith('_')) {
     return false;
   }
 
@@ -121,6 +130,7 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
   @override
   Widget build(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
+    final offlineMode = context.watch<SettingsModel>().offlineMode;
     final allRadios = audioService.getPlaylistRadios('favourite_radios');
     final radios = _getFilteredAndSortedRadios(allRadios);
 
@@ -281,7 +291,8 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                         itemCount: radios.length,
                         itemBuilder: (context, index) {
                           final radio = radios[index];
-                          final hasArt = _isValidArtwork(radio.artworkUrl);
+                          final hasArt =
+                              !offlineMode && _isValidArtwork(radio.artworkUrl);
                           return ListTile(
                             leading: hasArt
                                 ? ClipRRect(
@@ -358,7 +369,23 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                                 ),
                               ],
                             ),
-                            onTap: () => audioService.playRadioStation(radio),
+                            onTap: () async {
+                              final blockReason = await RadioPlaybackGuard.blockingMessage();
+                              if (blockReason != null) {
+                                final miniPlayerActive =
+                                  audioService.isMiniPlayerVisible;
+                                final bottomPad = MediaQuery.of(context).padding.bottom +
+                                    kBottomNavigationBarHeight +
+                                    (miniPlayerActive ? 70.0 : 0.0);
+                                VoxelToast.show(
+                                  context,
+                                  blockReason,
+                                  bottomPadding: bottomPad,
+                                );
+                                return;
+                              }
+                              audioService.playRadioStation(radio);
+                            },
                           );
                         },
                       ),

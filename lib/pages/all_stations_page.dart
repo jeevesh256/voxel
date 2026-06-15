@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/radio_station.dart';
+import '../models/settings_model.dart';
 import '../services/audio_service.dart';
+import '../services/radio_playback_guard.dart';
+import '../widgets/voxel_toast.dart';
 import 'package:provider/provider.dart';
 
 bool _isValidArtwork(String url) {
@@ -13,6 +16,7 @@ bool _isValidArtwork(String url) {
 
   final host = uri.host.toLowerCase();
   final path = uri.path.toLowerCase();
+  final thumbParam = uri.queryParameters['t']?.toLowerCase() ?? '';
 
   // These Google thumbnail URLs are often short-lived and return 404s.
   if (host.startsWith('encrypted-tbn') && host.endsWith('gstatic.com')) {
@@ -22,6 +26,11 @@ bool _isValidArtwork(String url) {
   // Known station-logo CDN entries that frequently fail DNS resolution.
   if (host == 'de8as167a043l.cloudfront.net' ||
       path.contains('/styles/images/logosplus/')) {
+    return false;
+  }
+
+  // Some laut.fm thumbnail variants are unstable and frequently return 404.
+  if (host == 'assets.laut.fm' && thumbParam.startsWith('_')) {
     return false;
   }
 
@@ -116,6 +125,7 @@ class _AllStationsPageState extends State<AllStationsPage> {
   @override
   Widget build(BuildContext context) {
     final audioService = context.read<AudioPlayerService>();
+    final offlineMode = context.watch<SettingsModel>().offlineMode;
     return Scaffold(
       backgroundColor: Colors.black,
       extendBodyBehindAppBar: true,
@@ -172,9 +182,24 @@ class _AllStationsPageState extends State<AllStationsPage> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final station = widget.stations[index];
-                  final hasArt = _isValidArtwork(station.artworkUrl);
+                  final hasArt = !offlineMode && _isValidArtwork(station.artworkUrl);
                   return GestureDetector(
-                    onTap: () => audioService.playRadioStation(station),
+                    onTap: () async {
+                      final blockReason = await RadioPlaybackGuard.blockingMessage();
+                      if (blockReason != null) {
+                        final miniPlayerActive = audioService.isMiniPlayerVisible;
+                        final bottomPad = MediaQuery.of(context).padding.bottom +
+                            kBottomNavigationBarHeight +
+                            (miniPlayerActive ? 70.0 : 0.0);
+                        VoxelToast.show(
+                          context,
+                          blockReason,
+                          bottomPadding: bottomPad,
+                        );
+                        return;
+                      }
+                      audioService.playRadioStation(station);
+                    },
                     behavior: HitTestBehavior.opaque,
                     child: Padding(
                       padding: const EdgeInsets.only(

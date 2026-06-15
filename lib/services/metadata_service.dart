@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import '../models/song.dart';
-import 'musicbrainz_service.dart';
 import 'itunes_service.dart';
 
 class MetadataResult {
@@ -32,18 +31,20 @@ class MetadataResult {
 }
 
 class MetadataService {
-  final MusicBrainzService _musicBrainzService = MusicBrainzService();
   final ITunesService _iTunesService = ITunesService();
 
   /// Extract basic metadata from filename
   MetadataResult extractFilenameMetadata(String filePath) {
     // Extract filename without extension
-    String filename = filePath.split('/').last.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
-    
+    String filename = filePath
+        .split('/')
+        .last
+        .replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
+
     // Try to parse common patterns like "Artist - Title" or "Title"
     String title = filename;
     String artist = 'Unknown Artist';
-    
+
     // Check for "Artist - Title" pattern
     if (filename.contains(' - ')) {
       final parts = filename.split(' - ');
@@ -52,6 +53,17 @@ class MetadataService {
         title = parts.sublist(1).join(' - ').trim();
       }
     }
+
+    // Remove trailing (feat. ...) and [ ... ] from title
+    title = title.replaceAll(RegExp(r'\s*\(feat\..*?\)', caseSensitive: false), '').trim();
+    title = title.replaceAll(RegExp(r'\s*\[.*?\]'), '').trim();
+
+    // Remove trailing (feat. ...) and [ ... ] from artist
+    artist = artist.replaceAll(RegExp(r'\s*\(feat\..*?\)', caseSensitive: false), '').trim();
+    artist = artist.replaceAll(RegExp(r'\s*\[.*?\]'), '').trim();
+
+    // Remove trailing unmatched parenthesis or brackets from artist
+    artist = artist.replaceAll(RegExp(r'[\[\(][^\]\)]*$'), '').trim();
 
     return MetadataResult(
       title: title,
@@ -62,62 +74,45 @@ class MetadataService {
     );
   }
 
-  /// Enrich metadata using MusicBrainz API
+  /// Enrich metadata using iTunes API
   Future<MetadataResult?> enrichMetadata({
     required String title,
     String? artist,
     int limit = 5,
   }) async {
     try {
-      print('Searching MusicBrainz for: title="$title", artist="$artist"');
-      
-      final recordings = await _musicBrainzService.searchRecording(
-        title: title,
-        artist: artist,
+      final query = [artist, title]
+          .whereType<String>()
+          .where((e) => e.trim().isNotEmpty)
+          .join(' ')
+          .trim();
+      final tracks = await _iTunesService.searchTracks(
+        term: query.isNotEmpty ? query : title,
         limit: limit,
       );
 
-      print('Found ${recordings.length} recordings');
-
-      if (recordings.isEmpty) {
-        print('No recordings found');
+      if (tracks.isEmpty) {
         return null;
       }
 
-      // Get the best match (highest score)
-      final bestMatch = recordings.first;
-      print('Best match: ${bestMatch.title} by ${bestMatch.artist} (score: ${bestMatch.score})');
-
+      final bestMatch = tracks.first;
       String? albumArtPath;
-      
-      // Download cover art if available
-      if (bestMatch.releaseId != null) {
-        print('Downloading cover art for release: ${bestMatch.releaseId}');
-        final artBytes = await _musicBrainzService.downloadCoverArt(
-          bestMatch.releaseId!,
-        );
 
-        if (artBytes != null) {
-          print('Cover art downloaded, saving...');
-          albumArtPath = await _saveAlbumArtBytes(
-            artBytes,
-            '${bestMatch.artist}_${bestMatch.album ?? bestMatch.title}',
-          );
-          print('Album art saved to: $albumArtPath');
-        } else {
-          print('No cover art available');
-        }
+      if (bestMatch.artworkUrl.isNotEmpty) {
+        albumArtPath = await downloadCoverArtFromUrl(
+          url: bestMatch.artworkUrl,
+          identifier: '${bestMatch.artistName}_${bestMatch.collectionName}',
+        );
       }
 
       return MetadataResult(
-        title: bestMatch.title,
-        artist: bestMatch.artist,
-        album: bestMatch.album ?? '',
+        title: bestMatch.trackName,
+        artist: bestMatch.artistName,
+        album: bestMatch.collectionName,
         albumArtPath: albumArtPath,
-        releaseId: bestMatch.releaseId,
-        coverArtUrl: _musicBrainzService.getCoverArtUrl(bestMatch.releaseId ?? ''),
+        coverArtUrl: bestMatch.artworkUrl,
         isFromAPI: true,
-        source: 'MusicBrainz',
+        source: 'iTunes',
       );
     } catch (e) {
       print('Error enriching metadata: $e');
@@ -125,18 +120,20 @@ class MetadataService {
     }
   }
 
-  /// Update metadata for a song: parse filename, then use API enrichment
+  /// Update metadata for a song: parse filename, then use iTunes enrichment
   Future<Song> updateSongMetadata(Song song) async {
     print('Starting metadata update for: ${song.filePath}');
-    
+
     // Step 1: Extract basic info from filename
     final fileMetadata = extractFilenameMetadata(song.filePath);
-    print('Extracted from filename: title="${fileMetadata.title}", artist="${fileMetadata.artist}"');
+    print(
+        'Extracted from filename: title="${fileMetadata.title}", artist="${fileMetadata.artist}"');
 
-    // Step 2: Query MusicBrainz API for accurate metadata
+    // Step 2: Query iTunes API for accurate metadata
     final apiMetadata = await enrichMetadata(
       title: fileMetadata.title,
-      artist: fileMetadata.artist != 'Unknown Artist' ? fileMetadata.artist : null,
+      artist:
+          fileMetadata.artist != 'Unknown Artist' ? fileMetadata.artist : null,
     );
 
     if (apiMetadata != null) {
@@ -166,27 +163,15 @@ class MetadataService {
     int limit = 10,
   }) async {
     try {
-      final recordings = await _musicBrainzService.searchRecording(
-        title: title,
-        artist: artist,
+      final query = [artist, title]
+          .whereType<String>()
+          .where((e) => e.trim().isNotEmpty)
+          .join(' ')
+          .trim();
+      final iTunesTracks = await _iTunesService.searchTracks(
+        term: query.isNotEmpty ? query : title,
         limit: limit,
       );
-
-      final musicBrainzResults = recordings.map((rec) {
-        return MetadataResult(
-          title: rec.title,
-          artist: rec.artist,
-          album: rec.album ?? '',
-          releaseId: rec.releaseId,
-          coverArtUrl: _musicBrainzService.getCoverArtUrl(rec.releaseId ?? ''),
-          isFromAPI: true,
-          source: 'MusicBrainz',
-        );
-      }).toList();
-
-      // iTunes fallback/augment
-      final query = [artist, title].where((e) => e != null && e!.isNotEmpty).join(' ');
-      final iTunesTracks = await _iTunesService.searchTracks(term: query.isNotEmpty ? query : title, limit: limit);
       final iTunesResults = iTunesTracks.map((t) {
         return MetadataResult(
           title: t.trackName,
@@ -198,9 +183,9 @@ class MetadataService {
         );
       }).toList();
 
-      // Merge unique by title+artist, prioritizing iTunes results first
+      // De-duplicate by title+artist.
       final merged = <String, MetadataResult>{};
-      for (final r in [...iTunesResults, ...musicBrainzResults]) {
+      for (final r in iTunesResults) {
         final key = '${r.title.toLowerCase()}__${r.artist.toLowerCase()}';
         merged.putIfAbsent(key, () => r);
       }
@@ -217,17 +202,8 @@ class MetadataService {
     required String releaseId,
     required String identifier,
   }) async {
-    try {
-      final artBytes = await _musicBrainzService.downloadCoverArt(releaseId);
-      if (artBytes == null) {
-        print('No cover art bytes for $releaseId');
-        return null;
-      }
-      return await _saveAlbumArtBytes(artBytes, identifier);
-    } catch (e) {
-      print('Error downloading cover art for release $releaseId: $e');
-      return null;
-    }
+    // Release-id based artwork lookup is disabled; iTunes flow uses direct URLs.
+    return null;
   }
 
   /// Download cover art from a direct URL and persist it; returns saved file path.
@@ -239,7 +215,9 @@ class MetadataService {
     try {
       final uri = Uri.parse(url);
       final response = await http.get(uri).timeout(timeout);
-      if (response.statusCode < 200 || response.statusCode >= 300 || response.bodyBytes.isEmpty) {
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          response.bodyBytes.isEmpty) {
         return null;
       }
       return await _saveAlbumArtBytes(response.bodyBytes, identifier);
@@ -250,7 +228,8 @@ class MetadataService {
   }
 
   /// Persist provided album art bytes; returns saved file path or null.
-  Future<String?> saveAlbumArtBytes({required List<int> bytes, required String identifier}) async {
+  Future<String?> saveAlbumArtBytes(
+      {required List<int> bytes, required String identifier}) async {
     try {
       return await _saveAlbumArtBytes(bytes, identifier);
     } catch (e) {
@@ -260,11 +239,12 @@ class MetadataService {
   }
 
   /// Save album art from downloaded bytes
-  Future<String?> _saveAlbumArtBytes(List<int> artData, String identifier) async {
+  Future<String?> _saveAlbumArtBytes(
+      List<int> artData, String identifier) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final albumArtDir = Directory('${appDir.path}/album_art');
-      
+
       if (!await albumArtDir.exists()) {
         await albumArtDir.create(recursive: true);
       }
@@ -273,7 +253,7 @@ class MetadataService {
       final sanitized = identifier
           .replaceAll(RegExp(r'[^\w\s-]'), '')
           .replaceAll(RegExp(r'\s+'), '_');
-      
+
       final artFile = File('${albumArtDir.path}/$sanitized.jpg');
 
       await artFile.writeAsBytes(artData);

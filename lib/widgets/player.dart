@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';  // Add this import at the top with other imports
+import 'package:just_audio_background/just_audio_background.dart'; // Add this import at the top with other imports
 import 'package:provider/provider.dart';
 import 'package:rxdart/rxdart.dart';
 import 'dart:math';
 import 'dart:io';
 import 'dart:async';
 import '../services/audio_service.dart';
+import '../models/settings_model.dart';
+import 'bottom_chrome_metrics.dart';
 import 'queue.dart';
 import 'lyrics.dart';
 
@@ -15,8 +17,9 @@ class MiniPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = BottomChromeMetrics.of(context);
     final audioService = context.watch<AudioPlayerService>();
-    
+
     return StreamBuilder<(PlayerState, MediaItem?)>(
       stream: Rx.combineLatest2(
         audioService.player.playerStateStream,
@@ -24,7 +27,7 @@ class MiniPlayer extends StatelessWidget {
         (state, media) => (state, media),
       ).asBroadcastStream(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData || 
+        if (!snapshot.hasData ||
             snapshot.data?.$1.processingState == ProcessingState.idle ||
             snapshot.data?.$2 == null) {
           return const SizedBox.shrink();
@@ -34,11 +37,16 @@ class MiniPlayer extends StatelessWidget {
         final radio = audioService.currentRadioStation;
         final isPlaying = snapshot.data?.$1.playing ?? false;
         final metadata = snapshot.data?.$2;
+        final offlineMode = context.watch<SettingsModel>().offlineMode;
 
         // Determine liked state for current item
         final isLiked = !isRadio
             ? audioService.isLiked
-            : isRadio && radio != null && audioService.getPlaylistRadios('favourite_radios').any((r) => r.id == radio.id);
+            : isRadio &&
+                radio != null &&
+                audioService
+                    .getPlaylistRadios('favourite_radios')
+                    .any((r) => r.id == radio.id);
 
         return GestureDetector(
           onTap: () async {
@@ -57,61 +65,77 @@ class MiniPlayer extends StatelessWidget {
             resetAutoScrollForKey(syncKey);
           },
           child: Container(
-            height: 60,
+            height: metrics.miniPlayerHeight,
             color: Colors.grey.shade900,
             child: Column(
               children: [
                 Expanded(
                   child: Row(
                     children: [
-                      const SizedBox(width: 10),
+                      SizedBox(width: metrics.miniPlayerHeight * 0.16),
                       Container(
-                        height: 40,
-                        width: 40,
+                        height: metrics.miniPlayerArtworkSize,
+                        width: metrics.miniPlayerArtworkSize,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(5),
                           color: Colors.deepPurple.shade200,
-                          image: isRadio && radio != null
-                            ? DecorationImage(image: NetworkImage(radio.artworkUrl))
-                            : metadata?.artUri != null 
+                          image: isRadio && radio != null && !offlineMode
                               ? DecorationImage(
-                                  image: metadata!.artUri!.scheme == 'file'
-                                    ? FileImage(File(metadata.artUri!.toFilePath()))
-                                    : NetworkImage(metadata.artUri.toString()) as ImageProvider,
-                                  fit: BoxFit.cover,
+                                  image: NetworkImage(radio.artworkUrl),
                                 )
-                              : null,
+                              : metadata?.artUri != null &&
+                                      (metadata!.artUri!.scheme == 'file' ||
+                                          !offlineMode)
+                                  ? DecorationImage(
+                                      image: metadata.artUri!.scheme == 'file'
+                                          ? FileImage(File(metadata.artUri!
+                                              .toFilePath())) as ImageProvider
+                                          : NetworkImage(
+                                              metadata.artUri.toString()),
+                                      fit: BoxFit.cover,
+                                    )
+                                  : null,
                         ),
-                        child: (!isRadio && metadata?.artUri == null)
-                          ? const Icon(Icons.music_note)
-                          : null,
+                        child: (isRadio && (offlineMode || radio == null)) ||
+                                (!isRadio &&
+                                    (metadata?.artUri == null ||
+                                        (metadata!.artUri!.scheme != 'file' &&
+                                            offlineMode)))
+                            ? Icon(
+                                isRadio ? Icons.radio : Icons.music_note,
+                                color: Colors.white,
+                              )
+                            : null,
                       ),
-                      const SizedBox(width: 10),
+                      SizedBox(width: metrics.miniPlayerHeight * 0.16),
                       Expanded(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             SizedBox(
-                              height: 18,
-                                child: AutoScrollText(
-                                  isRadio && radio != null
-                                      ? radio.name
-                                      : metadata?.title ?? 'No Track Playing',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  // Slower and slightly longer pause to feel smoother in the mini player
-                                  velocity: 20,
-                                  pauseAfterRound: const Duration(milliseconds: 1600),
-                                  // Sync key so title and artist start together for the current item
-                                  syncKey: isRadio && radio != null ? 'radio-${radio.id}' : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
+                              height: metrics.miniPlayerTitleHeight,
+                              child: AutoScrollText(
+                                isRadio && radio != null
+                                    ? radio.name
+                                    : metadata?.title ?? 'No Track Playing',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
                                 ),
+                                // Slower and slightly longer pause to feel smoother in the mini player
+                                velocity: 20,
+                                pauseAfterRound:
+                                    const Duration(milliseconds: 1600),
+                                // Sync key so title and artist start together for the current item
+                                syncKey: isRadio && radio != null
+                                    ? 'radio-${radio.id}'
+                                    : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
+                              ),
                             ),
                             SizedBox(
-                              height: 16,
+                              height: metrics.miniPlayerArtistHeight,
                               child: Text(
                                 isRadio && radio != null
                                     ? (radio.genre)
@@ -131,15 +155,22 @@ class MiniPlayer extends StatelessWidget {
                       IconButton(
                         icon: Icon(
                           isLiked ? Icons.favorite : Icons.favorite_border,
-                          color: isLiked ? Colors.deepPurple.shade400 : Colors.white,
+                          color: isLiked
+                              ? Colors.deepPurple.shade400
+                              : Colors.white,
                         ),
+                        iconSize: metrics.navIconSize,
                         onPressed: () {
                           if (isRadio && radio != null) {
                             // Only update favourite_radios for radios
-                            if (audioService.getPlaylistRadios('favourite_radios').any((r) => r.id == radio.id)) {
-                              audioService.removeRadioFromPlaylist('favourite_radios', radio);
+                            if (audioService
+                                .getPlaylistRadios('favourite_radios')
+                                .any((r) => r.id == radio.id)) {
+                              audioService.removeRadioFromPlaylist(
+                                  'favourite_radios', radio);
                             } else {
-                              audioService.addRadioToPlaylist('favourite_radios', radio);
+                              audioService.addRadioToPlaylist(
+                                  'favourite_radios', radio);
                             }
                           } else {
                             // Only update liked songs for songs
@@ -150,9 +181,10 @@ class MiniPlayer extends StatelessWidget {
                       IconButton(
                         icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
                         color: Colors.white,
+                        iconSize: metrics.navIconSize,
                         onPressed: () => audioService.playPause(),
                       ),
-                      const SizedBox(width: 10),
+                      SizedBox(width: metrics.miniPlayerHeight * 0.16),
                     ],
                   ),
                 ),
@@ -165,7 +197,8 @@ class MiniPlayer extends StatelessWidget {
     );
   }
 
-  Widget _buildMiniProgressBar(BuildContext context, AudioPlayerService audioService) {
+  Widget _buildMiniProgressBar(
+      BuildContext context, AudioPlayerService audioService) {
     return StreamBuilder<(Duration, Duration?)>(
       stream: Rx.combineLatest2(
         audioService.player.positionStream,
@@ -174,11 +207,11 @@ class MiniPlayer extends StatelessWidget {
       ).asBroadcastStream(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SizedBox(height: 2);
-        
+
         final position = snapshot.data!.$1;
         final duration = snapshot.data!.$2 ?? Duration.zero;
         final isRadio = audioService.isRadioPlaying;
-        
+
         // For radio streams, show a filled progress bar to indicate live streaming
         if (isRadio || duration == Duration.zero) {
           return LinearProgressIndicator(
@@ -207,7 +240,8 @@ class FullScreenPlayer extends StatefulWidget {
   State<FullScreenPlayer> createState() => _FullScreenPlayerState();
 }
 
-class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerProviderStateMixin {
+class _FullScreenPlayerState extends State<FullScreenPlayer>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _dismissController;
   static const double _dismissDistance = 160;
   static const double _velocityThreshold = 600;
@@ -240,7 +274,8 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
       child: AnimatedBuilder(
         animation: _dismissController,
         builder: (context, child) {
-          final offset = MediaQuery.of(context).size.height * _dismissController.value;
+          final offset =
+              MediaQuery.of(context).size.height * _dismissController.value;
           return Transform.translate(offset: Offset(0, offset), child: child);
         },
         child: _buildPlayerBody(context),
@@ -289,7 +324,8 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
 
   void _handleDragEnd(DragEndDetails details) {
     final velocity = details.primaryVelocity ?? 0;
-    final shouldDismiss = velocity > _velocityThreshold || _dragExtent > _dismissDistance;
+    final shouldDismiss =
+        velocity > _velocityThreshold || _dragExtent > _dismissDistance;
     if (shouldDismiss) {
       _dismissController
           .fling(velocity: max(1.5, velocity / 1000))
@@ -305,7 +341,7 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
   Widget _buildHeader(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
     final playlistName = audioService.currentPlaylistName;
-    
+
     return Stack(
       children: [
         Padding(
@@ -325,7 +361,8 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                 ),
               ),
               Expanded(
-                child: Center(  // Added Center widget
+                child: Center(
+                  // Added Center widget
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -373,18 +410,22 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
 
   Widget _buildAlbumArt() {
     final audioService = context.watch<AudioPlayerService>();
+    final offlineMode = context.watch<SettingsModel>().offlineMode;
     final isRadio = audioService.isRadioPlaying;
     final radio = audioService.currentRadioStation;
     final padding = const EdgeInsets.symmetric(horizontal: 24);
-    
+
     return StreamBuilder<MediaItem?>(
       stream: audioService.currentMediaStream,
       builder: (context, snapshot) {
         final metadata = snapshot.data;
-        
+
         Widget artWidget;
-        
-        if (isRadio && radio != null && radio.artworkUrl.isNotEmpty) {
+
+        if (!offlineMode &&
+            isRadio &&
+            radio != null &&
+            radio.artworkUrl.isNotEmpty) {
           // Radio station - use network image
           artWidget = AnimatedSwitcher(
             duration: const Duration(milliseconds: 400),
@@ -394,12 +435,14 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
               fit: BoxFit.cover,
               width: double.infinity,
               height: double.infinity,
-              errorBuilder: (_, __, ___) => const Icon(Icons.music_note, size: 80, color: Colors.white),
+              errorBuilder: (_, __, ___) =>
+                  const Icon(Icons.music_note, size: 80, color: Colors.white),
             ),
           );
-        } else if (metadata?.artUri != null) {
+        } else if (metadata?.artUri != null &&
+            (metadata!.artUri!.scheme == 'file' || !offlineMode)) {
           // Local song - check if file URI
-          if (metadata!.artUri!.scheme == 'file') {
+          if (metadata.artUri!.scheme == 'file') {
             artWidget = AnimatedSwitcher(
               duration: const Duration(milliseconds: 400),
               child: Image.file(
@@ -408,7 +451,8 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                 fit: BoxFit.cover,
                 width: double.infinity,
                 height: double.infinity,
-                errorBuilder: (_, __, ___) => const Icon(Icons.music_note, size: 80, color: Colors.white),
+                errorBuilder: (_, __, ___) =>
+                    const Icon(Icons.music_note, size: 80, color: Colors.white),
               ),
             );
           } else {
@@ -421,14 +465,16 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                 fit: BoxFit.cover,
                 width: double.infinity,
                 height: double.infinity,
-                errorBuilder: (_, __, ___) => const Icon(Icons.music_note, size: 80, color: Colors.white),
+                errorBuilder: (_, __, ___) =>
+                    const Icon(Icons.music_note, size: 80, color: Colors.white),
               ),
             );
           }
         } else {
-          artWidget = const Icon(Icons.music_note, size: 80, color: Colors.white);
+          artWidget =
+              const Icon(Icons.music_note, size: 80, color: Colors.white);
         }
-        
+
         return Padding(
           padding: padding,
           child: AspectRatio(
@@ -478,10 +524,11 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
   }
 
   Widget _buildSongInfo(BuildContext context) {
+    final metrics = BottomChromeMetrics.of(context);
     final audioService = context.watch<AudioPlayerService>();
     final isRadio = audioService.isRadioPlaying;
     final radio = audioService.currentRadioStation;
-    
+
     return StreamBuilder<MediaItem?>(
       stream: audioService.currentMediaStream,
       builder: (context, snapshot) {
@@ -493,8 +540,7 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
-                    // Slightly increased height to avoid the song title being clipped at the bottom
-                    height: 30,
+                    height: metrics.fullScreenTitleHeight,
                     child: AutoScrollText(
                       isRadio && radio != null
                           ? (metadata?.title ?? radio.name)
@@ -507,13 +553,14 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                       // Full-screen title is a little faster than mini but still restrained
                       velocity: 30,
                       pauseAfterRound: const Duration(milliseconds: 2000),
-                      syncKey: isRadio && radio != null ? 'radio-${radio.id}' : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
+                      syncKey: isRadio && radio != null
+                          ? 'radio-${radio.id}'
+                          : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
                     ),
                   ),
                   const SizedBox(height: 4),
                   SizedBox(
-                    // Slightly larger to match the increased title area and avoid tight vertical spacing
-                    height: 22,
+                    height: metrics.fullScreenArtistHeight,
                     child: AutoScrollText(
                       isRadio && radio != null
                           ? (metadata?.artist ?? radio.genre)
@@ -525,7 +572,9 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                       // Full-screen artist matches title speed so both lines move together visually
                       velocity: 30,
                       pauseAfterRound: const Duration(milliseconds: 2000),
-                      syncKey: isRadio && radio != null ? 'radio-${radio.id}' : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
+                      syncKey: isRadio && radio != null
+                          ? 'radio-${radio.id}'
+                          : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
                     ),
                   ),
                 ],
@@ -534,17 +583,24 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
             if (isRadio && radio != null)
               IconButton(
                 icon: Icon(
-                  audioService.getPlaylistRadios('favourite_radios').any((r) => r.id == radio.id)
+                  audioService
+                          .getPlaylistRadios('favourite_radios')
+                          .any((r) => r.id == radio.id)
                       ? Icons.favorite
                       : Icons.favorite_border,
-                  color: audioService.getPlaylistRadios('favourite_radios').any((r) => r.id == radio.id)
+                  color: audioService
+                          .getPlaylistRadios('favourite_radios')
+                          .any((r) => r.id == radio.id)
                       ? Colors.deepPurple.shade400
                       : Colors.white,
                 ),
                 onPressed: () {
-                  final isFav = audioService.getPlaylistRadios('favourite_radios').any((r) => r.id == radio.id);
+                  final isFav = audioService
+                      .getPlaylistRadios('favourite_radios')
+                      .any((r) => r.id == radio.id);
                   if (isFav) {
-                    audioService.removeRadioFromPlaylist('favourite_radios', radio);
+                    audioService.removeRadioFromPlaylist(
+                        'favourite_radios', radio);
                   } else {
                     audioService.addRadioToPlaylist('favourite_radios', radio);
                   }
@@ -554,7 +610,9 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
               IconButton(
                 icon: Icon(
                   audioService.isLiked ? Icons.favorite : Icons.favorite_border,
-                  color: audioService.isLiked ? Colors.deepPurple.shade400 : Colors.white,
+                  color: audioService.isLiked
+                      ? Colors.deepPurple.shade400
+                      : Colors.white,
                 ),
                 onPressed: () => audioService.toggleLike(),
               ),
@@ -567,7 +625,7 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
   Widget _buildProgressBar(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
     final isRadio = audioService.isRadioPlaying;
-    
+
     return StreamBuilder<(Duration, Duration?)>(
       stream: Rx.combineLatest2(
         audioService.player.positionStream,
@@ -576,10 +634,10 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
       ).asBroadcastStream(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SizedBox(height: 48);
-        
+
         final position = snapshot.data!.$1;
         final duration = snapshot.data!.$2 ?? Duration.zero;
-        
+
         // For radio streams, show a full progress bar with "Live Radio Stream" text overlaid in the center
         if (isRadio || duration == Duration.zero) {
           return Column(
@@ -605,7 +663,8 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                   ),
                   // Center text with background shape
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.black.withOpacity(0.85),
                       borderRadius: BorderRadius.circular(8),
@@ -663,7 +722,8 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                     : null,
                 onChangeEnd: duration.inMilliseconds > 0
                     ? (value) {
-                        audioService.player.seek(Duration(milliseconds: value.round()));
+                        audioService.player
+                            .seek(Duration(milliseconds: value.round()));
                         setState(() => _dragValue = null);
                       }
                     : null,
@@ -693,7 +753,7 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
     final seconds = duration.inSeconds.remainder(60);
-    
+
     if (hours > 0) {
       return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
     }
@@ -703,7 +763,7 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
   Widget _buildPlaybackControls(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
     final isRadio = audioService.isRadioPlaying;
-    
+
     return StreamBuilder<PlayerState>(
       stream: audioService.player.playerStateStream,
       builder: (context, snapshot) {
@@ -716,20 +776,23 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                 IconButton(
                   icon: Icon(
                     Icons.shuffle,
-                    color: isRadio 
+                    color: isRadio
                         ? Colors.grey.shade600
                         : audioService.isShuffling
                             ? Colors.deepPurple.shade400
                             : Colors.grey.shade400,
                   ),
                   iconSize: 28,
-                  onPressed: isRadio ? null : () => audioService.toggleShuffle(),
+                  onPressed:
+                      isRadio ? null : () => audioService.toggleShuffle(),
                 ),
                 IconButton(
                   icon: const Icon(Icons.skip_previous),
                   color: Colors.white,
                   iconSize: 40,
-                  onPressed: isRadio ? null : () => audioService.player.seekToPrevious(),
+                  onPressed: isRadio
+                      ? null
+                      : () => audioService.player.seekToPrevious(),
                 ),
                 Container(
                   decoration: const BoxDecoration(
@@ -747,7 +810,8 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                   icon: const Icon(Icons.skip_next),
                   color: Colors.white,
                   iconSize: 40,
-                  onPressed: isRadio ? null : () => audioService.player.seekToNext(),
+                  onPressed:
+                      isRadio ? null : () => audioService.player.seekToNext(),
                 ),
                 IconButton(
                   icon: Icon(
@@ -761,7 +825,8 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                             : Colors.grey.shade400,
                   ),
                   iconSize: 28,
-                  onPressed: isRadio ? null : () => audioService.cycleRepeatMode(),
+                  onPressed:
+                      isRadio ? null : () => audioService.cycleRepeatMode(),
                 ),
               ],
             ),
@@ -814,7 +879,8 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                             onPressed: () => Navigator.pop(context),
                             child: Text(
                               'Close',
-                              style: TextStyle(color: Colors.deepPurple.shade400),
+                              style:
+                                  TextStyle(color: Colors.deepPurple.shade400),
                             ),
                           ),
                         ],
@@ -826,17 +892,19 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                   icon: const Icon(Icons.queue_music),
                   color: Colors.grey.shade400,
                   iconSize: 28,
-                  onPressed: isRadio ? null : () {
-                    showModalBottomSheet(
-                      context: context,
-                      backgroundColor: Colors.transparent,
-                      isScrollControlled: true,
-                      isDismissible: true,
-                      enableDrag: true,
-                      barrierColor: Colors.black54,
-                      builder: (context) => const DraggableQueueSheet(),
-                    );
-                  },
+                  onPressed: isRadio
+                      ? null
+                      : () {
+                          showModalBottomSheet(
+                            context: context,
+                            backgroundColor: Colors.transparent,
+                            isScrollControlled: true,
+                            isDismissible: true,
+                            enableDrag: true,
+                            barrierColor: Colors.black54,
+                            builder: (context) => const DraggableQueueSheet(),
+                          );
+                        },
                 ),
               ],
             ),
@@ -854,11 +922,13 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                         barrierColor: Colors.black54,
                         barrierDismissible: true,
                         transitionDuration: const Duration(milliseconds: 300),
-                        reverseTransitionDuration: const Duration(milliseconds: 250),
+                        reverseTransitionDuration:
+                            const Duration(milliseconds: 250),
                         pageBuilder: (context, animation, secondaryAnimation) {
                           return const FullScreenLyricsView();
                         },
-                        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                        transitionsBuilder:
+                            (context, animation, secondaryAnimation, child) {
                           return SlideTransition(
                             position: Tween<Offset>(
                               begin: const Offset(0, 1),
@@ -879,7 +949,8 @@ class _FullScreenPlayerState extends State<FullScreenPlayer> with SingleTickerPr
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.grey.shade400,
                     side: BorderSide(color: Colors.grey.shade600, width: 1),
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 12, horizontal: 20),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -906,7 +977,8 @@ class CustomTrackShape extends RoundedRectSliderTrackShape {
     final double trackHeight = sliderTheme.trackHeight!;
     final double trackWidth = parentBox.size.width;
     final double trackLeft = offset.dx;
-    final double trackTop = offset.dy + (parentBox.size.height - trackHeight) / 2;
+    final double trackTop =
+        offset.dy + (parentBox.size.height - trackHeight) / 2;
 
     return Rect.fromLTWH(trackLeft, trackTop, trackWidth, trackHeight);
   }
@@ -923,14 +995,17 @@ class CustomTrackShape extends RoundedRectSliderTrackShape {
 String primaryArtist(String? artist) {
   if (artist == null || artist.trim().isEmpty) return 'Unknown Artist';
   // Split on commas, ampersands, and 'feat' patterns (case-insensitive)
-  final parts = artist.split(RegExp(r',| & | feat\.? | ft\.? ', caseSensitive: false));
+  final parts =
+      artist.split(RegExp(r',| & | feat\.? | ft\.? ', caseSensitive: false));
   return parts.first.trim();
 }
 
 /// Public helper to request resetting auto-scroll for a given `syncKey`.
 /// This bumps the internal sync start and causes any `AutoScrollText`
 /// instances sharing that `syncKey` to restart from the initial position.
-void resetAutoScrollForKey(String key) => _SyncRegistry.bumpStart(key, DateTime.now());
+void resetAutoScrollForKey(String key) =>
+    _SyncRegistry.bumpStart(key, DateTime.now());
+
 class AutoScrollText extends StatefulWidget {
   /// Auto-scrolling text that mimics Spotify's marquee behaviour.
   ///
@@ -957,6 +1032,7 @@ class AutoScrollText extends StatefulWidget {
   final Duration pauseAfterRound;
   final String? syncKey;
   final bool enableInitialDelay;
+
   /// Gap between repeated text copies in pixels (controls spacing between cycles).
   final double gap;
 
@@ -964,7 +1040,8 @@ class AutoScrollText extends StatefulWidget {
   State<AutoScrollText> createState() => _SpotifyMarqueeState();
 }
 
-class _SpotifyMarqueeState extends State<AutoScrollText> with SingleTickerProviderStateMixin {
+class _SpotifyMarqueeState extends State<AutoScrollText>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   double _textWidth = 0.0;
   double _containerWidth = 0.0;
@@ -1000,7 +1077,9 @@ class _SpotifyMarqueeState extends State<AutoScrollText> with SingleTickerProvid
     // continuous leftward loop with a small gap so text doesn't butt up against itself
     final double gap = widget.gap;
     final loopDistance = _textWidth + gap;
-    final loopMs = (loopDistance / (widget.velocity <= 0 ? 1.0 : widget.velocity) * 1000).round();
+    final loopMs =
+        (loopDistance / (widget.velocity <= 0 ? 1.0 : widget.velocity) * 1000)
+            .round();
     if (loopMs <= 0) return;
 
     _running = true;
@@ -1009,14 +1088,17 @@ class _SpotifyMarqueeState extends State<AutoScrollText> with SingleTickerProvid
 
     if (_needReset) {
       // Force starting from the initial position
-      if (widget.syncKey != null) _SyncRegistry.setStart(widget.syncKey!, DateTime.now());
+      if (widget.syncKey != null)
+        _SyncRegistry.setStart(widget.syncKey!, DateTime.now());
       _controller.value = 0.0;
       _needReset = false;
     } else if (widget.syncKey != null) {
       // Align to a shared start time so synced items (title+artist) scroll in-phase
-      final start = _SyncRegistry.getOrCreateStart(widget.syncKey!, DateTime.now());
+      final start =
+          _SyncRegistry.getOrCreateStart(widget.syncKey!, DateTime.now());
       final elapsed = DateTime.now().difference(start).inMilliseconds;
-      final initialValue = ((elapsed % loopMs) / loopMs).clamp(0.0, 1.0).toDouble();
+      final initialValue =
+          ((elapsed % loopMs) / loopMs).clamp(0.0, 1.0).toDouble();
       _controller.value = initialValue;
     } else {
       _controller.value = 0.0;
@@ -1048,7 +1130,9 @@ class _SpotifyMarqueeState extends State<AutoScrollText> with SingleTickerProvid
     final media = MediaQuery.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final maxWidth = constraints.maxWidth.isFinite ? constraints.maxWidth : media.size.width;
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : media.size.width;
         final tp = TextPainter(
           text: TextSpan(text: widget.text, style: widget.style),
           textDirection: Directionality.of(context),
@@ -1078,7 +1162,9 @@ class _SpotifyMarqueeState extends State<AutoScrollText> with SingleTickerProvid
           }
         }
 
-        if (textWidth != _textWidth || maxWidth != _containerWidth || shouldScrollNow != _shouldScroll) {
+        if (textWidth != _textWidth ||
+            maxWidth != _containerWidth ||
+            shouldScrollNow != _shouldScroll) {
           final wasRunning = _running;
           final oldTextWidth = _textWidth;
           _textWidth = textWidth;
@@ -1095,24 +1181,27 @@ class _SpotifyMarqueeState extends State<AutoScrollText> with SingleTickerProvid
             final newLoop = _textWidth + gap;
             if (oldLoop > 0 && newLoop > 0) {
               final fraction = _controller.value;
-              final newLoopMs = (newLoop / (widget.velocity <= 0 ? 1.0 : widget.velocity) * 1000).round();
+              final newLoopMs = (newLoop /
+                      (widget.velocity <= 0 ? 1.0 : widget.velocity) *
+                      1000)
+                  .round();
               _controller.duration = Duration(milliseconds: max(1, newLoopMs));
               _controller.value = fraction.clamp(0.0, 1.0);
-                      // Check for external bump to the sync start time and reset if seen
-                      if (widget.syncKey != null) {
-                        final gen = _SyncRegistry.generation(widget.syncKey!);
-                        if (gen != _seenSyncGen) {
-                          _seenSyncGen = gen;
-                          // Restart from initial position
-                          if (_running && !_isDisposed) {
-                            _controller.stop();
-                            _controller.value = 0.0;
-                            _controller.repeat();
-                          } else {
-                            _needReset = true;
-                          }
-                        }
-                      }
+              // Check for external bump to the sync start time and reset if seen
+              if (widget.syncKey != null) {
+                final gen = _SyncRegistry.generation(widget.syncKey!);
+                if (gen != _seenSyncGen) {
+                  _seenSyncGen = gen;
+                  // Restart from initial position
+                  if (_running && !_isDisposed) {
+                    _controller.stop();
+                    _controller.value = 0.0;
+                    _controller.repeat();
+                  } else {
+                    _needReset = true;
+                  }
+                }
+              }
             }
           } else if (!_shouldScroll && wasRunning) {
             // stop running animation if it's no longer needed
@@ -1161,7 +1250,9 @@ class _SpotifyMarqueeState extends State<AutoScrollText> with SingleTickerProvid
                     // Calculate how many copies we need to ensure the visible
                     // area is always covered (defensive against edge cases where
                     // loopDistance < containerWidth).
-                    final minCopies = ((_containerWidth / loopDistance).ceil() + 2).clamp(2, 8);
+                    final minCopies =
+                        ((_containerWidth / loopDistance).ceil() + 2)
+                            .clamp(2, 8);
 
                     return Stack(
                       children: List.generate(minCopies, (i) {
@@ -1216,7 +1307,4 @@ class _SyncRegistry {
 
   /// Return current generation for a given key (0 if none).
   static int generation(String key) => _gens[key] ?? 0;
-
-  /// Clear a start (useful for tests or if you want to reset sync state).
-  static void clear(String key) => _starts.remove(key);
 }

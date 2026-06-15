@@ -9,12 +9,17 @@ import 'dart:io';
 import 'audio_queue_manager.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:convert';
 import 'song_metadata_cache.dart';
 import 'storage_service.dart';
 
 
 class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
+  static const String _kUseCellularDataKey = 'use_cellular_data';
+  static const String _kDataSaverKey = 'data_saver_mode';
+  static const String _kOfflineModeKey = 'offline_mode';
+
   /// Returns the type of current media: 'radio', 'song', or null
   String? getCurrentMediaType() {
     final current = currentTrack;
@@ -131,6 +136,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   AudioPlayer get player => _player;
   MediaItem? get currentMedia => _currentMedia;
   bool get isPlaying => _player.playing;
+  bool get isMiniPlayerVisible =>
+      currentTrack != null && _player.processingState != ProcessingState.idle;
 
   // Add missing getters
   Stream<Duration?> get durationStream => _player.durationStream;
@@ -830,20 +837,127 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   // Add getters for current states
   LoopMode get loopMode => _player.loopMode;
 
+  Future<bool> _isOnMobileNetwork() async {
+    try {
+      final results = await Connectivity().checkConnectivity();
+      return results.contains(ConnectivityResult.mobile);
+    } catch (_) {
+      // If connectivity state is unavailable, do not block playback.
+      return false;
+    }
+  }
+
+  Future<bool> _hasNetworkConnection() async {
+    try {
+      final results = await Connectivity().checkConnectivity();
+      return results.any((r) => r != ConnectivityResult.none);
+    } catch (_) {
+      // If check fails, don't hard-block here.
+      return true;
+    }
+  }
+
+  String _preferDataSaverStreamUrl(String originalUrl) {
+    final uri = Uri.tryParse(originalUrl);
+    if (uri == null) return originalUrl;
+
+    var changed = false;
+    final qp = Map<String, String>.from(uri.queryParameters);
+
+    for (final key in const ['bitrate', 'br', 'rate']) {
+      final value = qp[key];
+      if (value == null) continue;
+      final parsed = int.tryParse(value);
+      if (parsed != null && parsed > 128) {
+        qp[key] = '128';
+        changed = true;
+      }
+    }
+
+    final loweredQuality = qp['quality']?.toLowerCase();
+    if (loweredQuality == 'high' || loweredQuality == 'hq') {
+      qp['quality'] = 'medium';
+      changed = true;
+    }
+
+    final rewrittenPath = uri.path.replaceAllMapped(
+      RegExp(r'/(320|256|192)(?=/|$)'),
+      (_) => '/128',
+    );
+
+    if (rewrittenPath != uri.path) {
+      changed = true;
+    }
+
+    if (!changed) return originalUrl;
+
+    return uri
+        .replace(path: rewrittenPath, queryParameters: qp.isEmpty ? null : qp)
+        .toString();
+  }
+
+  MediaItem _buildRadioMediaItem(RadioStation station) {
+    final artUri = Uri.tryParse(station.artworkUrl);
+    return MediaItem(
+      id: station.id,
+      title: station.name,
+      artist: station.genre,
+      artUri: artUri,
+      album: 'Radio',
+    );
+  }
+
   Future<void> playRadioStation(RadioStation station) async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final useCellularData = prefs.getBool(_kUseCellularDataKey) ?? true;
+      final dataSaverMode = prefs.getBool(_kDataSaverKey) ?? false;
+      final offlineMode = prefs.getBool(_kOfflineModeKey) ?? false;
+
+      if (offlineMode) {
+        debugPrint('Radio playback blocked by offline mode setting');
+        return;
+      }
+
+      if (!await _hasNetworkConnection()) {
+        debugPrint('Radio playback blocked: no network connection');
+        return;
+      }
+
+      if (!useCellularData && await _isOnMobileNetwork()) {
+        debugPrint('Cellular playback blocked by user setting');
+        return;
+      }
+
       _currentRadioStation = station;
       _currentPlaylistId = null;
       _currentMedia = null;
-      await _player.setAudioSource(AudioSource.uri(Uri.parse(station.streamUrl),
-        tag: MediaItem(
-          id: station.id,
-          title: station.name,
-          artist: station.genre,
-          artUri: Uri.parse(station.artworkUrl),
-          album: 'Radio',
-        ),
-      ));
+
+      final preferredUrl = dataSaverMode
+          ? _preferDataSaverStreamUrl(station.streamUrl)
+          : station.streamUrl;
+
+      try {
+        await _player.setAudioSource(
+          AudioSource.uri(
+            Uri.parse(preferredUrl),
+            tag: _buildRadioMediaItem(station),
+          ),
+        );
+      } catch (e) {
+        if (preferredUrl != station.streamUrl) {
+          debugPrint('Data saver stream failed, retrying with original URL: $e');
+          await _player.setAudioSource(
+            AudioSource.uri(
+              Uri.parse(station.streamUrl),
+              tag: _buildRadioMediaItem(station),
+            ),
+          );
+        } else {
+          rethrow;
+        }
+      }
+
       await _player.play();
       notifyListeners();
     } catch (e) {
