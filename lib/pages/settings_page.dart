@@ -10,10 +10,7 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final audioService = context.watch<AudioPlayerService>();
-    final miniPlayerActive = audioService.isMiniPlayerVisible;
-    final bottomInset = MediaQuery.of(context).padding.bottom +
-        (miniPlayerActive ? 140.0 : 72.0);
+    final bottomInset = MediaQuery.of(context).padding.bottom + 16.0;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -136,9 +133,7 @@ class SettingsPage extends StatelessWidget {
                     'Clears all cached data: stations, genres, song metadata'),
                 trailing: const Icon(Icons.cleaning_services_outlined),
                 onTap: () async {
-                  final bottomPad = MediaQuery.of(context).padding.bottom +
-                      kBottomNavigationBarHeight +
-                      (miniPlayerActive ? 70.0 : 0.0);
+                  final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
                   VoxelToast.show(
                     context,
                     'Clearing app cache...',
@@ -160,9 +155,7 @@ class SettingsPage extends StatelessWidget {
                     'Fetches and updates metadata for all offline songs using iTunes'),
                 trailing: const Icon(Icons.library_music_outlined),
                 onTap: () async {
-                  final bottomPad = MediaQuery.of(context).padding.bottom +
-                      kBottomNavigationBarHeight +
-                      (miniPlayerActive ? 70.0 : 0.0);
+                  final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
                   VoxelToast.show(
                     context,
                     'Updating all song metadata... (this may take a while)',

@@ -3,7 +3,10 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:provider/provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:io';
 import 'services/audio_service.dart';
 import 'models/settings_model.dart';
 import 'models/favourite_radios_model.dart';
@@ -53,6 +56,14 @@ class _MyInitializerState extends State<MyInitializer> {
         androidShowNotificationBadge: true,
         notificationColor: const Color(0xFF2196f3),
       );
+
+      if (Platform.isAndroid) {
+        await Permission.notification.request();
+      }
+
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+      await session.setActive(true);
 
       // Test basic audio functionality first
       final testPlayer = AudioPlayer();

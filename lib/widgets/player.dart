@@ -8,8 +8,11 @@ import 'dart:io';
 import 'dart:async';
 import '../services/audio_service.dart';
 import '../models/settings_model.dart';
+import '../models/radio_station.dart';
+import '../models/song.dart';
+import '../widgets/edit_metadata_sheet.dart';
+import '../widgets/song_menu_sheet.dart';
 import 'bottom_chrome_metrics.dart';
-import 'queue.dart';
 import 'lyrics.dart';
 
 class MiniPlayer extends StatelessWidget {
@@ -17,6 +20,52 @@ class MiniPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return const SizedBox.shrink();
+  }
+}
+
+class SlidingPlayer extends StatefulWidget {
+  final AnimationController controller;
+
+  const SlidingPlayer({
+    super.key,
+    required this.controller,
+  });
+
+  @override
+  State<SlidingPlayer> createState() => _SlidingPlayerState();
+}
+
+class _SlidingPlayerState extends State<SlidingPlayer> {
+  double? _dragValue; // Scrubber drag value
+
+  void _handleDragUpdate(DragUpdateDetails details) {
+    final delta = details.delta.dy;
+    final screenHeight = MediaQuery.of(context).size.height;
+    if (screenHeight > 0) {
+      widget.controller.value -= delta / screenHeight;
+    }
+  }
+
+  void _handleDragEnd(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    if (velocity > 300) {
+      widget.controller.animateTo(0.0, curve: Curves.easeOutCubic);
+    } else if (velocity < -300) {
+      widget.controller.animateTo(1.0, curve: Curves.easeOutCubic);
+    } else if (widget.controller.value < 0.5) {
+      widget.controller.animateTo(0.0, curve: Curves.easeOutCubic);
+    } else {
+      widget.controller.animateTo(1.0, curve: Curves.easeOutCubic);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final screenWidth = mediaQuery.size.width;
+    final topInset = mediaQuery.padding.top;
+    final bottomInset = mediaQuery.padding.bottom;
     final metrics = BottomChromeMetrics.of(context);
     final audioService = context.watch<AudioPlayerService>();
 
@@ -39,7 +88,6 @@ class MiniPlayer extends StatelessWidget {
         final metadata = snapshot.data?.$2;
         final offlineMode = context.watch<SettingsModel>().offlineMode;
 
-        // Determine liked state for current item
         final isLiked = !isRadio
             ? audioService.isLiked
             : isRadio &&
@@ -48,294 +96,282 @@ class MiniPlayer extends StatelessWidget {
                     .getPlaylistRadios('favourite_radios')
                     .any((r) => r.id == radio.id);
 
-        return GestureDetector(
-          onTap: () async {
-            final syncKey = isRadio && radio != null
-                ? 'radio-${radio.id}'
-                : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}';
-            // bump start so mini-player begins from initial position when opening
-            resetAutoScrollForKey(syncKey);
-            await showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (context) => const FullScreenPlayer(),
+        return AnimatedBuilder(
+          animation: widget.controller,
+          builder: (context, child) {
+            final t = widget.controller.value;
+
+            final collapsedColor = Colors.grey.shade900;
+            final expandedGradient = LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.deepPurple.shade400,
+                Colors.grey.shade900,
+                Colors.black,
+              ],
             );
-            // bump again on close so mini-player restarts from initial position
-            resetAutoScrollForKey(syncKey);
-          },
-          child: Container(
-            height: metrics.miniPlayerHeight,
-            color: Colors.grey.shade900,
-            child: Column(
-              children: [
-                Expanded(
-                  child: Row(
+
+            // Container top rounded corners (0 to 32 depending on progress)
+            final radius = BorderRadius.vertical(
+              top: Radius.circular(t * 32.0),
+            );
+
+            // Artwork Position calculations
+            final collapsedSize = metrics.miniPlayerArtworkSize;
+            final expandedSize = screenWidth - 48.0;
+            final currentSize = collapsedSize + (expandedSize - collapsedSize) * t;
+
+            final collapsedLeft = metrics.miniPlayerHeight * 0.16;
+            final collapsedTop = (metrics.miniPlayerHeight - collapsedSize) / 2;
+            final expandedLeft = 24.0;
+            final expandedTop = topInset + 80.0;
+
+            final currentLeft = collapsedLeft + (expandedLeft - collapsedLeft) * t;
+            final currentTop = collapsedTop + (expandedTop - collapsedTop) * t;
+
+            // MiniPlayer content fades out as t goes to 1.0
+            final miniPlayerOpacity = (1.0 - t * 4.0).clamp(0.0, 1.0);
+            final showMiniPlayer = miniPlayerOpacity > 0.0;
+
+            // FullScreen content fades in as t goes to 1.0
+            final fullScreenOpacity = ((t - 0.4) * 1.67).clamp(0.0, 1.0);
+            final showFullScreen = fullScreenOpacity > 0.0;
+
+            return GestureDetector(
+              onTap: t == 0.0
+                  ? () => widget.controller.animateTo(1.0, curve: Curves.easeOutCubic)
+                  : null,
+              onVerticalDragUpdate: _handleDragUpdate,
+              onVerticalDragEnd: _handleDragEnd,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: radius,
+                  color: collapsedColor,
+                ),
+                child: ClipRRect(
+                  borderRadius: radius,
+                  child: Stack(
                     children: [
-                      SizedBox(width: metrics.miniPlayerHeight * 0.16),
-                      Container(
-                        height: metrics.miniPlayerArtworkSize,
-                        width: metrics.miniPlayerArtworkSize,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(5),
-                          color: Colors.deepPurple.shade200,
-                          image: isRadio && radio != null && !offlineMode
-                              ? DecorationImage(
-                                  image: NetworkImage(radio.artworkUrl),
-                                )
-                              : metadata?.artUri != null &&
-                                      (metadata!.artUri!.scheme == 'file' ||
-                                          !offlineMode)
-                                  ? DecorationImage(
-                                      image: metadata.artUri!.scheme == 'file'
-                                          ? FileImage(File(metadata.artUri!
-                                              .toFilePath())) as ImageProvider
-                                          : NetworkImage(
-                                              metadata.artUri.toString()),
-                                      fit: BoxFit.cover,
-                                    )
-                                  : null,
+                      // FullScreen background gradient
+                      Positioned.fill(
+                        child: Opacity(
+                          opacity: t,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: expandedGradient,
+                            ),
+                          ),
                         ),
-                        child: (isRadio && (offlineMode || radio == null)) ||
-                                (!isRadio &&
-                                    (metadata?.artUri == null ||
-                                        (metadata!.artUri!.scheme != 'file' &&
-                                            offlineMode)))
-                            ? Icon(
-                                isRadio ? Icons.radio : Icons.music_note,
-                                color: Colors.white,
-                              )
-                            : null,
                       ),
-                      SizedBox(width: metrics.miniPlayerHeight * 0.16),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            SizedBox(
-                              height: metrics.miniPlayerTitleHeight,
-                              child: AutoScrollText(
-                                isRadio && radio != null
-                                    ? radio.name
-                                    : metadata?.title ?? 'No Track Playing',
-                                style: const TextStyle(
+
+                      // MiniPlayer controls & details
+                      if (showMiniPlayer)
+                        Positioned(
+                          left: collapsedLeft + collapsedSize + (metrics.miniPlayerHeight * 0.16),
+                          right: 0,
+                          top: 0,
+                          height: metrics.miniPlayerHeight,
+                          child: Opacity(
+                            opacity: miniPlayerOpacity,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      SizedBox(
+                                        height: metrics.miniPlayerTitleHeight,
+                                        child: AutoScrollText(
+                                          isRadio && radio != null
+                                              ? radio.name
+                                              : metadata?.title ?? 'No Track Playing',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          velocity: 20,
+                                          pauseAfterRound: const Duration(milliseconds: 1600),
+                                          syncKey: isRadio && radio != null
+                                              ? 'radio-${radio.id}'
+                                              : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        height: metrics.miniPlayerArtistHeight,
+                                        child: Text(
+                                          isRadio && radio != null
+                                              ? (radio.genre)
+                                              : primaryArtist(metadata?.artist),
+                                          style: TextStyle(
+                                            color: Colors.grey.shade400,
+                                            fontSize: 12,
+                                          ),
+                                          maxLines: 1,
+                                          softWrap: false,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: Icon(
+                                    isLiked ? Icons.favorite : Icons.favorite_border,
+                                    color: isLiked
+                                        ? Colors.deepPurple.shade400
+                                        : Colors.white,
+                                  ),
+                                  iconSize: 24,
+                                  onPressed: () {
+                                    if (isRadio && radio != null) {
+                                      if (audioService
+                                          .getPlaylistRadios('favourite_radios')
+                                          .any((r) => r.id == radio.id)) {
+                                        audioService.removeRadioFromPlaylist(
+                                            'favourite_radios', radio);
+                                      } else {
+                                        audioService.addRadioToPlaylist(
+                                            'favourite_radios', radio);
+                                      }
+                                    } else {
+                                      audioService.toggleLike();
+                                    }
+                                  },
+                                ),
+                                IconButton(
+                                  icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
                                   color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
+                                  iconSize: 24,
+                                  onPressed: () => audioService.playPause(),
                                 ),
-                                // Slower and slightly longer pause to feel smoother in the mini player
-                                velocity: 20,
-                                pauseAfterRound:
-                                    const Duration(milliseconds: 1600),
-                                // Sync key so title and artist start together for the current item
-                                syncKey: isRadio && radio != null
-                                    ? 'radio-${radio.id}'
-                                    : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
-                              ),
+                                SizedBox(width: metrics.miniPlayerHeight * 0.16),
+                              ],
                             ),
-                            SizedBox(
-                              height: metrics.miniPlayerArtistHeight,
-                              child: Text(
-                                isRadio && radio != null
-                                    ? (radio.genre)
-                                    : primaryArtist(metadata?.artist),
-                                style: TextStyle(
-                                  color: Colors.grey.shade400,
-                                  fontSize: 12,
-                                ),
-                                maxLines: 1,
-                                softWrap: false,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                          ),
+                        ),
+
+                      // FullScreen Header
+                      if (showFullScreen)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          top: 0,
+                          child: Opacity(
+                            opacity: fullScreenOpacity,
+                            child: _buildHeader(context),
+                          ),
+                        ),
+
+                      // FullScreen Controls
+                      if (showFullScreen)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: bottomInset + 16.0,
+                          top: expandedTop + expandedSize + 12.0,
+                          child: Opacity(
+                            opacity: fullScreenOpacity,
+                            child: SingleChildScrollView(
+                              physics: const ClampingScrollPhysics(),
+                              child: _buildControls(context),
                             ),
-                          ],
+                          ),
+                        ),
+
+                      // Artwork
+                      Positioned(
+                        left: currentLeft,
+                        top: currentTop,
+                        width: currentSize,
+                        height: currentSize,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(t * 15.0 + 5.0),
+                            color: Colors.deepPurple.shade200,
+                            boxShadow: t > 0.05
+                                ? [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.35 * t),
+                                      blurRadius: 15.0 * t,
+                                      offset: Offset(0, 10.0 * t),
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(t * 15.0 + 5.0),
+                            child: _buildArtworkWidget(
+                              context,
+                              isRadio: isRadio,
+                              radio: radio,
+                              metadata: metadata,
+                              offlineMode: offlineMode,
+                            ),
+                          ),
                         ),
                       ),
-                      IconButton(
-                        icon: Icon(
-                          isLiked ? Icons.favorite : Icons.favorite_border,
-                          color: isLiked
-                              ? Colors.deepPurple.shade400
-                              : Colors.white,
+
+                      // MiniPlayer progress bar
+                      if (showMiniPlayer)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          height: 2,
+                          child: Opacity(
+                            opacity: miniPlayerOpacity,
+                            child: _buildMiniProgressBar(context, audioService),
+                          ),
                         ),
-                        iconSize: metrics.navIconSize,
-                        onPressed: () {
-                          if (isRadio && radio != null) {
-                            // Only update favourite_radios for radios
-                            if (audioService
-                                .getPlaylistRadios('favourite_radios')
-                                .any((r) => r.id == radio.id)) {
-                              audioService.removeRadioFromPlaylist(
-                                  'favourite_radios', radio);
-                            } else {
-                              audioService.addRadioToPlaylist(
-                                  'favourite_radios', radio);
-                            }
-                          } else {
-                            // Only update liked songs for songs
-                            audioService.toggleLike();
-                          }
-                        },
-                      ),
-                      IconButton(
-                        icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
-                        color: Colors.white,
-                        iconSize: metrics.navIconSize,
-                        onPressed: () => audioService.playPause(),
-                      ),
-                      SizedBox(width: metrics.miniPlayerHeight * 0.16),
                     ],
                   ),
                 ),
-                _buildMiniProgressBar(context, audioService),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildMiniProgressBar(
-      BuildContext context, AudioPlayerService audioService) {
-    return StreamBuilder<(Duration, Duration?)>(
-      stream: Rx.combineLatest2(
-        audioService.player.positionStream,
-        audioService.player.durationStream,
-        (position, duration) => (position, duration),
-      ).asBroadcastStream(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox(height: 2);
-
-        final position = snapshot.data!.$1;
-        final duration = snapshot.data!.$2 ?? Duration.zero;
-        final isRadio = audioService.isRadioPlaying;
-
-        // For radio streams, show a filled progress bar to indicate live streaming
-        if (isRadio || duration == Duration.zero) {
-          return LinearProgressIndicator(
-            value: 1.0, // Always full for radio streams
-            backgroundColor: Colors.grey.shade800,
-            valueColor: AlwaysStoppedAnimation(Colors.deepPurple.shade400),
-            minHeight: 2,
-          );
-        }
-
-        return LinearProgressIndicator(
-          value: position.inMilliseconds / duration.inMilliseconds,
-          backgroundColor: Colors.grey.shade800,
-          valueColor: AlwaysStoppedAnimation(Colors.deepPurple.shade400),
-          minHeight: 2,
-        );
-      },
-    );
-  }
-}
-
-class FullScreenPlayer extends StatefulWidget {
-  const FullScreenPlayer({super.key});
-
-  @override
-  State<FullScreenPlayer> createState() => _FullScreenPlayerState();
-}
-
-class _FullScreenPlayerState extends State<FullScreenPlayer>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _dismissController;
-  static const double _dismissDistance = 160;
-  static const double _velocityThreshold = 600;
-  double _dragExtent = 0;
-  double? _dragValue; // Scrubber drag value
-
-  @override
-  void initState() {
-    super.initState();
-    _dismissController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 250),
-      lowerBound: 0,
-      upperBound: 1,
-    );
-  }
-
-  @override
-  void dispose() {
-    _dismissController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onVerticalDragUpdate: _handleDragUpdate,
-      onVerticalDragEnd: _handleDragEnd,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedBuilder(
-        animation: _dismissController,
-        builder: (context, child) {
-          final offset =
-              MediaQuery.of(context).size.height * _dismissController.value;
-          return Transform.translate(offset: Offset(0, offset), child: child);
-        },
-        child: _buildPlayerBody(context),
-      ),
-    );
-  }
-
-  Widget _buildPlayerBody(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.deepPurple.shade400,
-            Colors.grey.shade900,
-            Colors.black,
-          ],
-        ),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(context),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildAlbumArt(),
-                  _buildControls(context),
-                ],
               ),
-            ),
-          ],
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
   }
 
-  void _handleDragUpdate(DragUpdateDetails details) {
-    _dragExtent = (_dragExtent + details.delta.dy).clamp(0, double.infinity);
-    final fraction = (_dragExtent / _dismissDistance).clamp(0.0, 1.0);
-    _dismissController.value = fraction;
-  }
-
-  void _handleDragEnd(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    final shouldDismiss =
-        velocity > _velocityThreshold || _dragExtent > _dismissDistance;
-    if (shouldDismiss) {
-      _dismissController
-          .fling(velocity: max(1.5, velocity / 1000))
-          .whenComplete(() {
-        if (mounted) Navigator.of(context).pop();
-      });
+  Widget _buildArtworkWidget(
+    BuildContext context, {
+    required bool isRadio,
+    required RadioStation? radio,
+    required MediaItem? metadata,
+    required bool offlineMode,
+  }) {
+    if (!offlineMode && isRadio && radio != null && radio.artworkUrl.isNotEmpty) {
+      return Image.network(
+        radio.artworkUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) =>
+            const Icon(Icons.music_note, size: 80, color: Colors.white),
+      );
+    } else if (metadata?.artUri != null &&
+        (metadata!.artUri!.scheme == 'file' || !offlineMode)) {
+      if (metadata.artUri!.scheme == 'file') {
+        return Image.file(
+          File(metadata.artUri!.toFilePath()),
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) =>
+              const Icon(Icons.music_note, size: 80, color: Colors.white),
+        );
+      } else {
+        return Image.network(
+          metadata.artUri.toString(),
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) =>
+              const Icon(Icons.music_note, size: 80, color: Colors.white),
+        );
+      }
     } else {
-      _dismissController.animateBack(0, curve: Curves.easeOutCubic);
+      return const Icon(Icons.music_note, size: 80, color: Colors.white);
     }
-    _dragExtent = 0;
   }
 
   Widget _buildHeader(BuildContext context) {
@@ -349,20 +385,21 @@ class _FullScreenPlayerState extends State<FullScreenPlayer>
           child: Row(
             children: [
               SizedBox(
-                width: 56, // Width for chevron button (48) + left padding (8)
+                width: 56,
                 child: Padding(
                   padding: const EdgeInsets.only(left: 8),
                   child: IconButton(
                     icon: const Icon(Icons.keyboard_arrow_down),
                     iconSize: 36,
                     color: Colors.white.withOpacity(0.9),
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () {
+                      widget.controller.animateTo(0.0, curve: Curves.easeOutCubic);
+                    },
                   ),
                 ),
               ),
               Expanded(
                 child: Center(
-                  // Added Center widget
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -387,7 +424,7 @@ class _FullScreenPlayerState extends State<FullScreenPlayer>
                   ),
                 ),
               ),
-              const SizedBox(width: 56), // Match left side width for symmetry
+              const SizedBox(width: 56),
             ],
           ),
         ),
@@ -400,7 +437,7 @@ class _FullScreenPlayerState extends State<FullScreenPlayer>
               icon: const Icon(Icons.more_vert),
               iconSize: 32,
               color: Colors.white.withOpacity(0.9),
-              onPressed: () {},
+              onPressed: () => _showCurrentSongMenu(context),
             ),
           ),
         ),
@@ -408,217 +445,156 @@ class _FullScreenPlayerState extends State<FullScreenPlayer>
     );
   }
 
-  Widget _buildAlbumArt() {
-    final audioService = context.watch<AudioPlayerService>();
-    final offlineMode = context.watch<SettingsModel>().offlineMode;
-    final isRadio = audioService.isRadioPlaying;
-    final radio = audioService.currentRadioStation;
-    final padding = const EdgeInsets.symmetric(horizontal: 24);
+  Song? _songForCurrentTrack(AudioPlayerService audioService) {
+    if (audioService.isRadioPlaying) return null;
 
-    return StreamBuilder<MediaItem?>(
-      stream: audioService.currentMediaStream,
-      builder: (context, snapshot) {
-        final metadata = snapshot.data;
+    final currentTrack = audioService.currentTrack;
+    if (currentTrack == null) return null;
 
-        Widget artWidget;
+    final artUri = currentTrack.artUri;
+    final albumArt = artUri == null
+        ? ''
+        : artUri.scheme == 'file'
+            ? artUri.toFilePath()
+            : artUri.toString();
 
-        if (!offlineMode &&
-            isRadio &&
-            radio != null &&
-            radio.artworkUrl.isNotEmpty) {
-          // Radio station - use network image
-          artWidget = AnimatedSwitcher(
-            duration: const Duration(milliseconds: 400),
-            child: Image.network(
-              key: ValueKey(radio.artworkUrl),
-              radio.artworkUrl,
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
-              errorBuilder: (_, __, ___) =>
-                  const Icon(Icons.music_note, size: 80, color: Colors.white),
-            ),
-          );
-        } else if (metadata?.artUri != null &&
-            (metadata!.artUri!.scheme == 'file' || !offlineMode)) {
-          // Local song - check if file URI
-          if (metadata.artUri!.scheme == 'file') {
-            artWidget = AnimatedSwitcher(
-              duration: const Duration(milliseconds: 400),
-              child: Image.file(
-                key: ValueKey(metadata.artUri.toString()),
-                File(metadata.artUri!.toFilePath()),
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
-                errorBuilder: (_, __, ___) =>
-                    const Icon(Icons.music_note, size: 80, color: Colors.white),
-              ),
-            );
-          } else {
-            // Network URI
-            artWidget = AnimatedSwitcher(
-              duration: const Duration(milliseconds: 400),
-              child: Image.network(
-                key: ValueKey(metadata.artUri.toString()),
-                metadata.artUri.toString(),
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
-                errorBuilder: (_, __, ___) =>
-                    const Icon(Icons.music_note, size: 80, color: Colors.white),
-              ),
-            );
-          }
-        } else {
-          artWidget =
-              const Icon(Icons.music_note, size: 80, color: Colors.white);
-        }
+    return Song(
+      id: currentTrack.id,
+      filePath: currentTrack.id,
+      title: currentTrack.title,
+      artist: currentTrack.artist ?? 'Unknown Artist',
+      album: currentTrack.album ?? '',
+      albumArt: albumArt,
+      duration: currentTrack.duration ?? Duration.zero,
+    );
+  }
 
-        return Padding(
-          padding: padding,
-          child: AspectRatio(
-            aspectRatio: 1,
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
-                color: Colors.deepPurple.shade200,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
-                    blurRadius: 15,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: artWidget,
-              ),
-            ),
+  void _showCurrentSongMenu(BuildContext context) {
+    final audioService = context.read<AudioPlayerService>();
+    final song = _songForCurrentTrack(audioService);
+
+    if (song == null || song.filePath.isEmpty) {
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      builder: (ctx) => SongMenuSheet(
+        song: song,
+        accentColor: Colors.deepPurple.shade400,
+        options: [
+          SongMenuOption(
+            icon: audioService.isFileLiked(song.filePath)
+                ? Icons.favorite
+                : Icons.favorite_border,
+            title: audioService.isFileLiked(song.filePath)
+                ? 'Remove from Liked Songs'
+                : 'Add to Liked Songs',
+            color: Colors.deepPurple.shade200,
+            onTap: () {
+              audioService.toggleLikeFile(song.filePath);
+            },
           ),
-        );
-      },
+          SongMenuOption(
+            icon: Icons.playlist_add_rounded,
+            title: 'Add to queue',
+            color: Colors.tealAccent.shade400,
+            onTap: () {
+              final insertIndex = (audioService.player.currentIndex ?? 0) + 1;
+              audioService.insertAtQueue(song, insertIndex);
+            },
+          ),
+          SongMenuOption(
+            icon: Icons.edit_note_rounded,
+            title: 'Edit metadata',
+            color: Colors.orange.shade400,
+            onTap: () async {
+              await EditMetadataSheet.show(
+                context,
+                song,
+                File(song.filePath),
+                Colors.deepPurple.shade400,
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildControls(BuildContext context) {
+    final audioService = context.watch<AudioPlayerService>();
+    final isRadio = audioService.isRadioPlaying;
+    final radio = audioService.currentRadioStation;
+    final metrics = BottomChromeMetrics.of(context);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildSongInfo(context),
+          StreamBuilder<MediaItem?>(
+            stream: audioService.currentMediaStream,
+            builder: (context, snapshot) {
+              final metadata = snapshot.data;
+              return Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          height: metrics.fullScreenTitleHeight,
+                          child: AutoScrollText(
+                            isRadio && radio != null
+                                ? (metadata?.title ?? radio.name)
+                                : metadata?.title ?? 'No Track Playing',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            velocity: 30,
+                            pauseAfterRound: const Duration(milliseconds: 2000),
+                            syncKey: isRadio && radio != null
+                                ? 'radio-${radio.id}'
+                                : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          height: metrics.fullScreenArtistHeight,
+                          child: AutoScrollText(
+                            isRadio && radio != null
+                                ? (metadata?.artist ?? radio.genre)
+                                : metadata?.artist ?? 'Unknown Artist',
+                            style: TextStyle(
+                              color: Colors.grey.shade300,
+                              fontSize: 16,
+                            ),
+                            velocity: 30,
+                            pauseAfterRound: const Duration(milliseconds: 2000),
+                            syncKey: isRadio && radio != null
+                                ? 'radio-${radio.id}'
+                                : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
           const SizedBox(height: 20),
           _buildProgressBar(context),
           const SizedBox(height: 20),
           _buildPlaybackControls(context),
         ],
       ),
-    );
-  }
-
-  String _formatTitle(String? title) {
-    if (title == null) return 'No Track Playing';
-    return title.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
-  }
-
-  Widget _buildSongInfo(BuildContext context) {
-    final metrics = BottomChromeMetrics.of(context);
-    final audioService = context.watch<AudioPlayerService>();
-    final isRadio = audioService.isRadioPlaying;
-    final radio = audioService.currentRadioStation;
-
-    return StreamBuilder<MediaItem?>(
-      stream: audioService.currentMediaStream,
-      builder: (context, snapshot) {
-        final metadata = snapshot.data;
-        return Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: metrics.fullScreenTitleHeight,
-                    child: AutoScrollText(
-                      isRadio && radio != null
-                          ? (metadata?.title ?? radio.name)
-                          : _formatTitle(metadata?.title),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      // Full-screen title is a little faster than mini but still restrained
-                      velocity: 30,
-                      pauseAfterRound: const Duration(milliseconds: 2000),
-                      syncKey: isRadio && radio != null
-                          ? 'radio-${radio.id}'
-                          : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  SizedBox(
-                    height: metrics.fullScreenArtistHeight,
-                    child: AutoScrollText(
-                      isRadio && radio != null
-                          ? (metadata?.artist ?? radio.genre)
-                          : metadata?.artist ?? 'Unknown Artist',
-                      style: TextStyle(
-                        color: Colors.grey.shade300,
-                        fontSize: 16,
-                      ),
-                      // Full-screen artist matches title speed so both lines move together visually
-                      velocity: 30,
-                      pauseAfterRound: const Duration(milliseconds: 2000),
-                      syncKey: isRadio && radio != null
-                          ? 'radio-${radio.id}'
-                          : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (isRadio && radio != null)
-              IconButton(
-                icon: Icon(
-                  audioService
-                          .getPlaylistRadios('favourite_radios')
-                          .any((r) => r.id == radio.id)
-                      ? Icons.favorite
-                      : Icons.favorite_border,
-                  color: audioService
-                          .getPlaylistRadios('favourite_radios')
-                          .any((r) => r.id == radio.id)
-                      ? Colors.deepPurple.shade400
-                      : Colors.white,
-                ),
-                onPressed: () {
-                  final isFav = audioService
-                      .getPlaylistRadios('favourite_radios')
-                      .any((r) => r.id == radio.id);
-                  if (isFav) {
-                    audioService.removeRadioFromPlaylist(
-                        'favourite_radios', radio);
-                  } else {
-                    audioService.addRadioToPlaylist('favourite_radios', radio);
-                  }
-                },
-              ),
-            if (!isRadio)
-              IconButton(
-                icon: Icon(
-                  audioService.isLiked ? Icons.favorite : Icons.favorite_border,
-                  color: audioService.isLiked
-                      ? Colors.deepPurple.shade400
-                      : Colors.white,
-                ),
-                onPressed: () => audioService.toggleLike(),
-              ),
-          ],
-        );
-      },
     );
   }
 
@@ -638,14 +614,12 @@ class _FullScreenPlayerState extends State<FullScreenPlayer>
         final position = snapshot.data!.$1;
         final duration = snapshot.data!.$2 ?? Duration.zero;
 
-        // For radio streams, show a full progress bar with "Live Radio Stream" text overlaid in the center
         if (isRadio || duration == Duration.zero) {
           return Column(
             children: [
               Stack(
                 alignment: Alignment.center,
                 children: [
-                  // Full width progress bar
                   SliderTheme(
                     data: SliderThemeData(
                       trackHeight: 1.5,
@@ -655,13 +629,12 @@ class _FullScreenPlayerState extends State<FullScreenPlayer>
                       inactiveTrackColor: Colors.white,
                     ),
                     child: Slider(
-                      value: 1.0, // Always full for radio
+                      value: 1.0,
                       min: 0.0,
                       max: 1.0,
-                      onChanged: null, // Disabled for radio
+                      onChanged: null,
                     ),
                   ),
-                  // Center text with background shape
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -757,7 +730,7 @@ class _FullScreenPlayerState extends State<FullScreenPlayer>
     if (hours > 0) {
       return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
     }
-    return '${minutes}:${twoDigits(seconds)}';
+    return '$minutes:${twoDigits(seconds)}';
   }
 
   Widget _buildPlaybackControls(BuildContext context) {
@@ -830,89 +803,10 @@ class _FullScreenPlayerState extends State<FullScreenPlayer>
                 ),
               ],
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.cast),
-                  color: Colors.grey.shade400,
-                  iconSize: 28,
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        backgroundColor: Colors.grey.shade900,
-                        title: const Row(
-                          children: [
-                            Icon(Icons.cast, color: Colors.white),
-                            SizedBox(width: 8),
-                            Text(
-                              'Cast to Device',
-                              style: TextStyle(color: Colors.white),
-                            ),
-                          ],
-                        ),
-                        content: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ListTile(
-                              leading: CircularProgressIndicator(
-                                color: Colors.deepPurple.shade400,
-                              ),
-                              title: Text(
-                                'Searching for devices...',
-                                style: TextStyle(color: Colors.grey.shade400),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Chromecast support coming soon',
-                              style: TextStyle(
-                                color: Colors.grey.shade500,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: Text(
-                              'Close',
-                              style:
-                                  TextStyle(color: Colors.deepPurple.shade400),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.queue_music),
-                  color: Colors.grey.shade400,
-                  iconSize: 28,
-                  onPressed: isRadio
-                      ? null
-                      : () {
-                          showModalBottomSheet(
-                            context: context,
-                            backgroundColor: Colors.transparent,
-                            isScrollControlled: true,
-                            isDismissible: true,
-                            enableDrag: true,
-                            barrierColor: Colors.black54,
-                            builder: (context) => const DraggableQueueSheet(),
-                          );
-                        },
-                ),
-              ],
-            ),
             const SizedBox(height: 16),
-            // Show Lyrics button
             Center(
               child: SizedBox(
-                width: 200, // Smaller width
+                width: 200,
                 child: OutlinedButton.icon(
                   onPressed: () {
                     Navigator.push(
@@ -959,6 +853,40 @@ class _FullScreenPlayerState extends State<FullScreenPlayer>
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMiniProgressBar(
+      BuildContext context, AudioPlayerService audioService) {
+    return StreamBuilder<(Duration, Duration?)>(
+      stream: Rx.combineLatest2(
+        audioService.player.positionStream,
+        audioService.player.durationStream,
+        (position, duration) => (position, duration),
+      ).asBroadcastStream(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox(height: 2);
+
+        final position = snapshot.data!.$1;
+        final duration = snapshot.data!.$2 ?? Duration.zero;
+        final isRadio = audioService.isRadioPlaying;
+
+        if (isRadio || duration == Duration.zero) {
+          return LinearProgressIndicator(
+            value: 1.0,
+            backgroundColor: Colors.grey.shade800,
+            valueColor: AlwaysStoppedAnimation(Colors.deepPurple.shade400),
+            minHeight: 2,
+          );
+        }
+
+        return LinearProgressIndicator(
+          value: position.inMilliseconds / duration.inMilliseconds,
+          backgroundColor: Colors.grey.shade800,
+          valueColor: AlwaysStoppedAnimation(Colors.deepPurple.shade400),
+          minHeight: 2,
         );
       },
     );
@@ -1023,7 +951,7 @@ class AutoScrollText extends StatefulWidget {
     this.pauseAfterRound = const Duration(milliseconds: 1200),
     this.syncKey,
     this.enableInitialDelay = false,
-    this.gap = 80.0,
+    this.gap = 48.0,
   });
 
   final String text;
@@ -1136,6 +1064,7 @@ class _SpotifyMarqueeState extends State<AutoScrollText>
         final tp = TextPainter(
           text: TextSpan(text: widget.text, style: widget.style),
           textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
           maxLines: 1,
         )..layout();
         final textWidth = tp.width;
@@ -1185,21 +1114,23 @@ class _SpotifyMarqueeState extends State<AutoScrollText>
                       (widget.velocity <= 0 ? 1.0 : widget.velocity) *
                       1000)
                   .round();
-              _controller.duration = Duration(milliseconds: max(1, newLoopMs));
-              _controller.value = fraction.clamp(0.0, 1.0);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted || _isDisposed) return;
+                _controller.duration = Duration(milliseconds: max(1, newLoopMs));
+                _controller.value = fraction.clamp(0.0, 1.0);
+                _controller.repeat();
+              });
               // Check for external bump to the sync start time and reset if seen
               if (widget.syncKey != null) {
                 final gen = _SyncRegistry.generation(widget.syncKey!);
                 if (gen != _seenSyncGen) {
                   _seenSyncGen = gen;
-                  // Restart from initial position
-                  if (_running && !_isDisposed) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted || _isDisposed) return;
                     _controller.stop();
                     _controller.value = 0.0;
                     _controller.repeat();
-                  } else {
-                    _needReset = true;
-                  }
+                  });
                 }
               }
             }

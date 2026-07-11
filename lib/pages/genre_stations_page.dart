@@ -41,6 +41,10 @@ bool _isValidArtwork(String url) {
     return false;
   }
 
+  if (path.contains('favicon')) {
+    return false;
+  }
+
   return host.isNotEmpty &&
       !path.endsWith('.ico') &&
       !path.endsWith('.svg') &&
@@ -209,7 +213,7 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
           SliverPadding(
             padding: EdgeInsets.only(
               top: 16,
-              bottom: MediaQuery.of(context).padding.bottom + 100,
+              bottom: MediaQuery.of(context).padding.bottom + 16.0,
             ),
             sliver: SliverList(
               delegate: SliverChildBuilderDelegate(
@@ -220,10 +224,7 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
                     onTap: () async {
                       final blockReason = await RadioPlaybackGuard.blockingMessage();
                       if (blockReason != null) {
-                        final miniPlayerActive = audioService.isMiniPlayerVisible;
-                        final bottomPad = MediaQuery.of(context).padding.bottom +
-                            kBottomNavigationBarHeight +
-                            (miniPlayerActive ? 70.0 : 0.0);
+                        final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
                         VoxelToast.show(
                           context,
                           blockReason,

@@ -137,7 +137,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   MediaItem? get currentMedia => _currentMedia;
   bool get isPlaying => _player.playing;
   bool get isMiniPlayerVisible =>
-      currentTrack != null && _player.processingState != ProcessingState.idle;
+      (currentMedia ?? currentTrack) != null &&
+      _player.processingState != ProcessingState.idle;
 
   // Add missing getters
   Stream<Duration?> get durationStream => _player.durationStream;
@@ -150,9 +151,16 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
   // Get current track metadata
   MediaItem? get currentTrack {
+    if (_currentMedia != null) return _currentMedia;
     final sequence = player.sequence;
     if (sequence == null || sequence.isEmpty) return null;
-    return sequence[player.currentIndex ?? 0].tag as MediaItem?;
+
+    final currentIndex = player.currentIndex;
+    if (currentIndex == null || currentIndex < 0 || currentIndex >= sequence.length) {
+      return null;
+    }
+
+    return sequence[currentIndex].tag as MediaItem?;
   }
 
   // Check if current track is liked
@@ -931,7 +939,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
       _currentRadioStation = station;
       _currentPlaylistId = null;
-      _currentMedia = null;
+        _currentMedia = _buildRadioMediaItem(station);
+        notifyListeners();
 
       final preferredUrl = dataSaverMode
           ? _preferDataSaverStreamUrl(station.streamUrl)

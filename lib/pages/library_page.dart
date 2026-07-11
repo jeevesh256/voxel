@@ -3,12 +3,14 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import '../models/settings_model.dart';
+import '../models/song.dart';
 import '../services/audio_service.dart';
 import '../services/radio_playback_guard.dart';
 import '../services/storage_service.dart';
 import '../services/song_metadata_cache.dart';
 import '../widgets/voxel_toast.dart';
 import '../widgets/create_playlist_dialog.dart';
+import '../widgets/song_menu_sheet.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'playlist_page.dart';
@@ -1252,12 +1254,14 @@ class _LibraryPageState extends State<LibraryPage>
     final accentColor = playlist.artworkColor != null
         ? Color(playlist.artworkColor!)
         : Colors.deepPurple.shade400;
-    bool dismissed = false;
-    void dismiss(BuildContext ctx) {
-      if (dismissed) return;
-      dismissed = true;
-      Navigator.of(ctx, rootNavigator: true).pop();
-    }
+    final playlistSong = Song(
+      id: playlist.id.toString(),
+      filePath: playlist.artworkPath ?? '',
+      title: playlist.name,
+      artist: 'Playlist',
+      album: '$songCount ${songCount == 1 ? 'song' : 'songs'}',
+      albumArt: playlist.artworkPath ?? '',
+    );
 
     showModalBottomSheet(
       context: context,
@@ -1267,151 +1271,25 @@ class _LibraryPageState extends State<LibraryPage>
       enableDrag: true,
       barrierColor: Colors.black54,
       useRootNavigator: true,
-      builder: (ctx) => Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              dragStartBehavior: DragStartBehavior.down,
-              onTap: () => dismiss(ctx),
-              onVerticalDragUpdate: (details) {
-                if (details.primaryDelta != null && details.primaryDelta! > 8) {
-                  dismiss(ctx);
-                }
-              },
-              onVerticalDragEnd: (details) {
-                if (details.velocity.pixelsPerSecond.dy > 450) {
-                  dismiss(ctx);
-                }
-              },
-            ),
+      builder: (ctx) => SongMenuSheet(
+        song: playlistSong,
+        accentColor: accentColor,
+        options: [
+          SongMenuOption(
+            icon: Icons.edit_rounded,
+            title: 'Edit playlist',
+            color: accentColor,
+            onTap: () {
+              _showEditPlaylistDialog(playlist);
+            },
           ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: DraggableScrollableSheet(
-              initialChildSize: 0.3,
-              minChildSize: 0.25,
-              maxChildSize: 0.4,
-              snap: true,
-              snapSizes: const [0.3, 0.4],
-              expand: false,
-              builder: (context, scrollController) {
-                return Container(
-                  decoration: BoxDecoration(
-                    color: Colors.grey[900],
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(20),
-                      topRight: Radius.circular(20),
-                    ),
-                  ),
-                  child: CustomScrollView(
-                    controller: scrollController,
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: Column(
-                          children: [
-                            Container(
-                              margin: const EdgeInsets.symmetric(vertical: 12),
-                              width: 40,
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[700],
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 56,
-                                    height: 56,
-                                    decoration: BoxDecoration(
-                                      color: playlist.artworkColor != null
-                                          ? Color(playlist.artworkColor!)
-                                          : Colors.deepPurple.shade200,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: playlist.artworkPath != null &&
-                                            playlist.artworkPath!.isNotEmpty
-                                        ? ClipRRect(
-                                            borderRadius:
-                                                BorderRadius.circular(10),
-                                            child: Image.file(
-                                              File(playlist.artworkPath!),
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) =>
-                                                  Icon(Icons.queue_music,
-                                                      color: Colors.white,
-                                                      size: 28),
-                                            ),
-                                          )
-                                        : Icon(Icons.queue_music,
-                                            color: Colors.white, size: 28),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          playlist.name,
-                                          style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w600),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          '$songCount ${songCount == 1 ? 'song' : 'songs'}',
-                                          style: TextStyle(
-                                              color: Colors.grey[400],
-                                              fontSize: 13),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Divider(height: 1, color: Colors.grey),
-                          ],
-                        ),
-                      ),
-                      SliverList(
-                        delegate: SliverChildListDelegate([
-                          ListTile(
-                            leading: Icon(Icons.edit, color: accentColor),
-                            title: const Text('Edit',
-                                style: TextStyle(color: Colors.white)),
-                            onTap: () {
-                              dismiss(ctx);
-                              _showEditPlaylistDialog(playlist);
-                            },
-                          ),
-                          ListTile(
-                            leading:
-                                Icon(Icons.delete, color: Colors.red.shade400),
-                            title: const Text('Delete',
-                                style: TextStyle(color: Colors.white)),
-                            onTap: () {
-                              dismiss(ctx);
-                              _showDeletePlaylistDialog(playlist);
-                            },
-                          ),
-                          SizedBox(
-                              height:
-                                  MediaQuery.of(context).padding.bottom + 20),
-                        ]),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+          SongMenuOption(
+            icon: Icons.delete_outline_rounded,
+            title: 'Delete playlist',
+            color: Colors.red.shade400,
+            onTap: () {
+              _showDeletePlaylistDialog(playlist);
+            },
           ),
         ],
       ),

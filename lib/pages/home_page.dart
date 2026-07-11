@@ -128,11 +128,7 @@ class _HomePageState extends State<HomePage> {
                   final blockReason =
                       await RadioPlaybackGuard.blockingMessage();
                   if (blockReason != null) {
-                    final audioService = context.read<AudioPlayerService>();
-                    final miniPlayerActive = audioService.isMiniPlayerVisible;
-                    final bottomPad = MediaQuery.of(context).padding.bottom +
-                        kBottomNavigationBarHeight +
-                        (miniPlayerActive ? 70.0 : 0.0);
+                    final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
                     VoxelToast.show(
                       context,
                       blockReason,
@@ -445,8 +441,7 @@ class _HomePageState extends State<HomePage> {
               _buildRadioStationRow(),
               _buildGenreRadioRow(),
               _buildForYouRow(),
-              _buildUserPlaylistsRow(),
-              const SizedBox(height: 120), // Add padding for mini player
+              SizedBox(height: MediaQuery.of(context).padding.bottom), // Add padding for mini player
             ],
           ),
         ),
@@ -474,7 +469,61 @@ class _HomePageState extends State<HomePage> {
     final metrics = _homeTileMetrics(context);
     final audioService = context.watch<AudioPlayerService>();
     final likedFiles = audioService.getPlaylistSongs('liked').reversed.toList();
-    if (likedFiles.isEmpty) {
+    final customPlaylists = audioService.customPlaylists;
+
+    final items = <_RecentlyPlayedItem>[];
+
+    if (likedFiles.isNotEmpty) {
+      items.add(
+        _RecentlyPlayedItem(
+          title: 'Liked Songs',
+          subtitle: '${likedFiles.length} song${likedFiles.length == 1 ? '' : 's'}',
+          icon: Icons.favorite,
+          color: Colors.deepPurple.shade200,
+          onTap: () {
+            pushMaterialPage(
+              context,
+              PlaylistPage(
+                playlistId: 'liked',
+                title: 'Liked Songs',
+                icon: Icons.favorite,
+                allowReorder: true,
+              ),
+            );
+          },
+        ),
+      );
+    }
+
+    for (final playlist in customPlaylists) {
+      final songs = audioService.getPlaylistSongs(playlist.id);
+      if (songs.isEmpty) continue;
+
+      items.add(
+        _RecentlyPlayedItem(
+          title: playlist.name,
+          subtitle: '${songs.length} song${songs.length == 1 ? '' : 's'}',
+          icon: Icons.queue_music,
+          color: playlist.artworkColor != null
+              ? Color(playlist.artworkColor!)
+              : const Color(0xFF80CBC4),
+          imagePath: playlist.artworkPath,
+          onTap: () {
+            pushMaterialPage(
+              context,
+              PlaylistPage(
+                playlistId: playlist.id,
+                title: playlist.name,
+                icon: Icons.queue_music,
+                allowReorder: true,
+              ),
+            );
+          },
+        ),
+      );
+    }
+
+    if (items.isEmpty) {
       return const SizedBox.shrink();
     }
     return Column(
@@ -483,127 +532,33 @@ class _HomePageState extends State<HomePage> {
         _buildSection('For You'),
         SizedBox(
           height: metrics.rowHeight,
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            scrollDirection: Axis.horizontal,
-            children: [
-              GestureDetector(
-                onTap: () {
-                  pushMaterialPage(
-                    context,
-                    PlaylistPage(
-                      playlistId: 'liked',
-                      title: 'Liked Songs',
-                      icon: Icons.favorite,
-                      allowReorder: true,
-                    ),
-                  );
-                },
-                child: Container(
-                  width: metrics.tileWidth,
-                  margin: const EdgeInsets.only(right: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        height: metrics.tileImageSize,
-                        width: metrics.tileImageSize,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          color: Colors.deepPurple.shade200,
-                        ),
-                        child: const Icon(Icons.favorite,
-                            color: Colors.white, size: 60),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Liked Songs',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                          color: Colors.white,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${likedFiles.length} song${likedFiles.length == 1 ? '' : 's'}',
-                        style: TextStyle(
-                          color: Colors.grey[400],
-                          fontSize: 14,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // --- User Playlists Row ---
-  Widget _buildUserPlaylistsRow() {
-    final metrics = _homeTileMetrics(context);
-    final audioService = context.watch<AudioPlayerService>();
-    final customPlaylists = audioService.customPlaylists;
-    if (customPlaylists.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSection('Your Playlists'),
-        SizedBox(
-          height: metrics.rowHeight,
           child: ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             scrollDirection: Axis.horizontal,
-            itemCount:
-                customPlaylists.length > 10 ? 10 : customPlaylists.length,
+            itemCount: items.length > 10 ? 10 : items.length,
             itemBuilder: (context, index) {
-              final playlist = customPlaylists[index];
-              final songs = audioService.getPlaylistSongs(playlist.id);
-              final hasArt = playlist.artworkPath != null &&
-                  playlist.artworkPath!.isNotEmpty;
+              final item = items[index];
               return GestureDetector(
-                onTap: () {
-                  pushMaterialPage(
-                    context,
-                    PlaylistPage(
-                      playlistId: playlist.id,
-                      title: playlist.name,
-                      icon: Icons.queue_music,
-                      allowReorder: true,
-                    ),
-                  );
-                },
+                onTap: item.onTap,
                 child: Container(
                   width: metrics.tileWidth,
                   margin: const EdgeInsets.only(right: 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      hasArt
+                      item.imagePath != null && item.imagePath!.isNotEmpty
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(12),
                               child: Image.file(
-                                File(playlist.artworkPath!),
+                                File(item.imagePath!),
                                 height: metrics.tileImageSize,
                                 width: metrics.tileImageSize,
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => Container(
                                   height: metrics.tileImageSize,
                                   width: metrics.tileImageSize,
-                                  color: playlist.artworkColor != null
-                                      ? Color(playlist.artworkColor!)
-                                      : const Color(0xFF80CBC4),
-                                  child: const Icon(Icons.queue_music,
+                                  color: item.color,
+                                  child: Icon(item.icon,
                                       color: Colors.white, size: 60),
                                 ),
                               ),
@@ -612,17 +567,15 @@ class _HomePageState extends State<HomePage> {
                               height: metrics.tileImageSize,
                               width: metrics.tileImageSize,
                               decoration: BoxDecoration(
-                                color: playlist.artworkColor != null
-                                    ? Color(playlist.artworkColor!)
-                                    : const Color(0xFF80CBC4),
+                                color: item.color,
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: const Icon(Icons.queue_music,
+                              child: Icon(item.icon,
                                   color: Colors.white, size: 60),
                             ),
                       const SizedBox(height: 12),
                       Text(
-                        playlist.name,
+                        item.title,
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 16,
@@ -633,7 +586,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${songs.length} song${songs.length == 1 ? '' : 's'}',
+                        item.subtitle,
                         style: TextStyle(
                           color: Colors.grey[400],
                           fontSize: 14,
@@ -864,6 +817,10 @@ bool _isValidArtwork(String url) {
   if (path.endsWith('/icon.png') ||
       path.endsWith('/icon.ico') ||
       path.endsWith('/favicon.ico')) {
+    return false;
+  }
+
+  if (path.contains('favicon')) {
     return false;
   }
 

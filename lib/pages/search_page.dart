@@ -16,7 +16,7 @@ import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import '../widgets/voxel_toast.dart';
-
+import '../widgets/song_menu_sheet.dart';
 bool _isValidArtwork(String url) {
   if (url.isEmpty) return false;
   final uri = Uri.tryParse(url);
@@ -48,6 +48,10 @@ bool _isValidArtwork(String url) {
   if (path.endsWith('/icon.png') ||
       path.endsWith('/icon.ico') ||
       path.endsWith('/favicon.ico')) {
+    return false;
+  }
+
+  if (path.contains('favicon')) {
     return false;
   }
 
@@ -515,23 +519,16 @@ class SearchPageState extends State<SearchPage>
 
   void _showSnackBar(String message) {
     if (!mounted) return;
-    final audioService = context.read<AudioPlayerService>();
-    final miniPlayerActive = audioService.isMiniPlayerVisible;
-    final bottomPad = MediaQuery.of(context).padding.bottom +
-        kBottomNavigationBarHeight +
-        (miniPlayerActive ? 70.0 : 0.0);
+
+    final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
     VoxelToast.show(context, message, bottomPadding: bottomPad);
   }
 
   @override
   Widget build(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
-    final miniPlayerActive = context.select<AudioPlayerService, bool>(
-      (s) => s.isMiniPlayerVisible,
-    );
-    final bottomPad = MediaQuery.of(context).padding.bottom +
-        kBottomNavigationBarHeight +
-        (miniPlayerActive ? 70.0 : 0.0);
+
+    final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1474,109 +1471,44 @@ class SearchPageState extends State<SearchPage>
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                margin: const EdgeInsets.only(top: 10, bottom: 8),
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[700],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                child: Row(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: SizedBox(
-                        width: 44,
-                        height: 44,
-                        child: _localArtworkOrFallback(
-                          artworkPath: song.albumArt,
-                          fallback: _artPlaceholder(isRadio: false),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            song.title,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            song.artist,
-                            style: TextStyle(
-                                color: Colors.grey[500], fontSize: 12),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(color: Color(0xFF2A2A2A), height: 1),
-              ListTile(
-                leading: Icon(Icons.play_arrow_rounded,
-                    color: Colors.grey[300], size: 22),
-                title: Text('Play from library',
-                    style: TextStyle(color: Colors.grey[200])),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _saveRecentSearch(song.title);
-                  audioService.playFileInContext(result.file, libraryFiles);
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.person_outline_rounded,
-                    color: Colors.grey[300], size: 22),
-                title: Text('Go to artist',
-                    style: TextStyle(color: Colors.grey[200])),
-                onTap: () {
-                  final artistName = _primaryArtistName(song.artist);
-                  Navigator.pop(ctx);
-                  _saveRecentSearch(artistName);
-                  pushMaterialPage(
-                    context,
-                    ArtistPage(
-                      artistName: artistName,
-                      songs: libraryFiles.where((f) {
-                        final s = _metadataCache.createSongFromFile(f);
-                        return _splitArtistNames(s.artist)
-                            .any((name) => _fuzzyMatch(artistName, name));
-                      }).toList(),
-                      artistArtwork:
-                          song.albumArt.isNotEmpty ? song.albumArt : null,
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
+      isScrollControlled: true,
+      useRootNavigator: true,
+      builder: (ctx) => SongMenuSheet(
+        song: song,
+        accentColor: Colors.deepPurple.shade400,
+        options: [
+          SongMenuOption(
+            icon: Icons.play_arrow_rounded,
+            title: 'Play from library',
+            color: Colors.deepPurple.shade300,
+            onTap: () {
+              _saveRecentSearch(song.title);
+              audioService.playFileInContext(result.file, libraryFiles);
+            },
           ),
-        ),
+          SongMenuOption(
+            icon: Icons.person_outline_rounded,
+            title: 'Go to artist',
+            color: Colors.tealAccent.shade400,
+            onTap: () {
+              final artistName = _primaryArtistName(song.artist);
+              _saveRecentSearch(artistName);
+              pushMaterialPage(
+                context,
+                ArtistPage(
+                  artistName: artistName,
+                  songs: libraryFiles.where((f) {
+                    final s = _metadataCache.createSongFromFile(f);
+                    return _splitArtistNames(s.artist)
+                        .any((name) => _fuzzyMatch(artistName, name));
+                  }).toList(),
+                  artistArtwork:
+                      song.albumArt.isNotEmpty ? song.albumArt : null,
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -1804,112 +1736,50 @@ class SearchPageState extends State<SearchPage>
   }
 
   void _showSongOptions(ITunesTrack track, AudioPlayerService audioService) {
-    final offlineMode = context.read<SettingsModel>().offlineMode;
+    final menuSong = Song(
+      id: '${track.artistName}_${track.trackName}',
+      filePath: '',
+      title: track.trackName,
+      artist: track.artistName,
+      album: track.collectionName,
+      albumArt: track.artworkUrl,
+    );
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Drag handle
-              Container(
-                margin: const EdgeInsets.only(top: 10, bottom: 8),
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[700],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              // Song info header
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                child: Row(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: SizedBox(
-                        width: 44,
-                        height: 44,
-                        child: track.artworkUrl.isNotEmpty && !offlineMode
-                            ? CachedNetworkImage(
-                                imageUrl: track.artworkUrl,
-                                fit: BoxFit.cover,
-                                errorWidget: (_, __, ___) =>
-                                    _artPlaceholder(isRadio: false),
-                              )
-                            : _artPlaceholder(isRadio: false),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            track.trackName,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            track.artistName,
-                            style: TextStyle(
-                                color: Colors.grey[500], fontSize: 12),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(color: Color(0xFF2A2A2A), height: 1),
-              ListTile(
-                leading: Icon(Icons.play_arrow_rounded,
-                    color: Colors.grey[300], size: 22),
-                title: Text('Play from library',
-                    style: TextStyle(color: Colors.grey[200])),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _playLocalMatch(track, audioService);
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.person_outline_rounded,
-                    color: Colors.grey[300], size: 22),
-                title: Text('Go to artist',
-                    style: TextStyle(color: Colors.grey[200])),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _navigateToArtist(
-                    ITunesArtist(
-                      artistName: track.artistName,
-                      primaryGenre: '',
-                      artistLinkUrl: '',
-                      artistId: 0,
-                    ),
-                    audioService,
-                  );
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
+      isScrollControlled: true,
+      useRootNavigator: true,
+      builder: (ctx) => SongMenuSheet(
+        song: menuSong,
+        accentColor: Colors.deepPurple.shade400,
+        options: [
+          SongMenuOption(
+            icon: Icons.play_arrow_rounded,
+            title: 'Play from library',
+            color: Colors.deepPurple.shade300,
+            onTap: () {
+              _saveRecentSearch(track.trackName);
+              _playLocalMatch(track, audioService);
+            },
           ),
-        ),
+          SongMenuOption(
+            icon: Icons.person_outline_rounded,
+            title: 'Go to artist',
+            color: Colors.tealAccent.shade400,
+            onTap: () {
+              _navigateToArtist(
+                ITunesArtist(
+                  artistName: track.artistName,
+                  primaryGenre: '',
+                  artistLinkUrl: '',
+                  artistId: 0,
+                ),
+                audioService,
+              );
+            },
+          ),
+        ],
       ),
     );
   }

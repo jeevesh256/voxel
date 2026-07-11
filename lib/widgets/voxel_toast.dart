@@ -23,6 +23,8 @@ class VoxelToast {
   }) {
     _timer?.cancel();
 
+    final resolvedPadding = bottomPadding ?? (MediaQuery.of(context).padding.bottom + 8.0);
+
     final state = _key.currentState;
     if (state != null) {
       // Already visible — just update text and reset the timer; no re-animation.
@@ -33,7 +35,7 @@ class VoxelToast {
         builder: (_) => _VoxelToastWidget(
           key: _key,
           initialMessage: message,
-          bottomPadding: bottomPadding,
+          bottomPadding: resolvedPadding,
           onDismissed: _cleanup,
         ),
       );

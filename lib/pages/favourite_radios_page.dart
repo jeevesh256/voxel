@@ -41,6 +41,10 @@ bool _isValidArtwork(String url) {
     return false;
   }
 
+  if (path.contains('favicon')) {
+    return false;
+  }
+
   return host.isNotEmpty &&
       !path.endsWith('.ico') &&
       !path.endsWith('.svg') &&
@@ -286,8 +290,8 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                         ),
                       )
                     : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(
-                            0, 0, 0, 120), // Add bottom padding for mini player
+                        padding: EdgeInsets.fromLTRB(
+                            0, 0, 0, MediaQuery.of(context).padding.bottom + 16.0), // Add bottom padding for mini player
                         itemCount: radios.length,
                         itemBuilder: (context, index) {
                           final radio = radios[index];
@@ -372,11 +376,7 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                             onTap: () async {
                               final blockReason = await RadioPlaybackGuard.blockingMessage();
                               if (blockReason != null) {
-                                final miniPlayerActive =
-                                  audioService.isMiniPlayerVisible;
-                                final bottomPad = MediaQuery.of(context).padding.bottom +
-                                    kBottomNavigationBarHeight +
-                                    (miniPlayerActive ? 70.0 : 0.0);
+                                final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
                                 VoxelToast.show(
                                   context,
                                   blockReason,

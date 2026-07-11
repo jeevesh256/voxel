@@ -28,8 +28,8 @@ class BottomChromeMetrics {
     final deviceScale = (size.shortestSide / 400.0).clamp(1.0, 1.35);
 
     return BottomChromeMetrics(
-      miniPlayerHeight: 60.0 * deviceScale,
-      miniPlayerArtworkSize: 40.0 * deviceScale,
+      miniPlayerHeight: 72.0 * deviceScale,
+      miniPlayerArtworkSize: 50.0 * deviceScale,
       miniPlayerTitleHeight: (22.0 * deviceScale).clamp(20.0, 28.0),
       miniPlayerArtistHeight: (18.0 * deviceScale).clamp(16.0, 24.0),
       navBarHeight: 80.0 * deviceScale,

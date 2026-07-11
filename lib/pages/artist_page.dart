@@ -14,6 +14,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import '../widgets/voxel_toast.dart';
 import '../widgets/applyable_metadata_item.dart';
+import '../widgets/song_menu_sheet.dart';
+import '../widgets/edit_metadata_sheet.dart';
 import 'dart:typed_data';
 import 'dart:io';
 
@@ -668,9 +670,7 @@ class _ArtistPageState extends State<ArtistPage> {
           // Bottom padding
           SliverToBoxAdapter(
             child: SizedBox(
-              height: MediaQuery.of(context).padding.bottom +
-                  kBottomNavigationBarHeight +
-                  80.0,
+              height: MediaQuery.of(context).padding.bottom + 16.0,
             ),
           ),
         ],
@@ -697,275 +697,90 @@ class _ArtistPageState extends State<ArtistPage> {
   void _showSongOptionsSheet(File file) {
     final audioService = context.read<AudioPlayerService>();
     final cachedSong = _metadataCache.createSongFromFile(file);
-    bool dismissed = false;
-    void dismissSheet(BuildContext ctx) {
-      if (dismissed) return;
-      dismissed = true;
-      Navigator.of(ctx, rootNavigator: true).pop();
-    }
 
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      isDismissible: true,
-      enableDrag: true,
-      barrierColor: Colors.black54,
       useRootNavigator: true,
-      builder: (context) => Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              dragStartBehavior: DragStartBehavior.down,
-              onTap: () => dismissSheet(context),
-              onVerticalDragUpdate: (details) {
-                if (details.primaryDelta != null && details.primaryDelta! > 8) {
-                  dismissSheet(context);
-                }
-              },
-              onVerticalDragEnd: (details) {
-                if (details.velocity.pixelsPerSecond.dy > 450) {
-                  dismissSheet(context);
-                }
-              },
-            ),
+      builder: (context) => SongMenuSheet(
+        song: cachedSong,
+        accentColor: Colors.deepPurple.shade400,
+        options: [
+          SongMenuOption(
+            icon: audioService.isFileLiked(file.path)
+                ? Icons.favorite
+                : Icons.favorite_border,
+            title: audioService.isFileLiked(file.path)
+                ? 'Remove from Liked Songs'
+                : 'Add to Liked Songs',
+            color: Colors.deepPurple.shade200,
+            onTap: () {
+              audioService.toggleLikeFile(file.path);
+            },
           ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: DraggableScrollableSheet(
-              initialChildSize: 0.5,
-              minChildSize: 0.25,
-              maxChildSize: 0.5,
-              snap: true,
-              snapSizes: const [0.5],
-              expand: false,
-              builder: (context, scrollController) {
-                return Container(
-                  decoration: BoxDecoration(
-                    color: Colors.grey[900],
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(20),
-                      topRight: Radius.circular(20),
+          SongMenuOption(
+            icon: Icons.playlist_add_rounded,
+            title: 'Add to playlist',
+            color: Colors.tealAccent.shade400,
+            onTap: () {
+              _showAddToPlaylistDialog(file);
+            },
+          ),
+          SongMenuOption(
+            icon: Icons.queue_music_rounded,
+            title: 'Add to queue',
+            color: Colors.blue.shade400,
+            onTap: () {
+              if (_isMiniPlayerActive(audioService)) {
+                final bottomMargin = MediaQuery.of(context).padding.bottom + 8.0;
+                final playlistHandler = context.read<PlaylistHandler>();
+                final insertIndex = (audioService.player.currentIndex ?? 0) + 1;
+                playlistHandler.insertAtQueue(cachedSong, insertIndex);
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    behavior: SnackBarBehavior.floating,
+                    margin: EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      bottom: bottomMargin,
                     ),
-                  ),
-                  child: CustomScrollView(
-                    controller: scrollController,
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Drag handle
-                            Container(
-                              margin: const EdgeInsets.symmetric(vertical: 12),
-                              width: 40,
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[700],
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                            // Song info header
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(8),
-                                      boxShadow: const [
-                                        BoxShadow(
-                                          color: Colors.black26,
-                                          blurRadius: 4,
-                                          offset: Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: cachedSong.albumArt.isNotEmpty
-                                          ? Image.file(
-                                              File(cachedSong.albumArt),
-                                              width: 75,
-                                              height: 75,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) =>
-                                                  _buildDefaultAlbumArt(75),
-                                            )
-                                          : _buildDefaultAlbumArt(75),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          cachedSong.title,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                          maxLines: 3,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          cachedSong.artist,
-                                          style: TextStyle(
-                                            color: Colors.grey[400],
-                                            fontSize: 14,
-                                          ),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Divider(height: 1, color: Colors.grey),
-                          ],
-                        ),
-                      ),
-                      SliverList(
-                        delegate: SliverChildListDelegate([
-                          _buildOptionTile(
-                            icon: audioService.isFileLiked(file.path)
-                                ? Icons.favorite
-                                : Icons.favorite_border,
-                            title: audioService.isFileLiked(file.path)
-                                ? 'Remove from Liked Songs'
-                                : 'Add to Liked Songs',
-                            color: Colors.deepPurple.shade200,
-                            onTap: () {
-                              audioService.toggleLikeFile(file.path);
-                              Navigator.pop(context);
-                            },
-                          ),
-                          _buildOptionTile(
-                            icon: Icons.playlist_add,
-                            title: 'Add to playlist',
-                            color: Colors.tealAccent.shade400,
-                            onTap: () {
-                              Navigator.pop(context);
-                              _showAddToPlaylistDialog(file);
-                            },
-                          ),
-                          _buildOptionTile(
-                            icon: Icons.queue,
-                            title: 'Add to queue',
-                            color: Colors.blue.shade400,
-                            onTap: () {
-                              Navigator.pop(context);
-
-                              if (_isMiniPlayerActive(audioService)) {
-                                final bottomMargin =
-                                    (MediaQuery.of(context).padding.bottom) +
-                                        kBottomNavigationBarHeight +
-                                        70.0;
-                                final playlistHandler =
-                                    context.read<PlaylistHandler>();
-                                final song =
-                                    _metadataCache.createSongFromFile(file);
-                                final insertIndex =
-                                    (audioService.player.currentIndex ?? 0) + 1;
-                                playlistHandler.insertAtQueue(
-                                    song, insertIndex);
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    behavior: SnackBarBehavior.floating,
-                                    margin: EdgeInsets.only(
-                                      left: 16,
-                                      right: 16,
-                                      bottom: bottomMargin,
-                                    ),
-                                    content: const Text('Added to queue'),
-                                    backgroundColor: Colors.deepPurple.shade400,
-                                  ),
-                                );
-                              } else {
-                                audioService.playFileInContextWithPlaylistId(
-                                    file,
-                                    widget.songs,
-                                    'artist-${widget.artistName}');
-
-                                final bottomMargin =
-                                    (MediaQuery.of(context).padding.bottom) +
-                                        kBottomNavigationBarHeight +
-                                        70.0;
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    behavior: SnackBarBehavior.floating,
-                                    margin: EdgeInsets.only(
-                                      left: 16,
-                                      right: 16,
-                                      bottom: bottomMargin,
-                                    ),
-                                    content: const Text('Playing now'),
-                                    backgroundColor: Colors.deepPurple.shade400,
-                                  ),
-                                );
-                              }
-                            },
-                          ),
-                          _buildOptionTile(
-                            icon: Icons.edit,
-                            title: 'Edit metadata',
-                            color: Colors.orange.shade400,
-                            onTap: () async {
-                              Navigator.pop(context);
-                              final song =
-                                  _metadataCache.createSongFromFile(file);
-                              await _showManualEditDialog(
-                                  file, song, Colors.deepPurple.shade400);
-                            },
-                          ),
-                          SizedBox(
-                              height:
-                                  MediaQuery.of(context).padding.bottom + 20),
-                        ]),
-                      ),
-                    ],
+                    content: const Text('Added to queue'),
+                    backgroundColor: Colors.deepPurple.shade400,
                   ),
                 );
-              },
-            ),
+              } else {
+                audioService.playFileInContextWithPlaylistId(
+                    file, widget.songs, 'artist-${widget.artistName}');
+
+                final bottomMargin = MediaQuery.of(context).padding.bottom + 8.0;
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    behavior: SnackBarBehavior.floating,
+                    margin: EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      bottom: bottomMargin,
+                    ),
+                    content: const Text('Playing now'),
+                    backgroundColor: Colors.deepPurple.shade400,
+                  ),
+                );
+              }
+            },
+          ),
+          SongMenuOption(
+            icon: Icons.edit_note_rounded,
+            title: 'Edit metadata',
+            color: Colors.orange.shade400,
+            onTap: () async {
+              await _showManualEditDialog(
+                  file, cachedSong, Colors.deepPurple.shade400);
+            },
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildOptionTile({
-    required IconData icon,
-    required String title,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        child: Row(
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(width: 16),
-            Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1071,9 +886,7 @@ class _ArtistPageState extends State<ArtistPage> {
                         final miniPlayerHeight =
                             _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
                         final bottomMargin =
-                            (MediaQuery.of(context).padding.bottom) +
-                                kBottomNavigationBarHeight +
-                                miniPlayerHeight;
+                            MediaQuery.of(context).padding.bottom + 8.0;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             behavior: SnackBarBehavior.floating,
@@ -1169,10 +982,7 @@ class _ArtistPageState extends State<ArtistPage> {
       audioService.addSongToCustomPlaylist(playlist.id, song);
 
       Future.delayed(const Duration(milliseconds: 100), () {
-        final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
-        final bottomMargin = (MediaQuery.of(context).padding.bottom) +
-            kBottomNavigationBarHeight +
-            miniPlayerHeight;
+        final bottomMargin = MediaQuery.of(context).padding.bottom + 8.0;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             behavior: SnackBarBehavior.floating,
@@ -1230,10 +1040,7 @@ class _ArtistPageState extends State<ArtistPage> {
     if (errorMessage != null) {
       if (context.mounted) {
         final audioService = context.read<AudioPlayerService>();
-        final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
-        final bottomMargin = (MediaQuery.of(context).padding.bottom) +
-            kBottomNavigationBarHeight +
-            miniPlayerHeight;
+        final bottomMargin = MediaQuery.of(context).padding.bottom + 8.0;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             behavior: SnackBarBehavior.floating,
@@ -1321,410 +1128,30 @@ class _ArtistPageState extends State<ArtistPage> {
 
   Future<void> _showManualEditDialog(
       File file, Song song, Color accentColor) async {
-    final titleController = TextEditingController(text: song.title);
-    final artistController = TextEditingController(text: song.artist);
-    final albumController = TextEditingController(
-        text: song.album.isEmpty ? 'Unknown' : song.album);
-    String? selectedAlbumArt = song.albumArt.isNotEmpty ? song.albumArt : null;
-    bool isAutoUpdating = false;
-
-    InputDecoration metadataFieldDecoration(String label) {
-      return InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(color: accentColor),
-        filled: true,
-        fillColor: const Color(0xFF232327),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide.none,
-        ),
-      );
-    }
-
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context,
-      isScrollControlled: true,
-      useRootNavigator: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black54,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => DraggableScrollableSheet(
-          initialChildSize: 0.9,
-          minChildSize: 0.6,
-          maxChildSize: 0.95,
-          expand: false,
-          builder: (context, scrollController) => Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF1B1B1F),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            child: SafeArea(
-              top: false,
-              child: Column(
-                children: [
-                  const SizedBox(height: 10),
-                  Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[700],
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit, color: accentColor),
-                        const SizedBox(width: 8),
-                        const Expanded(
-                          child: Text(
-                            'Edit Metadata',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.of(dialogContext).pop(),
-                          icon: const Icon(Icons.close_rounded,
-                              color: Colors.white70),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      controller: scrollController,
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                      physics: const BouncingScrollPhysics(),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          GestureDetector(
-                            onTap: () async {
-                              final ImagePicker picker = ImagePicker();
-                              final XFile? image = await picker.pickImage(
-                                  source: ImageSource.gallery);
-                              if (image != null) {
-                                final appDir =
-                                    await getApplicationDocumentsDirectory();
-                                final fileName =
-                                    'album_art_${DateTime.now().millisecondsSinceEpoch}.jpg';
-                                final savedImage = await File(image.path)
-                                    .copy('${appDir.path}/$fileName');
-                                setDialogState(
-                                    () => selectedAlbumArt = savedImage.path);
-                              }
-                            },
-                            child: Container(
-                              width: 180,
-                              height: 180,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[800],
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: selectedAlbumArt != null &&
-                                      selectedAlbumArt!.isNotEmpty
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Image.file(
-                                        File(selectedAlbumArt!),
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => Icon(
-                                          Icons.add_photo_alternate,
-                                          size: 50,
-                                          color: accentColor,
-                                        ),
-                                      ),
-                                    )
-                                  : Icon(Icons.add_photo_alternate,
-                                      size: 50, color: accentColor),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text('Tap to change album art',
-                              style: TextStyle(
-                                  color: Colors.grey[600], fontSize: 12)),
-                          const SizedBox(height: 24),
-                          TextField(
-                            controller: titleController,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: metadataFieldDecoration('Title'),
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: artistController,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: metadataFieldDecoration('Artist'),
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: albumController,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: metadataFieldDecoration('Album'),
-                          ),
-                          const SizedBox(height: 20),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: Column(
-                                children: [
-                                  SizedBox(
-                                    width: double.infinity,
-                                    height: 46,
-                                    child: ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor:
-                                            accentColor.withValues(alpha: 0.22),
-                                        foregroundColor: Colors.white,
-                                        elevation: 0,
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 14, vertical: 12),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          side: BorderSide(
-                                              color: accentColor.withValues(
-                                                  alpha: 0.55)),
-                                        ),
-                                      ),
-                                      onPressed: isAutoUpdating
-                                          ? null
-                                          : () async {
-                                              setDialogState(
-                                                  () => isAutoUpdating = true);
-                                              try {
-                                                final seedSong = song.copyWith(
-                                                  title: titleController.text
-                                                          .trim()
-                                                          .isEmpty
-                                                      ? song.title
-                                                      : titleController.text
-                                                          .trim(),
-                                                  artist: artistController.text
-                                                          .trim()
-                                                          .isEmpty
-                                                      ? song.artist
-                                                      : artistController.text
-                                                          .trim(),
-                                                  album: albumController.text
-                                                      .trim(),
-                                                  albumArt: selectedAlbumArt ??
-                                                      song.albumArt,
-                                                );
-
-                                                final updated =
-                                                    await _metadataService
-                                                        .updateSongMetadata(
-                                                            seedSong)
-                                                        .timeout(
-                                                          const Duration(
-                                                              seconds: 15),
-                                                          onTimeout: () =>
-                                                              seedSong,
-                                                        );
-
-                                                if (!dialogContext.mounted ||
-                                                    !mounted) {
-                                                  return;
-                                                }
-                                                setDialogState(() {
-                                                  titleController.text =
-                                                      updated.title;
-                                                  artistController.text =
-                                                      updated.artist;
-                                                  albumController.text =
-                                                      updated.album.isNotEmpty
-                                                          ? updated.album
-                                                          : 'Unknown';
-                                                  if (updated
-                                                      .albumArt.isNotEmpty) {
-                                                    selectedAlbumArt =
-                                                        updated.albumArt;
-                                                  }
-                                                });
-                                              } catch (e) {
-                                                if (!dialogContext.mounted ||
-                                                    !mounted) {
-                                                  return;
-                                                }
-                                                final audioService = this
-                                                    .context
-                                                    .read<AudioPlayerService>();
-                                                final miniPlayerHeight =
-                                                    _isMiniPlayerActive(
-                                                            audioService)
-                                                        ? 70.0
-                                                        : 0.0;
-                                                final bottomMargin = (MediaQuery
-                                                            .of(this.context)
-                                                        .padding
-                                                        .bottom) +
-                                                    kBottomNavigationBarHeight +
-                                                    miniPlayerHeight;
-                                                ScaffoldMessenger.of(
-                                                        this.context)
-                                                    .showSnackBar(
-                                                  SnackBar(
-                                                    behavior: SnackBarBehavior
-                                                        .floating,
-                                                    margin: EdgeInsets.only(
-                                                      left: 16,
-                                                      right: 16,
-                                                      bottom: bottomMargin,
-                                                    ),
-                                                    content: Text(
-                                                        'Auto update failed: $e'),
-                                                    backgroundColor:
-                                                        Colors.red.shade400,
-                                                  ),
-                                                );
-                                              } finally {
-                                                if (dialogContext.mounted) {
-                                                  setDialogState(() =>
-                                                      isAutoUpdating = false);
-                                                }
-                                              }
-                                            },
-                                      icon: isAutoUpdating
-                                          ? SizedBox(
-                                              width: 18,
-                                              height: 18,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                color: accentColor,
-                                              ),
-                                            )
-                                          : Icon(Icons.auto_fix_high_rounded,
-                                              color: accentColor),
-                                      label: Text(
-                                        isAutoUpdating
-                                            ? 'Updating...'
-                                            : 'Auto update',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    height: 46,
-                                    child: ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.grey[850],
-                                        foregroundColor: Colors.white,
-                                        elevation: 0,
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 14, vertical: 12),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          side: BorderSide(
-                                              color: Colors.grey.shade700),
-                                        ),
-                                      ),
-                                      icon: const Icon(Icons.travel_explore,
-                                          size: 18),
-                                      label: const Text(
-                                        'Advanced search',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      onPressed: () async {
-                                        await _showMetadataSearchSheet(
-                                          context: context,
-                                          accentColor: accentColor,
-                                          setParentState: setDialogState,
-                                          onApply: (res, artPath) {
-                                            titleController.text = res.title;
-                                            artistController.text = res.artist;
-                                            albumController.text =
-                                                res.album.isNotEmpty
-                                                    ? res.album
-                                                    : 'Unknown';
-                                            setDialogState(() {
-                                              selectedAlbumArt = artPath ??
-                                                  selectedAlbumArt ??
-                                                  song.albumArt;
-                                            });
-                                          },
-                                          currentTitle: titleController.text,
-                                          currentArtist: artistController.text,
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.of(dialogContext).pop(),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.grey[300],
-                              side: BorderSide(color: Colors.grey.shade700),
-                              minimumSize: const Size.fromHeight(44),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                            child: const Text('Cancel'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () => Navigator.of(dialogContext).pop({
-                              'title': titleController.text.trim(),
-                              'artist': artistController.text.trim(),
-                              'album': albumController.text.trim(),
-                              'albumArt': selectedAlbumArt ?? song.albumArt,
-                            }),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: accentColor,
-                              foregroundColor: Colors.white,
-                              minimumSize: const Size.fromHeight(44),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                            child: const Text('Save'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
+    final result = await EditMetadataSheet.show(
+      context,
+      song,
+      file,
+      accentColor,
+      onAdvancedSearch: () async {
+        Map<String, dynamic>? searchResult;
+        await _showMetadataSearchSheet(
+          context: context,
+          accentColor: accentColor,
+          setParentState: (fn) {},
+          onApply: (res, artPath) {
+            searchResult = {
+              'title': res.title,
+              'artist': res.artist,
+              'album': res.album.isNotEmpty ? res.album : 'Unknown',
+              'albumArt': artPath ?? song.albumArt,
+            };
+          },
+          currentTitle: song.title,
+          currentArtist: song.artist,
+        );
+        return searchResult;
+      },
     );
 
     if (result != null && mounted) {
@@ -1739,10 +1166,7 @@ class _ArtistPageState extends State<ArtistPage> {
       await audioService.refreshCurrentMetadata();
       if (mounted) setState(() {});
       if (mounted) {
-        final miniPlayerHeight = _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
-        final bottomPad = MediaQuery.of(context).padding.bottom +
-            kBottomNavigationBarHeight +
-            miniPlayerHeight;
+        final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
         VoxelToast.show(context, 'Metadata updated', bottomPadding: bottomPad);
       }
     }
@@ -1815,6 +1239,7 @@ class _ArtistPageState extends State<ArtistPage> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useRootNavigator: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black54,
       builder: (ctx) => StatefulBuilder(
