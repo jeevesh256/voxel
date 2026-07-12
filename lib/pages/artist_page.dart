@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
+import '../models/settings_model.dart';
 import '../services/audio_service.dart';
 import '../services/song_metadata_cache.dart';
 import '../services/itunes_service.dart';
@@ -365,7 +367,13 @@ class _ArtistPageState extends State<ArtistPage> {
                   onTap: () {
                     audioService.playFileInContext(file, widget.songs);
                   },
-                  onLongPress: () => _showSongOptionsSheet(file),
+                  onLongPress: () {
+                    final settings = Provider.of<SettingsModel>(context, listen: false);
+                    if (settings.hapticsEnabled && settings.hapticsOnLongPress) {
+                      HapticFeedback.mediumImpact();
+                    }
+                    _showSongOptionsSheet(file);
+                  },
                   child: Padding(
                     padding: const EdgeInsets.only(
                         left: 16, right: 0, top: 6, bottom: 6),
@@ -600,7 +608,13 @@ class _ArtistPageState extends State<ArtistPage> {
                   onTap: () {
                     audioService.playFileInContext(file, widget.songs);
                   },
-                  onLongPress: () => _showSongOptionsSheet(file),
+                  onLongPress: () {
+                    final settings = Provider.of<SettingsModel>(context, listen: false);
+                    if (settings.hapticsEnabled && settings.hapticsOnLongPress) {
+                      HapticFeedback.mediumImpact();
+                    }
+                    _showSongOptionsSheet(file);
+                  },
                   child: Padding(
                     padding: const EdgeInsets.only(
                         left: 24, right: 0, top: 8, bottom: 8),

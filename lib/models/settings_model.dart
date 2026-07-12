@@ -28,13 +28,14 @@ class SettingsModel extends ChangeNotifier {
     return removed;
   }
 
-  static const String _kShowNonMusicGenresKey = 'show_non_music_genres';
   static const String _kGaplessPlaybackKey = 'gapless_playback';
   static const String _kNormalizeVolumeKey = 'normalize_volume';
-  static const String _kUseCellularDataKey = 'use_cellular_data';
-  static const String _kDataSaverKey = 'data_saver_mode';
-  static const String _kOfflineModeKey = 'offline_mode';
   static const String _kAccentColorKey = 'theme_accent_color';
+  static const String _kHapticsEnabledKey = 'haptics_enabled';
+  static const String _kHapticsOnButtonTapsKey = 'haptics_on_button_taps';
+  static const String _kHapticsOnLikesKey = 'haptics_on_likes';
+  static const String _kHapticsOnLongPressKey = 'haptics_on_long_press';
+  static const String _kHapticsOnSliderScrubbingKey = 'haptics_on_slider_scrubbing';
 
   static const List<Color> accentPresets = [
     Color(0xFF7C5CBF), // Muted Violet
@@ -45,39 +46,42 @@ class SettingsModel extends ChangeNotifier {
     Color(0xFFC06448), // Terracotta
   ];
 
-  bool _showNonMusicGenres = false;
   bool _gaplessPlayback = true;
   bool _normalizeVolume = false;
-  bool _useCellularData = true;
-  bool _dataSaverMode = false;
-  bool _offlineMode = false;
   Color _accentColor = const Color(0xFF7C5CBF);
+  bool _hapticsEnabled = true;
+  bool _hapticsOnButtonTaps = true;
+  bool _hapticsOnLikes = true;
+  bool _hapticsOnLongPress = true;
+  bool _hapticsOnSliderScrubbing = true;
 
   SettingsModel() {
     _loadSettings();
   }
 
-  bool get showNonMusicGenres => _showNonMusicGenres;
   bool get gaplessPlayback => _gaplessPlayback;
   bool get normalizeVolume => _normalizeVolume;
-  bool get useCellularData => _useCellularData;
-  bool get dataSaverMode => _dataSaverMode;
-  bool get offlineMode => _offlineMode;
   Color get accentColor => _accentColor;
+  bool get hapticsEnabled => _hapticsEnabled;
+  bool get hapticsOnButtonTaps => _hapticsOnButtonTaps;
+  bool get hapticsOnLikes => _hapticsOnLikes;
+  bool get hapticsOnLongPress => _hapticsOnLongPress;
+  bool get hapticsOnSliderScrubbing => _hapticsOnSliderScrubbing;
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    _showNonMusicGenres = prefs.getBool(_kShowNonMusicGenresKey) ?? false;
     _gaplessPlayback = prefs.getBool(_kGaplessPlaybackKey) ?? true;
     _normalizeVolume = prefs.getBool(_kNormalizeVolumeKey) ?? false;
-    _useCellularData = prefs.getBool(_kUseCellularDataKey) ?? true;
-    _dataSaverMode = prefs.getBool(_kDataSaverKey) ?? false;
-    _offlineMode = prefs.getBool(_kOfflineModeKey) ?? false;
+    _hapticsEnabled = prefs.getBool(_kHapticsEnabledKey) ?? true;
+    _hapticsOnButtonTaps = prefs.getBool(_kHapticsOnButtonTapsKey) ?? true;
+    _hapticsOnLikes = prefs.getBool(_kHapticsOnLikesKey) ?? true;
+    _hapticsOnLongPress = prefs.getBool(_kHapticsOnLongPressKey) ?? true;
+    _hapticsOnSliderScrubbing = prefs.getBool(_kHapticsOnSliderScrubbingKey) ?? true;
     final accentVal = prefs.getInt(_kAccentColorKey);
     if (accentVal != null) {
       _accentColor = Color(accentVal);
     } else {
-      _accentColor = const Color(0xFF8B5CF6);
+      _accentColor = const Color(0xFF7C5CBF);
     }
     notifyListeners();
   }
@@ -87,11 +91,6 @@ class SettingsModel extends ChangeNotifier {
     await prefs.setBool(key, value);
   }
 
-  void setShowNonMusicGenres(bool value) {
-    _showNonMusicGenres = value;
-    _saveBool(_kShowNonMusicGenresKey, value);
-    notifyListeners();
-  }
 
   void setGaplessPlayback(bool value) {
     _gaplessPlayback = value;
@@ -105,21 +104,33 @@ class SettingsModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setUseCellularData(bool value) {
-    _useCellularData = value;
-    _saveBool(_kUseCellularDataKey, value);
+  void setHapticsEnabled(bool value) {
+    _hapticsEnabled = value;
+    _saveBool(_kHapticsEnabledKey, value);
     notifyListeners();
   }
 
-  void setDataSaverMode(bool value) {
-    _dataSaverMode = value;
-    _saveBool(_kDataSaverKey, value);
+  void setHapticsOnButtonTaps(bool value) {
+    _hapticsOnButtonTaps = value;
+    _saveBool(_kHapticsOnButtonTapsKey, value);
     notifyListeners();
   }
 
-  void setOfflineMode(bool value) {
-    _offlineMode = value;
-    _saveBool(_kOfflineModeKey, value);
+  void setHapticsOnLikes(bool value) {
+    _hapticsOnLikes = value;
+    _saveBool(_kHapticsOnLikesKey, value);
+    notifyListeners();
+  }
+
+  void setHapticsOnLongPress(bool value) {
+    _hapticsOnLongPress = value;
+    _saveBool(_kHapticsOnLongPressKey, value);
+    notifyListeners();
+  }
+
+  void setHapticsOnSliderScrubbing(bool value) {
+    _hapticsOnSliderScrubbing = value;
+    _saveBool(_kHapticsOnSliderScrubbingKey, value);
     notifyListeners();
   }
 

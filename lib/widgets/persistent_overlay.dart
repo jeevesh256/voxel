@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import '../models/settings_model.dart';
 import '../services/audio_service.dart';
 import 'bottom_chrome_metrics.dart';
 import 'player.dart';
@@ -72,8 +71,7 @@ class _PersistentOverlayState extends State<PersistentOverlay>
   @override
   Widget build(BuildContext context) {
     final metrics = BottomChromeMetrics.of(context);
-    final offlineMode = context.watch<SettingsModel>().offlineMode;
-    final isOffline = offlineMode || !_hasNetwork;
+    final isOffline = !_hasNetwork;
     final topInset = MediaQuery.of(context).padding.top;
     final audioService = context.watch<AudioPlayerService>();
     final isPlayerVisible = audioService.isMiniPlayerVisible;

@@ -236,21 +236,8 @@ class SearchPageState extends State<SearchPage>
     final q = query.trim().toLowerCase();
     if (q.isEmpty || !mounted) return;
     final audioService = context.read<AudioPlayerService>();
-    final offlineMode = context.read<SettingsModel>().offlineMode;
     final localSongs = _searchLocalSongs(q, audioService);
     final localArtists = _searchLocalArtists(q, audioService);
-
-    if (offlineMode) {
-      setState(() {
-        _tracks = [];
-        _itunesArtists = [];
-        _stations = [];
-        _localSongs = localSongs;
-        _localArtists = localArtists;
-        _loading = false;
-      });
-      return;
-    }
 
     setState(() => _loading = true);
     try {
@@ -320,7 +307,19 @@ class SearchPageState extends State<SearchPage>
       .trim();
 
   List<String> _splitArtistNames(String rawArtist) {
-    final trimmed = rawArtist.trim();
+    var trimmed = rawArtist.trim();
+    
+    // Remove common video/audio suffixes from the artist name
+    trimmed = trimmed.replaceAll(
+      RegExp(r'\s*[\(\[]\s*(?:official\s+)?(?:lyric\s+|music\s+)?(?:video|audio|visualizer)\s*[\)\]]', caseSensitive: false),
+      '',
+    ).trim();
+    // Also remove loose "official lyric video", "official video", etc.
+    trimmed = trimmed.replaceAll(
+      RegExp(r'\b(?:official\s+)?(?:lyric\s+|music\s+)?(?:video|audio|visualizer)\b', caseSensitive: false),
+      '',
+    ).trim();
+
     if (trimmed.isEmpty || trimmed.toLowerCase() == 'unknown artist') {
       return const [];
     }
@@ -925,8 +924,10 @@ class SearchPageState extends State<SearchPage>
               _sectionHeader('Radio Stations'),
               SliverList(
                 delegate: SliverChildBuilderDelegate(
-                  (context, index) =>
-                      _buildStationRow(_stations[index], audioService),
+                  (context, index) {
+                    if (index >= _stations.length) return const SizedBox.shrink();
+                    return _buildStationRow(_stations[index], audioService);
+                  },
                   childCount: _stations.length,
                 ),
               ),
@@ -1408,8 +1409,13 @@ class SearchPageState extends State<SearchPage>
           _saveRecentSearch(song.title);
           audioService.playFileInContext(result.file, libraryFiles);
         },
-        onLongPress: () =>
-            _showLocalSongOptions(result, audioService, libraryFiles),
+        onLongPress: () {
+          final settings = Provider.of<SettingsModel>(context, listen: false);
+          if (settings.hapticsEnabled && settings.hapticsOnLongPress) {
+            HapticFeedback.mediumImpact();
+          }
+          _showLocalSongOptions(result, audioService, libraryFiles);
+        },
         splashColor: _splashColor,
         highlightColor: _highlightColor,
         child: Padding(
@@ -1697,13 +1703,18 @@ class SearchPageState extends State<SearchPage>
   // ── Song row ──────────────────────────────────────────────────────────────
 
   Widget _buildSongRow(ITunesTrack track, AudioPlayerService audioService) {
-    final offlineMode = context.watch<SettingsModel>().offlineMode;
-    final hasArt = track.artworkUrl.isNotEmpty && !offlineMode;
+    final hasArt = track.artworkUrl.isNotEmpty;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: () => _playLocalMatch(track, audioService),
-        onLongPress: () => _showSongOptions(track, audioService),
+        onLongPress: () {
+          final settings = Provider.of<SettingsModel>(context, listen: false);
+          if (settings.hapticsEnabled && settings.hapticsOnLongPress) {
+            HapticFeedback.mediumImpact();
+          }
+          _showSongOptions(track, audioService);
+        },
         splashColor: _splashColor,
         highlightColor: _highlightColor,
         child: Padding(
@@ -1827,10 +1838,9 @@ class SearchPageState extends State<SearchPage>
 
   Widget _buildStationRow(
       RadioStation station, AudioPlayerService audioService) {
-    final offlineMode = context.watch<SettingsModel>().offlineMode;
     final isPlaying = audioService.currentRadioStation?.id == station.id;
     final isLiked = audioService.isRadioLiked(station);
-    final hasArt = !offlineMode && _isValidArtwork(station.artworkUrl);
+    final hasArt = _isValidArtwork(station.artworkUrl);
 
     return Material(
       color: Colors.transparent,
@@ -1945,7 +1955,10 @@ class SearchPageState extends State<SearchPage>
               // Heart
               IconButton(
                 onPressed: () {
-                  HapticFeedback.lightImpact();
+                  final settings = Provider.of<SettingsModel>(context, listen: false);
+                  if (settings.hapticsEnabled && settings.hapticsOnLikes) {
+                    HapticFeedback.lightImpact();
+                  }
                   if (isLiked) {
                     audioService.removeRadioFromPlaylist(
                         'favourite_radios', station);

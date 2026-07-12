@@ -134,7 +134,6 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
   @override
   Widget build(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
-    final offlineMode = context.watch<SettingsModel>().offlineMode;
     final allRadios = audioService.getPlaylistRadios('favourite_radios');
     final radios = _getFilteredAndSortedRadios(allRadios);
 
@@ -295,8 +294,7 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                         itemCount: radios.length,
                         itemBuilder: (context, index) {
                           final radio = radios[index];
-                          final hasArt =
-                              !offlineMode && _isValidArtwork(radio.artworkUrl);
+                          final hasArt = _isValidArtwork(radio.artworkUrl);
                           return ListTile(
                             leading: hasArt
                                 ? ClipRRect(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart'; // Add this import at the top with other imports
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:provider/provider.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'package:rxdart/rxdart.dart';
@@ -13,6 +14,7 @@ import '../models/radio_station.dart';
 import '../models/song.dart';
 import '../widgets/edit_metadata_sheet.dart';
 import '../widgets/song_menu_sheet.dart';
+import 'queue.dart';
 import 'bottom_chrome_metrics.dart';
 import 'lyrics.dart';
 
@@ -61,10 +63,39 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
     }
   }
 
+  void _triggerHapticTap() {
+    final settings = Provider.of<SettingsModel>(context, listen: false);
+    if (settings.hapticsEnabled && settings.hapticsOnButtonTaps) {
+      HapticFeedback.lightImpact();
+    }
+  }
+
+  void _triggerHapticPlayPause() {
+    final settings = Provider.of<SettingsModel>(context, listen: false);
+    if (settings.hapticsEnabled && settings.hapticsOnButtonTaps) {
+      HapticFeedback.mediumImpact();
+    }
+  }
+
+  void _triggerHapticScrub() {
+    final settings = Provider.of<SettingsModel>(context, listen: false);
+    if (settings.hapticsEnabled && settings.hapticsOnSliderScrubbing) {
+      HapticFeedback.selectionClick();
+    }
+  }
+
+  void _triggerHapticLike() {
+    final settings = Provider.of<SettingsModel>(context, listen: false);
+    if (settings.hapticsEnabled && settings.hapticsOnLikes) {
+      HapticFeedback.lightImpact();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final screenWidth = mediaQuery.size.width;
+    final screenHeight = mediaQuery.size.height;
     final topInset = mediaQuery.padding.top;
     final bottomInset = mediaQuery.padding.bottom;
     final metrics = BottomChromeMetrics.of(context);
@@ -87,7 +118,6 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
         final radio = audioService.currentRadioStation;
         final isPlaying = snapshot.data?.$1.playing ?? false;
         final metadata = snapshot.data?.$2;
-        final offlineMode = context.watch<SettingsModel>().offlineMode;
 
         final isLiked = !isRadio
             ? audioService.isLiked
@@ -219,6 +249,7 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                                   ),
                                   iconSize: 24,
                                   onPressed: () {
+                                    _triggerHapticLike();
                                     if (isRadio && radio != null) {
                                       if (audioService
                                           .getPlaylistRadios('favourite_radios')
@@ -238,7 +269,10 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                                   icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
                                   color: Colors.white,
                                   iconSize: 24,
-                                  onPressed: () => audioService.playPause(),
+                                  onPressed: () {
+                                    _triggerHapticPlayPause();
+                                    audioService.playPause();
+                                  },
                                 ),
                                 SizedBox(width: metrics.miniPlayerHeight * 0.16),
                               ],
@@ -264,12 +298,19 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                           left: 0,
                           right: 0,
                           bottom: bottomInset + 16.0,
-                          top: expandedTop + expandedSize + 12.0,
+                          top: expandedTop + expandedSize + 8.0,
                           child: Opacity(
                             opacity: fullScreenOpacity,
                             child: SingleChildScrollView(
                               physics: const ClampingScrollPhysics(),
-                              child: _buildControls(context),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minHeight: (screenHeight - (expandedTop + expandedSize + 8.0) - (bottomInset + 16.0)).clamp(0.0, double.infinity),
+                                ),
+                                child: Center(
+                                  child: _buildControls(context),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -301,7 +342,6 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                               isRadio: isRadio,
                               radio: radio,
                               metadata: metadata,
-                              offlineMode: offlineMode,
                             ),
                           ),
                         ),
@@ -332,10 +372,9 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
 
   Widget _buildArtworkWidget(
     BuildContext context, {
-    required bool isRadio,
-    required RadioStation? radio,
-    required MediaItem? metadata,
-    required bool offlineMode,
+      required bool isRadio,
+      required RadioStation? radio,
+      required MediaItem? metadata,
   }) {
     final fallbackIcon = const Center(
       child: FittedBox(
@@ -347,15 +386,14 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
       ),
     );
 
-    if (!offlineMode && isRadio && radio != null && radio.artworkUrl.isNotEmpty) {
+    if (isRadio && radio != null && radio.artworkUrl.isNotEmpty) {
       return Image.network(
         radio.artworkUrl,
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => fallbackIcon,
       );
-    } else if (metadata?.artUri != null &&
-        (metadata!.artUri!.scheme == 'file' || !offlineMode)) {
-      if (metadata.artUri!.scheme == 'file') {
+    } else if (metadata?.artUri != null) {
+      if (metadata!.artUri!.scheme == 'file') {
         return Image.file(
           File(metadata.artUri!.toFilePath()),
           fit: BoxFit.cover,
@@ -376,11 +414,12 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
   Widget _buildHeader(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
     final playlistName = audioService.currentPlaylistName;
+    final topInset = MediaQuery.of(context).padding.top;
 
     return Stack(
       children: [
         Padding(
-          padding: const EdgeInsets.only(top: 46),
+          padding: EdgeInsets.only(top: topInset + 4.0),
           child: Row(
             children: [
               SizedBox(
@@ -428,7 +467,7 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
           ),
         ),
         Positioned(
-          top: 46,
+          top: topInset + 4.0,
           right: -8,
           child: Padding(
             padding: const EdgeInsets.only(right: 12),
@@ -532,6 +571,14 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
     final isRadio = audioService.isRadioPlaying;
     final radio = audioService.currentRadioStation;
     final metrics = BottomChromeMetrics.of(context);
+    
+    final isLiked = !isRadio
+        ? audioService.isLiked
+        : isRadio &&
+            radio != null &&
+            audioService
+                .getPlaylistRadios('favourite_radios')
+                .any((r) => r.id == radio.id);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -542,13 +589,13 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
             stream: audioService.currentMediaStream,
             builder: (context, snapshot) {
               final metadata = snapshot.data;
-              return Row(
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
                           height: metrics.fullScreenTitleHeight,
                           child: AutoScrollText(
                             isRadio && radio != null
@@ -566,25 +613,53 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                                 : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        SizedBox(
-                          height: metrics.fullScreenArtistHeight,
-                          child: AutoScrollText(
-                            isRadio && radio != null
-                                ? (metadata?.artist ?? radio.genre)
-                                : metadata?.artist ?? 'Unknown Artist',
-                            style: TextStyle(
-                              color: Colors.grey.shade300,
-                              fontSize: 16,
-                            ),
-                            velocity: 30,
-                            pauseAfterRound: const Duration(milliseconds: 2000),
-                            syncKey: isRadio && radio != null
-                                ? 'radio-${radio.id}'
-                                : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
-                          ),
+                      ),
+                      const SizedBox(width: 12),
+                      IconButton(
+                        icon: Icon(
+                          isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                          color: isLiked
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.white.withOpacity(0.8),
                         ),
-                      ],
+                        iconSize: 28,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () {
+                          _triggerHapticLike();
+                          if (isRadio && radio != null) {
+                            if (audioService
+                                .getPlaylistRadios('favourite_radios')
+                                .any((r) => r.id == radio.id)) {
+                              audioService.removeRadioFromPlaylist(
+                                  'favourite_radios', radio);
+                            } else {
+                              audioService.addRadioToPlaylist(
+                                  'favourite_radios', radio);
+                            }
+                          } else {
+                            audioService.toggleLike();
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    height: metrics.fullScreenArtistHeight,
+                    child: AutoScrollText(
+                      isRadio && radio != null
+                          ? (metadata?.artist ?? radio.genre)
+                          : metadata?.artist ?? 'Unknown Artist',
+                      style: TextStyle(
+                        color: Colors.grey.shade300,
+                        fontSize: 16,
+                      ),
+                      velocity: 30,
+                      pauseAfterRound: const Duration(milliseconds: 2000),
+                      syncKey: isRadio && radio != null
+                          ? 'radio-${radio.id}'
+                          : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
                     ),
                   ),
                 ],
@@ -691,8 +766,15 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                 min: 0.0,
                 max: duration.inMilliseconds.toDouble(),
                 onChanged: duration.inMilliseconds > 0
-                    ? (value) {
-                        setState(() => _dragValue = value);
+                    ? (val) {
+                        final prevVal = _dragValue ?? position.inMilliseconds.toDouble();
+                        final step = (duration.inMilliseconds / 100).clamp(500.0, 5000.0);
+                        final prevStepIndex = (prevVal / step).floor();
+                        final currentStepIndex = (val / step).floor();
+                        if (currentStepIndex != prevStepIndex) {
+                          _triggerHapticScrub();
+                        }
+                        setState(() => _dragValue = val);
                       }
                     : null,
                 onChangeEnd: duration.inMilliseconds > 0
@@ -758,8 +840,12 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                             : Colors.grey.shade400,
                   ),
                   iconSize: 28,
-                  onPressed:
-                      isRadio ? null : () => audioService.toggleShuffle(),
+                  onPressed: isRadio
+                      ? null
+                      : () {
+                          _triggerHapticTap();
+                          audioService.toggleShuffle();
+                        },
                 ),
                 IconButton(
                   icon: const Icon(Icons.skip_previous),
@@ -767,7 +853,10 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                   iconSize: 40,
                   onPressed: isRadio
                       ? null
-                      : () => audioService.player.seekToPrevious(),
+                      : () {
+                          _triggerHapticTap();
+                          audioService.player.seekToPrevious();
+                        },
                 ),
                 Container(
                   decoration: const BoxDecoration(
@@ -778,15 +867,22 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                     icon: Icon(playing ? Icons.pause : Icons.play_arrow),
                     color: Colors.black,
                     iconSize: 40,
-                    onPressed: () => audioService.playPause(),
+                    onPressed: () {
+                      _triggerHapticPlayPause();
+                      audioService.playPause();
+                    },
                   ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.skip_next),
                   color: Colors.white,
                   iconSize: 40,
-                  onPressed:
-                      isRadio ? null : () => audioService.player.seekToNext(),
+                  onPressed: isRadio
+                      ? null
+                      : () {
+                          _triggerHapticTap();
+                          audioService.player.seekToNext();
+                        },
                 ),
                 IconButton(
                   icon: Icon(
@@ -800,59 +896,92 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                             : Colors.grey.shade400,
                   ),
                   iconSize: 28,
-                  onPressed:
-                      isRadio ? null : () => audioService.cycleRepeatMode(),
+                  onPressed: isRadio
+                      ? null
+                      : () {
+                          _triggerHapticTap();
+                          audioService.cycleRepeatMode();
+                        },
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Center(
-              child: SizedBox(
-                width: 200,
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      PageRouteBuilder(
-                        opaque: false,
-                        barrierColor: Colors.black54,
-                        barrierDismissible: true,
-                        transitionDuration: const Duration(milliseconds: 300),
-                        reverseTransitionDuration:
-                            const Duration(milliseconds: 250),
-                        pageBuilder: (context, animation, secondaryAnimation) {
-                          return const FullScreenLyricsView();
-                        },
-                        transitionsBuilder:
-                            (context, animation, secondaryAnimation, child) {
-                          return SlideTransition(
-                            position: Tween<Offset>(
-                              begin: const Offset(0, 1),
-                              end: Offset.zero,
-                            ).animate(CurvedAnimation(
-                              parent: animation,
-                              curve: Curves.easeOutCubic,
-                              reverseCurve: Curves.easeInCubic,
-                            )),
-                            child: child,
-                          );
-                        },
+            const SizedBox(height: 28),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 145,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      _triggerHapticTap();
+                      Navigator.push(
+                        context,
+                        PageRouteBuilder(
+                          opaque: false,
+                          barrierColor: Colors.black54,
+                          barrierDismissible: true,
+                          transitionDuration: const Duration(milliseconds: 300),
+                          reverseTransitionDuration:
+                              const Duration(milliseconds: 250),
+                          pageBuilder: (context, animation, secondaryAnimation) {
+                            return const FullScreenLyricsView();
+                          },
+                          transitionsBuilder:
+                              (context, animation, secondaryAnimation, child) {
+                            return SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0, 1),
+                                end: Offset.zero,
+                              ).animate(CurvedAnimation(
+                                parent: animation,
+                                curve: Curves.easeOutCubic,
+                                reverseCurve: Curves.easeInCubic,
+                              )),
+                              child: child,
+                            );
+                          },
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.music_note, size: 18),
+                    label: const Text('Lyrics', style: TextStyle(fontSize: 13)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.grey.shade400,
+                      side: BorderSide(color: Colors.grey.shade600, width: 1),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.music_note),
-                  label: const Text('Show Lyrics'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.grey.shade400,
-                    side: BorderSide(color: Colors.grey.shade600, width: 1),
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 12, horizontal: 20),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
                     ),
                   ),
                 ),
-              ),
+                const SizedBox(width: 16),
+                SizedBox(
+                  width: 145,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      _triggerHapticTap();
+                      showModalBottomSheet(
+                        context: context,
+                        backgroundColor: Colors.transparent,
+                        isScrollControlled: true,
+                        useRootNavigator: true,
+                        builder: (context) => const DraggableQueueSheet(),
+                      );
+                    },
+                    icon: const Icon(Icons.queue_music, size: 18),
+                    label: const Text('Queue', style: TextStyle(fontSize: 13)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.grey.shade400,
+                      side: BorderSide(color: Colors.grey.shade600, width: 1),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         );

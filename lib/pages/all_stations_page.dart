@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/radio_station.dart';
 import '../models/settings_model.dart';
@@ -145,7 +146,6 @@ class _AllStationsPageState extends State<AllStationsPage> {
   @override
   Widget build(BuildContext context) {
     final audioService = context.read<AudioPlayerService>();
-    final offlineMode = context.watch<SettingsModel>().offlineMode;
     return Scaffold(
       backgroundColor: Colors.black,
       extendBodyBehindAppBar: true,
@@ -202,7 +202,7 @@ class _AllStationsPageState extends State<AllStationsPage> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final station = widget.stations[index];
-                  final hasArt = !offlineMode && _isValidArtwork(station.artworkUrl);
+                   final hasArt = _isValidArtwork(station.artworkUrl);
                   return GestureDetector(
                     onTap: () async {
                       final blockReason = await RadioPlaybackGuard.blockingMessage();
@@ -217,7 +217,13 @@ class _AllStationsPageState extends State<AllStationsPage> {
                       }
                       audioService.playRadioStation(station);
                     },
-                    onLongPress: () => _showRadioOptions(context, station, audioService),
+                    onLongPress: () {
+                      final settings = Provider.of<SettingsModel>(context, listen: false);
+                      if (settings.hapticsEnabled && settings.hapticsOnLongPress) {
+                        HapticFeedback.mediumImpact();
+                      }
+                      _showRadioOptions(context, station, audioService);
+                    },
                     behavior: HitTestBehavior.opaque,
                     child: Padding(
                       padding: const EdgeInsets.only(

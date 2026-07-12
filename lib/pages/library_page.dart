@@ -1,4 +1,5 @@
  import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
@@ -417,8 +418,7 @@ class _LibraryPageState extends State<LibraryPage>
   }
 
   Widget _buildRadioRow(dynamic radio, AudioPlayerService audioService) {
-    final offlineMode = context.watch<SettingsModel>().offlineMode;
-    final hasArt = !offlineMode && _isValidArtwork(radio.artworkUrl as String);
+    final hasArt = _isValidArtwork(radio.artworkUrl as String);
     final accentColor = Theme.of(context).colorScheme.primary;
 
     return GestureDetector(
@@ -438,7 +438,13 @@ class _LibraryPageState extends State<LibraryPage>
         }
         audioService.playRadioStation(radio);
       },
-      onLongPress: () => _showRadioMenu(context, radio, audioService),
+      onLongPress: () {
+        final settings = Provider.of<SettingsModel>(context, listen: false);
+        if (settings.hapticsEnabled && settings.hapticsOnLongPress) {
+          HapticFeedback.mediumImpact();
+        }
+        _showRadioMenu(context, radio, audioService);
+      },
       behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: const EdgeInsets.only(left: 16, right: 0, top: 6, bottom: 6),
@@ -830,6 +836,18 @@ class _LibraryPageState extends State<LibraryPage>
 
   String _normalizeArtistToken(String raw) {
     var cleaned = raw.trim();
+    
+    // Remove common video/audio suffixes from the artist name
+    cleaned = cleaned.replaceAll(
+      RegExp(r'\s*[\(\[]\s*(?:official\s+)?(?:lyric\s+|music\s+)?(?:video|audio|visualizer)\s*[\)\]]', caseSensitive: false),
+      '',
+    ).trim();
+    // Also remove loose "official lyric video", "official video", etc.
+    cleaned = cleaned.replaceAll(
+      RegExp(r'\b(?:official\s+)?(?:lyric\s+|music\s+)?(?:video|audio|visualizer)\b', caseSensitive: false),
+      '',
+    ).trim();
+
     // Remove leading/trailing whitespace and punctuation
     cleaned = cleaned.replaceAll(
       RegExp(r'^[\s\(\[\{]+|[\s\)\]\}\.,;:!]+$'),

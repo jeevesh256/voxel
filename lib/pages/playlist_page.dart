@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
+import '../models/settings_model.dart';
 import '../services/audio_service.dart';
 import '../services/playlist_handler.dart';
 import '../services/metadata_service.dart';
@@ -1736,7 +1738,13 @@ class _OptimizedSongTileState extends State<_OptimizedSongTile>
         onPressed: widget.onMoreTap,
       ),
       onTap: widget.onTap,
-      onLongPress: widget.onMoreTap,
+      onLongPress: () {
+        final settings = Provider.of<SettingsModel>(context, listen: false);
+        if (settings.hapticsEnabled && settings.hapticsOnLongPress) {
+          HapticFeedback.mediumImpact();
+        }
+        widget.onMoreTap();
+      },
     );
   }
 

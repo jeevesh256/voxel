@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/radio_station.dart';
 import '../models/settings_model.dart';
@@ -94,7 +95,6 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
   @override
   Widget build(BuildContext context) {
     final audioService = context.read<AudioPlayerService>();
-    final offlineMode = context.watch<SettingsModel>().offlineMode;
     final artworkUrl = _genreArtwork[widget.genre] ??
         'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800&h=800&fit=crop';
 
@@ -146,23 +146,15 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  offlineMode
-                      ? Container(
-                          color: const Color(0xFF1A0A2A),
-                          child: const Center(
-                            child: Icon(Icons.radio,
-                                color: Colors.white24, size: 96),
-                          ),
-                        )
-                      : CachedNetworkImage(
-                          imageUrl: artworkUrl,
-                          fit: BoxFit.cover,
-                          errorListener: (_) {},
-                          placeholder: (_, __) =>
-                              Container(color: Theme.of(context).colorScheme.primary.withOpacity(0.15)),
-                          errorWidget: (_, __, ___) =>
-                              Container(color: Theme.of(context).colorScheme.primary.withOpacity(0.15)),
-                        ),
+                  CachedNetworkImage(
+                    imageUrl: artworkUrl,
+                    fit: BoxFit.cover,
+                    errorListener: (_) {},
+                    placeholder: (_, __) =>
+                        Container(color: Theme.of(context).colorScheme.primary.withOpacity(0.15)),
+                    errorWidget: (_, __, ___) =>
+                        Container(color: Theme.of(context).colorScheme.primary.withOpacity(0.15)),
+                  ),
                   // Gradient overlay
                   Container(
                     decoration: const BoxDecoration(
@@ -221,7 +213,7 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final station = widget.stations[index];
-                  final hasArt = !offlineMode && _isValidArtwork(station.artworkUrl);
+                  final hasArt = _isValidArtwork(station.artworkUrl);
                   return GestureDetector(
                     onTap: () async {
                       final blockReason = await RadioPlaybackGuard.blockingMessage();
@@ -236,7 +228,13 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
                       }
                       audioService.playRadioStation(station);
                     },
-                    onLongPress: () => _showRadioOptions(context, station, audioService),
+                    onLongPress: () {
+                      final settings = Provider.of<SettingsModel>(context, listen: false);
+                      if (settings.hapticsEnabled && settings.hapticsOnLongPress) {
+                        HapticFeedback.mediumImpact();
+                      }
+                      _showRadioOptions(context, station, audioService);
+                    },
                     behavior: HitTestBehavior.opaque,
                     child: Padding(
                       padding: const EdgeInsets.only(

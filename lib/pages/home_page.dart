@@ -64,7 +64,6 @@ class _HomePageState extends State<HomePage> {
   // List all radios in the top section, with a "See All" button
   Widget _buildRadioStationRow() {
     final metrics = _homeTileMetrics(context);
-    final offlineMode = context.watch<SettingsModel>().offlineMode;
     final validStations = _stations.where((station) {
       final streamUrl = station.streamUrl;
       return streamUrl.startsWith('https://') ||
@@ -121,8 +120,7 @@ class _HomePageState extends State<HomePage> {
             itemCount: topStations.length,
             itemBuilder: (context, index) {
               final station = topStations[index];
-              final hasArt =
-                  !offlineMode && _isValidArtwork(station.artworkUrl);
+              final hasArt = _isValidArtwork(station.artworkUrl);
               return GestureDetector(
                 onTap: () async {
                   final blockReason =
@@ -216,9 +214,6 @@ class _HomePageState extends State<HomePage> {
       return streamUrl.startsWith('https://') ||
           streamUrl.startsWith('http://');
     }).toList();
-    final settings = context.watch<SettingsModel>();
-    final offlineMode = settings.offlineMode;
-
     // Simplified generic genres with artwork
     final Map<String, String> genreArtwork = {
       'Pop':
@@ -259,10 +254,7 @@ class _HomePageState extends State<HomePage> {
       'Latin',
       'Hip-Hop'
     ];
-    final nonMusicGenres = ['News', 'Talk', 'Sports'];
-    final allGenres = settings.showNonMusicGenres
-        ? [...musicGenres, ...nonMusicGenres]
-        : musicGenres;
+    final allGenres = musicGenres;
 
     final genreMap = <String, List<RadioStation>>{};
 
@@ -316,33 +308,25 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: offlineMode
-                            ? Container(
-                                height: metrics.tileImageSize,
-                                width: metrics.tileImageSize,
-                                color: const Color(0xFF6A5B8E),
-                                child: const Icon(Icons.radio,
-                                    color: Colors.white, size: 60),
-                              )
-                            : CachedNetworkImage(
-                                imageUrl: artworkUrl,
-                                height: metrics.tileImageSize,
-                                width: metrics.tileImageSize,
-                                fit: BoxFit.cover,
-                                filterQuality: FilterQuality.high,
-                                errorWidget: (_, __, ___) => Container(
-                                  height: metrics.tileImageSize,
-                                  width: metrics.tileImageSize,
-                                  color: const Color(0xFF6A5B8E),
-                                  child: const Icon(Icons.radio,
-                                      color: Colors.white, size: 60),
-                                ),
-                                placeholder: (_, __) => Container(
-                                  height: metrics.tileImageSize,
-                                  width: metrics.tileImageSize,
-                                  color: const Color(0xFF2A1A3A),
-                                ),
-                              ),
+                        child: CachedNetworkImage(
+                          imageUrl: artworkUrl,
+                          height: metrics.tileImageSize,
+                          width: metrics.tileImageSize,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.high,
+                          errorWidget: (_, __, ___) => Container(
+                            height: metrics.tileImageSize,
+                            width: metrics.tileImageSize,
+                            color: const Color(0xFF6A5B8E),
+                            child: const Icon(Icons.radio,
+                                color: Colors.white, size: 60),
+                          ),
+                          placeholder: (_, __) => Container(
+                            height: metrics.tileImageSize,
+                            width: metrics.tileImageSize,
+                            color: const Color(0xFF2A1A3A),
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 12),
                       Text(
