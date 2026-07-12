@@ -34,6 +34,16 @@ class SettingsModel extends ChangeNotifier {
   static const String _kUseCellularDataKey = 'use_cellular_data';
   static const String _kDataSaverKey = 'data_saver_mode';
   static const String _kOfflineModeKey = 'offline_mode';
+  static const String _kAccentColorKey = 'theme_accent_color';
+
+  static const List<Color> accentPresets = [
+    Color(0xFF7C5CBF), // Muted Violet
+    Color(0xFF2E8B6A), // Muted Emerald
+    Color(0xFF5558B8), // Muted Indigo
+    Color(0xFFC43B59), // Muted Rose
+    Color(0xFFD4880F), // Muted Amber
+    Color(0xFFC06448), // Terracotta
+  ];
 
   bool _showNonMusicGenres = false;
   bool _gaplessPlayback = true;
@@ -41,6 +51,7 @@ class SettingsModel extends ChangeNotifier {
   bool _useCellularData = true;
   bool _dataSaverMode = false;
   bool _offlineMode = false;
+  Color _accentColor = const Color(0xFF7C5CBF);
 
   SettingsModel() {
     _loadSettings();
@@ -52,6 +63,7 @@ class SettingsModel extends ChangeNotifier {
   bool get useCellularData => _useCellularData;
   bool get dataSaverMode => _dataSaverMode;
   bool get offlineMode => _offlineMode;
+  Color get accentColor => _accentColor;
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -61,6 +73,12 @@ class SettingsModel extends ChangeNotifier {
     _useCellularData = prefs.getBool(_kUseCellularDataKey) ?? true;
     _dataSaverMode = prefs.getBool(_kDataSaverKey) ?? false;
     _offlineMode = prefs.getBool(_kOfflineModeKey) ?? false;
+    final accentVal = prefs.getInt(_kAccentColorKey);
+    if (accentVal != null) {
+      _accentColor = Color(accentVal);
+    } else {
+      _accentColor = const Color(0xFF8B5CF6);
+    }
     notifyListeners();
   }
 
@@ -102,6 +120,13 @@ class SettingsModel extends ChangeNotifier {
   void setOfflineMode(bool value) {
     _offlineMode = value;
     _saveBool(_kOfflineModeKey, value);
+    notifyListeners();
+  }
+
+  void setAccentColor(Color color) async {
+    _accentColor = color;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_kAccentColorKey, color.value);
     notifyListeners();
   }
 

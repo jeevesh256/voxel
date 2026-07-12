@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart'; // Add this import at the top with other imports
 import 'package:provider/provider.dart';
+import 'package:palette_generator/palette_generator.dart';
 import 'package:rxdart/rxdart.dart';
 import 'dart:math';
 import 'dart:io';
@@ -102,15 +103,6 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
             final t = widget.controller.value;
 
             final collapsedColor = Colors.grey.shade900;
-            final expandedGradient = LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.deepPurple.shade400,
-                Colors.grey.shade900,
-                Colors.black,
-              ],
-            );
 
             // Container top rounded corners (0 to 32 depending on progress)
             final radius = BorderRadius.vertical(
@@ -158,10 +150,10 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                       Positioned.fill(
                         child: Opacity(
                           opacity: t,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: expandedGradient,
-                            ),
+                          child: DynamicBackground(
+                            metadata: metadata,
+                            fallbackColor: Theme.of(context).colorScheme.primary,
+                            child: const SizedBox.expand(),
                           ),
                         ),
                       ),
@@ -222,7 +214,7 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                                   icon: Icon(
                                     isLiked ? Icons.favorite : Icons.favorite_border,
                                     color: isLiked
-                                        ? Colors.deepPurple.shade400
+                                        ? Theme.of(context).colorScheme.primary
                                         : Colors.white,
                                   ),
                                   iconSize: 24,
@@ -291,7 +283,7 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                         child: Container(
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(t * 15.0 + 5.0),
-                            color: Colors.deepPurple.shade200,
+                            color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
                             boxShadow: t > 0.05
                                 ? [
                                     BoxShadow(
@@ -345,12 +337,21 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
     required MediaItem? metadata,
     required bool offlineMode,
   }) {
+    final fallbackIcon = const Center(
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: Padding(
+          padding: EdgeInsets.all(12.0),
+          child: Icon(Icons.music_note_rounded, size: 80, color: Colors.white),
+        ),
+      ),
+    );
+
     if (!offlineMode && isRadio && radio != null && radio.artworkUrl.isNotEmpty) {
       return Image.network(
         radio.artworkUrl,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) =>
-            const Icon(Icons.music_note, size: 80, color: Colors.white),
+        errorBuilder: (_, __, ___) => fallbackIcon,
       );
     } else if (metadata?.artUri != null &&
         (metadata!.artUri!.scheme == 'file' || !offlineMode)) {
@@ -358,19 +359,17 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
         return Image.file(
           File(metadata.artUri!.toFilePath()),
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) =>
-              const Icon(Icons.music_note, size: 80, color: Colors.white),
+          errorBuilder: (_, __, ___) => fallbackIcon,
         );
       } else {
         return Image.network(
           metadata.artUri.toString(),
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) =>
-              const Icon(Icons.music_note, size: 80, color: Colors.white),
+          errorBuilder: (_, __, ___) => fallbackIcon,
         );
       }
     } else {
-      return const Icon(Icons.music_note, size: 80, color: Colors.white);
+      return fallbackIcon;
     }
   }
 
@@ -477,52 +476,55 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
       return;
     }
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      useRootNavigator: true,
-      builder: (ctx) => SongMenuSheet(
-        song: song,
-        accentColor: Colors.deepPurple.shade400,
-        options: [
-          SongMenuOption(
-            icon: audioService.isFileLiked(song.filePath)
-                ? Icons.favorite
-                : Icons.favorite_border,
-            title: audioService.isFileLiked(song.filePath)
-                ? 'Remove from Liked Songs'
-                : 'Add to Liked Songs',
-            color: Colors.deepPurple.shade200,
-            onTap: () {
-              audioService.toggleLikeFile(song.filePath);
-            },
-          ),
-          SongMenuOption(
-            icon: Icons.playlist_add_rounded,
-            title: 'Add to queue',
-            color: Colors.tealAccent.shade400,
-            onTap: () {
-              final insertIndex = (audioService.player.currentIndex ?? 0) + 1;
-              audioService.insertAtQueue(song, insertIndex);
-            },
-          ),
-          SongMenuOption(
-            icon: Icons.edit_note_rounded,
-            title: 'Edit metadata',
-            color: Colors.orange.shade400,
-            onTap: () async {
-              await EditMetadataSheet.show(
-                context,
-                song,
-                File(song.filePath),
-                Colors.deepPurple.shade400,
-              );
-            },
-          ),
-        ],
-      ),
-    );
+      final accentColor = Theme.of(context).colorScheme.primary;
+      final secondaryColor = Theme.of(context).colorScheme.secondary;
+
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        useRootNavigator: true,
+        builder: (ctx) => SongMenuSheet(
+          song: song,
+          accentColor: accentColor,
+          options: [
+            SongMenuOption(
+              icon: audioService.isFileLiked(song.filePath)
+                  ? Icons.favorite
+                  : Icons.favorite_border,
+              title: audioService.isFileLiked(song.filePath)
+                  ? 'Remove from Liked Songs'
+                  : 'Add to Liked Songs',
+              color: secondaryColor,
+              onTap: () {
+                audioService.toggleLikeFile(song.filePath);
+              },
+            ),
+            SongMenuOption(
+              icon: Icons.playlist_add_rounded,
+              title: 'Add to queue',
+              color: Colors.tealAccent.shade400,
+              onTap: () {
+                final insertIndex = (audioService.player.currentIndex ?? 0) + 1;
+                audioService.insertAtQueue(song, insertIndex);
+              },
+            ),
+            SongMenuOption(
+              icon: Icons.edit_note_rounded,
+              title: 'Edit metadata',
+              color: Colors.orange.shade400,
+              onTap: () async {
+                await EditMetadataSheet.show(
+                  context,
+                  song,
+                  File(song.filePath),
+                  accentColor,
+                );
+              },
+            ),
+          ],
+        ),
+      );
   }
 
   Widget _buildControls(BuildContext context) {
@@ -752,7 +754,7 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                     color: isRadio
                         ? Colors.grey.shade600
                         : audioService.isShuffling
-                            ? Colors.deepPurple.shade400
+                            ? Theme.of(context).colorScheme.primary
                             : Colors.grey.shade400,
                   ),
                   iconSize: 28,
@@ -794,7 +796,7 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                     color: isRadio
                         ? Colors.grey.shade600
                         : audioService.loopMode != LoopMode.off
-                            ? Colors.deepPurple.shade400
+                            ? Theme.of(context).colorScheme.primary
                             : Colors.grey.shade400,
                   ),
                   iconSize: 28,
@@ -877,7 +879,7 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
           return LinearProgressIndicator(
             value: 1.0,
             backgroundColor: Colors.grey.shade800,
-            valueColor: AlwaysStoppedAnimation(Colors.deepPurple.shade400),
+            valueColor: AlwaysStoppedAnimation(Theme.of(context).colorScheme.primary),
             minHeight: 2,
           );
         }
@@ -885,7 +887,7 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
         return LinearProgressIndicator(
           value: position.inMilliseconds / duration.inMilliseconds,
           backgroundColor: Colors.grey.shade800,
-          valueColor: AlwaysStoppedAnimation(Colors.deepPurple.shade400),
+          valueColor: AlwaysStoppedAnimation(Theme.of(context).colorScheme.primary),
           minHeight: 2,
         );
       },
@@ -1238,4 +1240,133 @@ class _SyncRegistry {
 
   /// Return current generation for a given key (0 if none).
   static int generation(String key) => _gens[key] ?? 0;
+}
+
+class DynamicBackground extends StatefulWidget {
+  final MediaItem? metadata;
+  final Color fallbackColor;
+  final Widget child;
+
+  const DynamicBackground({
+    super.key,
+    required this.metadata,
+    required this.fallbackColor,
+    required this.child,
+  });
+
+  @override
+  State<DynamicBackground> createState() => _DynamicBackgroundState();
+}
+
+class _DynamicBackgroundState extends State<DynamicBackground> {
+  static final Map<String, Color> _colorCache = {};
+  Color? _extractedColor;
+  String? _lastId;
+
+  @override
+  void initState() {
+    super.initState();
+    _extractColor();
+  }
+
+  @override
+  void didUpdateWidget(covariant DynamicBackground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.metadata?.id != oldWidget.metadata?.id) {
+      _extractColor();
+    }
+  }
+
+  Future<void> _extractColor() async {
+    final media = widget.metadata;
+    if (media == null) {
+      setState(() {
+        _extractedColor = null;
+        _lastId = null;
+      });
+      return;
+    }
+
+    final id = media.id;
+    _lastId = id;
+
+    if (_colorCache.containsKey(id)) {
+      setState(() {
+        _extractedColor = _colorCache[id];
+      });
+      return;
+    }
+
+    try {
+      ImageProvider? imageProvider;
+      if (media.artUri != null) {
+        if (media.artUri!.scheme == 'file') {
+          imageProvider = FileImage(File(media.artUri!.toFilePath()));
+        } else {
+          imageProvider = NetworkImage(media.artUri.toString());
+        }
+      }
+
+      if (imageProvider != null) {
+        final palette = await PaletteGenerator.fromImageProvider(
+          imageProvider,
+          maximumColorCount: 8, // Keep it low for maximum speed
+        ).timeout(const Duration(seconds: 2));
+
+        if (!mounted || _lastId != id) return;
+
+        // Extract most vibrant or dominant color
+        final color = palette.vibrantColor?.color ??
+            palette.dominantColor?.color ??
+            palette.darkMutedColor?.color ??
+            widget.fallbackColor;
+
+        _colorCache[id] = color;
+        setState(() {
+          _extractedColor = color;
+        });
+      } else {
+        setState(() {
+          _extractedColor = null;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error extracting artwork color: $e');
+      if (mounted && _lastId == id) {
+        setState(() {
+          _extractedColor = null;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final targetColor = _extractedColor ?? widget.fallbackColor;
+
+    return TweenAnimationBuilder<Color?>(
+      tween: ColorTween(
+        begin: widget.fallbackColor,
+        end: targetColor,
+      ),
+      duration: const Duration(milliseconds: 600),
+      builder: (context, color, child) {
+        final currentColor = color ?? widget.fallbackColor;
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                currentColor.withOpacity(0.85),
+                Colors.grey.shade900.withOpacity(0.95),
+                Colors.black,
+              ],
+            ),
+          ),
+          child: widget.child,
+        );
+      },
+    );
+  }
 }

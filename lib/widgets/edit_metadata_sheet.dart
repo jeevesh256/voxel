@@ -130,7 +130,7 @@ class _EditMetadataSheetState extends State<EditMetadataSheet> {
         albumArt: _selectedAlbumArt ?? widget.song.albumArt,
       );
 
-      final metadataService = context.read<MetadataService>();
+      final metadataService = MetadataService();
       final updated = await metadataService
           .updateSongMetadata(seedSong)
           .timeout(

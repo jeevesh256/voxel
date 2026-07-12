@@ -55,9 +55,11 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   };
   final PlaylistHandler _playlistHandler;
   final List<String> _likedTracks = [];
+  final List<String> _hiddenTracks = [];
   final Set<String> _likedRadios = {};
   final Map<String, CustomPlaylist> _customPlaylists = {};
   static const String _likedTracksKey = 'liked_tracks';
+  static const String _hiddenTracksKey = 'hidden_tracks';
   static const String _likedRadiosKey = 'liked_radios';
   static const String _customPlaylistsKey = 'custom_playlists';
   static const String _recentlyPlayedKey = 'recently_played_playlists';
@@ -180,7 +182,16 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     try {
       final storageService = StorageService();
       final entities = await storageService.getAudioFiles();
-      final files = entities.whereType<File>().toList();
+      
+      _prefs = await SharedPreferences.getInstance();
+      final hiddenList = _prefs.getStringList(_hiddenTracksKey) ?? [];
+      _hiddenTracks.clear();
+      _hiddenTracks.addAll(hiddenList);
+
+      final files = entities
+          .whereType<File>()
+          .where((file) => !_hiddenTracks.contains(file.path))
+          .toList();
       
       // Sort files by modification time (recently added first)
       files.sort((a, b) {
@@ -204,6 +215,10 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     _likedTracks.clear();
     _likedTracks.addAll(likedTracks);
     _playlists['liked'] = likedTracks.map((path) => File(path)).toList();
+
+    final hiddenTracks = _prefs.getStringList(_hiddenTracksKey) ?? [];
+    _hiddenTracks.clear();
+    _hiddenTracks.addAll(hiddenTracks);
 
     // Load liked radios (persisted as JSON)
     final likedRadiosJson = _prefs.getStringList(_likedRadiosKey) ?? [];
@@ -371,7 +386,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
         ),
       );
 
-      await _player.setAudioSource(audioSource);
+      await _player.setAudioSource(audioSource, initialPosition: Duration.zero);
       // Wait for duration to be loaded
       await _player.load();
       await _player.play();
@@ -391,8 +406,9 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
   // Add missing methods
   Future<void> loadOfflineFiles(List<File> files) async {
+    final filtered = files.where((f) => !_hiddenTracks.contains(f.path)).toList();
     // Sort files by modification time (recently added first)
-    final sortedFiles = List<File>.from(files);
+    final sortedFiles = List<File>.from(filtered);
     sortedFiles.sort((a, b) {
       try {
         return b.statSync().modified.compareTo(a.statSync().modified);
@@ -446,7 +462,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
       // Ensure shuffle is disabled when playing playlist in order
       await _player.setShuffleModeEnabled(false);
-      await _player.setAudioSource(_playlist, initialIndex: 0);
+      await _player.setAudioSource(_playlist, initialIndex: 0, initialPosition: Duration.zero);
       await _player.play();
       addRecentlyPlayedPlaylist(playlistId);
     } catch (e) {
@@ -483,7 +499,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
       // Ensure shuffle is disabled when playing playlist in order
       await _player.setShuffleModeEnabled(false);
-      await _player.setAudioSource(_playlist, initialIndex: initialIndex);
+      await _player.setAudioSource(_playlist, initialIndex: initialIndex, initialPosition: Duration.zero);
       await _player.play();
       addRecentlyPlayedPlaylist(playlistId);
       notifyListeners();
@@ -517,7 +533,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
         ).toList(),
       );
 
-      await _player.setAudioSource(playlist);
+      await _player.setAudioSource(playlist, initialPosition: Duration.zero);
       await _player.play();
       notifyListeners();
     } catch (e) {
@@ -598,7 +614,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       final selectedIndex = playlistFiles.indexOf(file);
       // Ensure shuffle is disabled when playing from playlist
       await _player.setShuffleModeEnabled(false);
-      await _player.setAudioSource(_playlist, initialIndex: selectedIndex);
+      await _player.setAudioSource(_playlist, initialIndex: selectedIndex, initialPosition: Duration.zero);
       await _player.play();
       notifyListeners();
     } catch (e) {
@@ -636,7 +652,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       final selectedIndex = playlistFiles.indexOf(file);
       // Ensure shuffle is disabled when playing from playlist
       await _player.setShuffleModeEnabled(false);
-      await _player.setAudioSource(_playlist, initialIndex: selectedIndex);
+      await _player.setAudioSource(_playlist, initialIndex: selectedIndex, initialPosition: Duration.zero);
       await _player.play();
       notifyListeners();
     } catch (e) {
@@ -1083,6 +1099,35 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
         _playlistHandler.updateQueue(songsList, playlistContext: playlistId);
       }
       return;
+    }
+
+    // Handling for the offline system playlist (hide/blocklist from library view)
+    if (playlistId == 'offline') {
+      if (!_hiddenTracks.contains(song.path)) {
+        _hiddenTracks.add(song.path);
+        await _prefs.setStringList(_hiddenTracksKey, _hiddenTracks);
+      }
+
+      // Also clean up from liked tracks
+      if (_likedTracks.contains(song.path)) {
+        _likedTracks.remove(song.path);
+        _playlists['liked']?.removeWhere((f) => f.path == song.path);
+        await _saveLikedTracks();
+      }
+
+      // Clean up from all custom playlists
+      for (final pid in _customPlaylists.keys.toList()) {
+        final playlist = _customPlaylists[pid]!;
+        if (playlist.songPaths.contains(song.path)) {
+          final updatedPaths = List<String>.from(playlist.songPaths)..remove(song.path);
+          _customPlaylists[pid] = playlist.copyWith(
+            songPaths: updatedPaths,
+            modifiedAt: DateTime.now(),
+          );
+          _playlists[pid]?.removeWhere((f) => f.path == song.path);
+        }
+      }
+      await _saveCustomPlaylists();
     }
 
     // Fallback for other system playlists

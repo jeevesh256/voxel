@@ -121,6 +121,67 @@ class SettingsPage extends StatelessWidget {
                   );
                 },
               ),
+              Builder(
+                builder: (context) {
+                  final settings = Provider.of<SettingsModel>(context);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        child: Text(
+                          'Accent Color',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        height: 52,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          itemCount: SettingsModel.accentPresets.length,
+                          itemBuilder: (context, index) {
+                            final preset = SettingsModel.accentPresets[index];
+                            final isSelected = settings.accentColor.value == preset.value;
+                            return GestureDetector(
+                              onTap: () => settings.setAccentColor(preset),
+                              child: Container(
+                                margin: const EdgeInsets.only(right: 16),
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: preset,
+                                  border: isSelected
+                                      ? Border.all(color: Colors.white, width: 3)
+                                      : null,
+                                  boxShadow: isSelected
+                                      ? [
+                                          BoxShadow(
+                                            color: preset.withOpacity(0.5),
+                                            blurRadius: 8,
+                                            spreadRadius: 2,
+                                          )
+                                        ]
+                                      : null,
+                                ),
+                                child: isSelected
+                                    ? const Icon(Icons.check, color: Colors.white, size: 20)
+                                    : null,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                  );
+                },
+              ),
             ],
           ),
           _buildSectionDivider(),

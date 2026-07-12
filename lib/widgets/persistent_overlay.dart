@@ -119,7 +119,7 @@ class _PersistentOverlayState extends State<PersistentOverlay>
                       child: BottomNavigationBar(
                         type: BottomNavigationBarType.fixed,
                         backgroundColor: Colors.black,
-                        selectedItemColor: Colors.deepPurple.shade400,
+                        selectedItemColor: Theme.of(context).colorScheme.primary,
                         unselectedItemColor: Colors.grey,
                         selectedFontSize: metrics.navLabelFontSize,
                         unselectedFontSize: metrics.navLabelFontSize,
@@ -128,15 +128,37 @@ class _PersistentOverlayState extends State<PersistentOverlay>
                         elevation: 0,
                         enableFeedback: false,
                         onTap: widget.onTabChanged,
-                        items: const [
+                        items: [
                           BottomNavigationBarItem(
-                              icon: Icon(Icons.home), label: 'Home'),
+                            icon: Icon(
+                              widget.currentIndex == 0
+                                  ? Icons.home_rounded
+                                  : Icons.home_outlined,
+                            ),
+                            label: 'Home',
+                          ),
                           BottomNavigationBarItem(
-                              icon: Icon(Icons.search), label: 'Search'),
+                            icon: const Icon(
+                              Icons.search_rounded,
+                            ),
+                            label: 'Search',
+                          ),
                           BottomNavigationBarItem(
-                              icon: Icon(Icons.library_music), label: 'Library'),
+                            icon: Icon(
+                              widget.currentIndex == 2
+                                  ? Icons.library_music_rounded
+                                  : Icons.library_music_outlined,
+                            ),
+                            label: 'Library',
+                          ),
                           BottomNavigationBarItem(
-                              icon: Icon(Icons.settings), label: 'Settings'),
+                            icon: Icon(
+                              widget.currentIndex == 3
+                                  ? Icons.settings_rounded
+                                  : Icons.settings_outlined,
+                            ),
+                            label: 'Settings',
+                          ),
                         ],
                       ),
                     ),

@@ -151,14 +151,16 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     // Ensure audio service is initialized
     context.read<AudioPlayerService>();
+    final settings = context.watch<SettingsModel>();
+    final accentColor = settings.accentColor;
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Voxel Music Player',
       theme: ThemeData(
         colorScheme: ColorScheme.dark(
-          primary: Colors.deepPurple.shade400,
-          secondary: Colors.deepPurple.shade200,
+          primary: accentColor,
+          secondary: accentColor.withOpacity(0.7),
           background: Colors.black,
           surface: Colors.grey.shade900,
         ),

@@ -127,7 +127,6 @@ class SearchPageState extends State<SearchPage>
   static const Color _categoryIconColor = Color(0x24FFFFFF); // white @ 0.14
   String _query = '';
   late TabController _tabController;
-  late PageController _pageController;
   List<RadioStation> _stations = [];
   List<ITunesTrack> _tracks = [];
   List<ITunesArtist> _itunesArtists = [];
@@ -142,6 +141,7 @@ class SearchPageState extends State<SearchPage>
   final SongMetadataCache _metadataCache = SongMetadataCache();
   List<String> _recentSearches = [];
   String? _appDocumentsPath;
+  bool _isScrollingVertically = false;
 
   @override
   void initState() {
@@ -150,7 +150,6 @@ class SearchPageState extends State<SearchPage>
         length: 4,
         vsync: this,
         animationDuration: const Duration(milliseconds: 300));
-    _pageController = PageController();
     _metadataCache.initialize();
     _loadAppDocumentsPath();
     _searchFocus.addListener(_onFocusChanged);
@@ -227,7 +226,6 @@ class SearchPageState extends State<SearchPage>
   void dispose() {
     _debounceTimer?.cancel();
     _tabController.dispose();
-    _pageController.dispose();
     _searchFocus.removeListener(_onFocusChanged);
     _searchController.dispose();
     _searchFocus.dispose();
@@ -298,9 +296,6 @@ class SearchPageState extends State<SearchPage>
         _loading = false;
       });
       _scheduleSearchUiStateSync();
-      _pageController.animateToPage(0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOutCubic);
       _tabController.animateTo(0);
     }
   }
@@ -334,12 +329,45 @@ class SearchPageState extends State<SearchPage>
     final artists = trimmed
         .split(RegExp(r'\s*,\s*|\s*&\s*|\s+(?:feat\.?|ft\.?|x)\s+',
             caseSensitive: false))
-        .map((a) => a.trim())
+        .map((a) {
+          var cleaned = a.trim();
+          // Remove leading/trailing brackets, parentheses, and punctuation
+          cleaned = cleaned.replaceAll(
+            RegExp(r'^[\s\(\[\{]+|[\s\)\]\}\.,;:!]+$'),
+            '',
+          );
+          return cleaned;
+        })
         .where((a) => a.isNotEmpty)
         .where((a) => seen.add(_normalize(a)))
         .toList();
 
     return artists;
+  }
+
+  List<String> _extractFeaturedArtistsFromTitle(String title) {
+    final featured = <String>[];
+    final bracketedFeat = RegExp(
+      r'\((?:feat\.?|ft\.?)\s+([^\)]+)\)|\[(?:feat\.?|ft\.?)\s+([^\]]+)\]',
+      caseSensitive: false,
+    );
+
+    for (final match in bracketedFeat.allMatches(title)) {
+      final names = (match.group(1) ?? match.group(2) ?? '').trim();
+      if (names.isEmpty) continue;
+      featured.addAll(_splitArtistNames(names));
+    }
+
+    final inlineFeat =
+        RegExp(r'\b(?:feat\.?|ft\.?)\s+(.+)$', caseSensitive: false)
+            .firstMatch(title)
+            ?.group(1)
+            ?.trim();
+    if (inlineFeat != null && inlineFeat.isNotEmpty) {
+      featured.addAll(_splitArtistNames(inlineFeat));
+    }
+
+    return featured;
   }
 
   String _primaryArtistName(String rawArtist) {
@@ -392,7 +420,10 @@ class SearchPageState extends State<SearchPage>
 
     for (final file in _libraryFiles(audioService)) {
       final song = _metadataCache.createSongFromFile(file);
-      final artists = _splitArtistNames(song.artist);
+      final artists = {
+        ..._splitArtistNames(song.artist),
+        ..._extractFeaturedArtistsFromTitle(song.title),
+      };
       if (artists.isEmpty) continue;
 
       for (final artist in artists) {
@@ -492,18 +523,22 @@ class SearchPageState extends State<SearchPage>
   }
 
   void _navigateToArtist(ITunesArtist artist, AudioPlayerService audioService) {
-    final offlineSongs = audioService.getPlaylistSongs('offline');
+    final allFiles = _libraryFiles(audioService);
     final artistFiles = <File>[];
     String? artwork;
-    for (final file in offlineSongs) {
+    for (final file in allFiles) {
       final song = _metadataCache.createSongFromFile(file);
-      final artists = _splitArtistNames(song.artist);
+      final artists = [
+        ..._splitArtistNames(song.artist),
+        ..._extractFeaturedArtistsFromTitle(song.title),
+      ];
       final matchesArtist =
           artists.any((name) => _fuzzyMatch(artist.artistName, name));
       if (matchesArtist) {
         artistFiles.add(file);
-        if (artwork == null && song.albumArt.isNotEmpty)
+        if (artwork == null && song.albumArt.isNotEmpty) {
           artwork = song.albumArt;
+        }
       }
     }
     _saveRecentSearch(artist.artistName);
@@ -618,22 +653,19 @@ class SearchPageState extends State<SearchPage>
           final vx = details.primaryVelocity ?? 0;
           final current = _tabController.index;
           final int next;
-          if (vx < -300 && current < 3) {
+          // Set a high velocity threshold so only fast/aggressive swipes switch tabs
+          const thresholdVelocity = 650.0;
+          if (vx < -thresholdVelocity && current < 3) {
             next = current + 1;
-          } else if (vx > 300 && current > 0) {
+          } else if (vx > thresholdVelocity && current > 0) {
             next = current - 1;
           } else {
             return;
           }
-          _pageController.animateToPage(
-            next,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOutCubic,
-          );
           _tabController.animateTo(next);
         },
-        child: PageView(
-          controller: _pageController,
+        child: TabBarView(
+          controller: _tabController,
           physics: const NeverScrollableScrollPhysics(),
           children: [
             _buildAllTab(audioService, bottomPad),
@@ -657,9 +689,6 @@ class SearchPageState extends State<SearchPage>
     }
     if (_searchFocus.hasFocus) {
       FocusScope.of(context).unfocus();
-      _pageController.animateToPage(0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOutCubic);
       _tabController.animateTo(0);
       return true;
     }
@@ -765,13 +794,6 @@ class SearchPageState extends State<SearchPage>
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: TabBar(
         controller: _tabController,
-        onTap: (index) {
-          _pageController.animateToPage(
-            index,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOutCubic,
-          );
-        },
         tabs: const [
           Tab(text: 'All'),
           Tab(text: 'Artists'),
@@ -783,7 +805,7 @@ class SearchPageState extends State<SearchPage>
         labelPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 0),
         indicator: BoxDecoration(
           borderRadius: BorderRadius.circular(22),
-          color: Colors.deepPurple.shade500,
+          color: Theme.of(context).colorScheme.primary,
         ),
         indicatorSize: TabBarIndicatorSize.tab,
         dividerColor: Colors.transparent,
@@ -808,8 +830,7 @@ class SearchPageState extends State<SearchPage>
         return false;
       },
       child: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics()),
+        physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           if (_query.isEmpty && _searchFocus.hasFocus) ...[
             if (_recentSearches.isNotEmpty)
@@ -868,8 +889,11 @@ class SearchPageState extends State<SearchPage>
                           _localArtists[index], audioService);
                     }
                     final onlineIndex = index - _localArtists.length;
-                    return _buildArtistRow(
-                        mergedArtistsOnline[onlineIndex], audioService);
+                    if (onlineIndex >= 0 && onlineIndex < mergedArtistsOnline.length) {
+                      return _buildArtistRow(
+                          mergedArtistsOnline[onlineIndex], audioService);
+                    }
+                    return const SizedBox.shrink();
                   },
                   childCount: _localArtists.length + mergedArtistsOnline.length,
                 ),
@@ -886,8 +910,11 @@ class SearchPageState extends State<SearchPage>
                           _localSongs[index], audioService);
                     }
                     final onlineIndex = index - _localSongs.length;
-                    return _buildSongRow(
-                        mergedSongsOnline[onlineIndex], audioService);
+                    if (onlineIndex >= 0 && onlineIndex < mergedSongsOnline.length) {
+                      return _buildSongRow(
+                          mergedSongsOnline[onlineIndex], audioService);
+                    }
+                    return const SizedBox.shrink();
                   },
                   childCount: _localSongs.length + mergedSongsOnline.length,
                 ),
@@ -919,6 +946,7 @@ class SearchPageState extends State<SearchPage>
 
   Widget _buildArtistsTab(AudioPlayerService audioService, double bottomPad) {
     final mergedArtistsOnline = _mergedOnlineArtists();
+    final accentColor = Theme.of(context).colorScheme.primary;
 
     return NotificationListener<ScrollStartNotification>(
       onNotification: (_) {
@@ -926,8 +954,7 @@ class SearchPageState extends State<SearchPage>
         return false;
       },
       child: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics()),
+        physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           if (_query.isEmpty)
             SliverFillRemaining(
@@ -940,11 +967,11 @@ class SearchPageState extends State<SearchPage>
                       width: 72,
                       height: 72,
                       decoration: BoxDecoration(
-                        color: Colors.grey[900],
+                        color: accentColor.withOpacity(0.1),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(Icons.person_rounded,
-                          size: 34, color: Colors.grey[600]),
+                          size: 34, color: accentColor),
                     ),
                     const SizedBox(height: 16),
                     const Text(
@@ -970,14 +997,17 @@ class SearchPageState extends State<SearchPage>
             if (_localArtists.isNotEmpty || mergedArtistsOnline.isNotEmpty)
               SliverList(
                 delegate: SliverChildBuilderDelegate(
-                  (_, i) {
+                  (context, i) {
                     if (i < _localArtists.length) {
                       return _buildLocalArtistRow(
                           _localArtists[i], audioService);
                     }
                     final onlineIndex = i - _localArtists.length;
-                    return _buildArtistRow(
-                        mergedArtistsOnline[onlineIndex], audioService);
+                    if (onlineIndex >= 0 && onlineIndex < mergedArtistsOnline.length) {
+                      return _buildArtistRow(
+                          mergedArtistsOnline[onlineIndex], audioService);
+                    }
+                    return const SizedBox.shrink();
                   },
                   childCount: _localArtists.length + mergedArtistsOnline.length,
                 ),
@@ -995,6 +1025,7 @@ class SearchPageState extends State<SearchPage>
 
   Widget _buildSongsTab(AudioPlayerService audioService, double bottomPad) {
     final mergedSongsOnline = _mergedOnlineTracks();
+    final accentColor = Theme.of(context).colorScheme.primary;
 
     return NotificationListener<ScrollStartNotification>(
       onNotification: (_) {
@@ -1002,8 +1033,7 @@ class SearchPageState extends State<SearchPage>
         return false;
       },
       child: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics()),
+        physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           if (_query.isEmpty)
             SliverFillRemaining(
@@ -1016,11 +1046,11 @@ class SearchPageState extends State<SearchPage>
                       width: 72,
                       height: 72,
                       decoration: BoxDecoration(
-                        color: Colors.grey[900],
+                        color: accentColor.withOpacity(0.1),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(Icons.music_note_rounded,
-                          size: 34, color: Colors.grey[600]),
+                          size: 34, color: accentColor),
                     ),
                     const SizedBox(height: 16),
                     const Text(
@@ -1046,13 +1076,16 @@ class SearchPageState extends State<SearchPage>
             if (_localSongs.isNotEmpty || mergedSongsOnline.isNotEmpty)
               SliverList(
                 delegate: SliverChildBuilderDelegate(
-                  (_, i) {
+                  (context, i) {
                     if (i < _localSongs.length) {
                       return _buildLocalSongRow(_localSongs[i], audioService);
                     }
                     final onlineIndex = i - _localSongs.length;
-                    return _buildSongRow(
-                        mergedSongsOnline[onlineIndex], audioService);
+                    if (onlineIndex >= 0 && onlineIndex < mergedSongsOnline.length) {
+                      return _buildSongRow(
+                          mergedSongsOnline[onlineIndex], audioService);
+                    }
+                    return const SizedBox.shrink();
                   },
                   childCount: _localSongs.length + mergedSongsOnline.length,
                 ),
@@ -1069,14 +1102,15 @@ class SearchPageState extends State<SearchPage>
   }
 
   Widget _buildRadioTab(AudioPlayerService audioService, double bottomPad) {
+    final accentColor = Theme.of(context).colorScheme.primary;
+
     return NotificationListener<ScrollStartNotification>(
       onNotification: (_) {
         if (_searchFocus.hasFocus) _searchFocus.unfocus();
         return false;
       },
       child: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics()),
+        physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           if (_query.isEmpty)
             SliverFillRemaining(
@@ -1089,11 +1123,11 @@ class SearchPageState extends State<SearchPage>
                       width: 72,
                       height: 72,
                       decoration: BoxDecoration(
-                        color: Colors.grey[900],
+                        color: accentColor.withOpacity(0.1),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(Icons.radio_rounded,
-                          size: 34, color: Colors.grey[600]),
+                          size: 34, color: accentColor),
                     ),
                     const SizedBox(height: 16),
                     const Text(
@@ -1374,6 +1408,8 @@ class SearchPageState extends State<SearchPage>
           _saveRecentSearch(song.title);
           audioService.playFileInContext(result.file, libraryFiles);
         },
+        onLongPress: () =>
+            _showLocalSongOptions(result, audioService, libraryFiles),
         splashColor: _splashColor,
         highlightColor: _highlightColor,
         child: Padding(
@@ -1531,6 +1567,8 @@ class SearchPageState extends State<SearchPage>
 
   Widget _buildSearchBar() {
     final focused = _searchFocus.hasFocus;
+    final accentColor = Theme.of(context).colorScheme.primary;
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       height: 52,
@@ -1538,13 +1576,13 @@ class SearchPageState extends State<SearchPage>
         color: const Color(0xFF1C1C1E),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: focused ? _searchBorderFocused : _searchBorderIdle,
+          color: focused ? accentColor.withOpacity(0.8) : _searchBorderIdle,
           width: 1.5,
         ),
         boxShadow: focused
             ? [
                 BoxShadow(
-                  color: _searchShadow,
+                  color: accentColor.withOpacity(0.25),
                   blurRadius: 12,
                   spreadRadius: 0,
                   offset: const Offset(0, 2),
@@ -1557,7 +1595,7 @@ class SearchPageState extends State<SearchPage>
           const SizedBox(width: 12),
           Icon(
             Icons.search_rounded,
-            color: focused ? Colors.deepPurple.shade300 : Colors.grey[500],
+            color: focused ? accentColor : Colors.grey[500],
             size: 22,
           ),
           const SizedBox(width: 8),
@@ -1665,6 +1703,7 @@ class SearchPageState extends State<SearchPage>
       color: Colors.transparent,
       child: InkWell(
         onTap: () => _playLocalMatch(track, audioService),
+        onLongPress: () => _showSongOptions(track, audioService),
         splashColor: _splashColor,
         highlightColor: _highlightColor,
         child: Padding(

@@ -5,6 +5,7 @@ import '../models/settings_model.dart';
 import '../services/audio_service.dart';
 import '../services/radio_playback_guard.dart';
 import '../widgets/voxel_toast.dart';
+import '../widgets/radio_menu_sheet.dart';
 import 'package:provider/provider.dart';
 
 bool _isValidArtwork(String url) {
@@ -156,10 +157,11 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
                       : CachedNetworkImage(
                           imageUrl: artworkUrl,
                           fit: BoxFit.cover,
+                          errorListener: (_) {},
                           placeholder: (_, __) =>
-                              Container(color: const Color(0xFF1A0A2A)),
+                              Container(color: Theme.of(context).colorScheme.primary.withOpacity(0.15)),
                           errorWidget: (_, __, ___) =>
-                              Container(color: const Color(0xFF1A0A2A)),
+                              Container(color: Theme.of(context).colorScheme.primary.withOpacity(0.15)),
                         ),
                   // Gradient overlay
                   Container(
@@ -234,6 +236,7 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
                       }
                       audioService.playRadioStation(station);
                     },
+                    onLongPress: () => _showRadioOptions(context, station, audioService),
                     behavior: HitTestBehavior.opaque,
                     child: Padding(
                       padding: const EdgeInsets.only(
@@ -245,25 +248,26 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
                             child: SizedBox(
                               width: 48,
                               height: 48,
-                              child: hasArt
-                                  ? CachedNetworkImage(
-                                      imageUrl: station.artworkUrl,
-                                      fit: BoxFit.cover,
-                                      filterQuality: FilterQuality.high,
-                                      placeholder: (_, __) => Container(
-                                        color: const Color(0xFF2A1A3A),
-                                      ),
-                                      errorWidget: (_, __, ___) => Container(
-                                        color: const Color(0xFF424242),
-                                        child: const Icon(Icons.radio,
-                                            color: Colors.white, size: 24),
-                                      ),
-                                    )
-                                  : Container(
-                                      color: const Color(0xFF424242),
-                                      child: const Icon(Icons.radio,
-                                          color: Colors.white, size: 24),
-                                    ),
+                               child: hasArt
+                                   ? CachedNetworkImage(
+                                       imageUrl: station.artworkUrl,
+                                       fit: BoxFit.cover,
+                                       filterQuality: FilterQuality.high,
+                                       errorListener: (_) {},
+                                       placeholder: (_, __) => Container(
+                                         color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                                       ),
+                                       errorWidget: (_, __, ___) => Container(
+                                         color: Theme.of(context).colorScheme.primary,
+                                         child: const Icon(Icons.radio,
+                                             color: Colors.white, size: 24),
+                                       ),
+                                     )
+                                   : Container(
+                                       color: Theme.of(context).colorScheme.primary,
+                                       child: const Icon(Icons.radio,
+                                           color: Colors.white, size: 24),
+                                     ),
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -304,7 +308,7 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(
                                 minWidth: 40, minHeight: 40),
-                            onPressed: () {},
+                            onPressed: () => _showRadioOptions(context, station, audioService),
                           ),
                         ],
                       ),
@@ -316,6 +320,20 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showRadioOptions(BuildContext context, RadioStation station, AudioPlayerService audioService) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      builder: (ctx) => RadioMenuSheet(
+        radio: station,
+        accentColor: Theme.of(context).colorScheme.primary,
+        audioService: audioService,
       ),
     );
   }

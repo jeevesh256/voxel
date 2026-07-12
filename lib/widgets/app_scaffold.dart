@@ -35,7 +35,7 @@ class AppScaffold extends StatelessWidget {
               child: BottomNavigationBar(
                 type: BottomNavigationBarType.fixed,
                 backgroundColor: Colors.black,
-                selectedItemColor: Colors.deepPurple.shade400,
+                selectedItemColor: Theme.of(context).colorScheme.primary,
                 unselectedItemColor: Colors.grey,
                 selectedFontSize: metrics.navLabelFontSize,
                 unselectedFontSize: metrics.navLabelFontSize,
@@ -60,15 +60,35 @@ class AppScaffold extends StatelessWidget {
                     ),
                   );
                 },
-                items: const [
+                items: [
                   BottomNavigationBarItem(
-                      icon: Icon(Icons.home), label: 'Home'),
+                    icon: Icon(
+                      selectedIndex == 0 ? Icons.home_rounded : Icons.home_outlined,
+                    ),
+                    label: 'Home',
+                  ),
                   BottomNavigationBarItem(
-                      icon: Icon(Icons.search), label: 'Search'),
+                    icon: Icon(
+                      Icons.search_rounded,
+                    ),
+                    label: 'Search',
+                  ),
                   BottomNavigationBarItem(
-                      icon: Icon(Icons.library_music), label: 'Library'),
+                    icon: Icon(
+                      selectedIndex == 2
+                          ? Icons.library_music_rounded
+                          : Icons.library_music_outlined,
+                    ),
+                    label: 'Library',
+                  ),
                   BottomNavigationBarItem(
-                      icon: Icon(Icons.settings), label: 'Settings'),
+                    icon: Icon(
+                      selectedIndex == 3
+                          ? Icons.settings_rounded
+                          : Icons.settings_outlined,
+                    ),
+                    label: 'Settings',
+                  ),
                 ],
               ),
             ),

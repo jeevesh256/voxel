@@ -2,6 +2,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/settings_model.dart';
 import '../models/song.dart';
 import '../services/audio_service.dart';
@@ -11,6 +12,7 @@ import '../services/song_metadata_cache.dart';
 import '../widgets/voxel_toast.dart';
 import '../widgets/create_playlist_dialog.dart';
 import '../widgets/song_menu_sheet.dart';
+import '../widgets/radio_menu_sheet.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'playlist_page.dart';
@@ -62,7 +64,7 @@ class _LibraryPageState extends State<LibraryPage>
   final TextEditingController _searchController = TextEditingController();
   LibrarySortOption _sortOption = LibrarySortOption.name;
   bool _isAscending = true;
-  late PageController _pageController;
+  bool _isScrollingVertically = false;
 
   @override
   void initState() {
@@ -71,7 +73,6 @@ class _LibraryPageState extends State<LibraryPage>
         length: 3,
         vsync: this,
         animationDuration: const Duration(milliseconds: 300));
-    _pageController = PageController();
     _metadataCache.initialize();
     _loadAppDocumentsPath();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -86,7 +87,6 @@ class _LibraryPageState extends State<LibraryPage>
   @override
   void dispose() {
     _tabController.dispose();
-    _pageController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -160,13 +160,6 @@ class _LibraryPageState extends State<LibraryPage>
                     Expanded(
                       child: TabBar(
                         controller: _tabController,
-                        onTap: (index) {
-                          _pageController.animateToPage(
-                            index,
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeInOutCubic,
-                          );
-                        },
                         tabs: const [
                           Tab(text: 'Playlists'),
                           Tab(text: 'Artists'),
@@ -178,7 +171,7 @@ class _LibraryPageState extends State<LibraryPage>
                             horizontal: 18, vertical: 0),
                         indicator: BoxDecoration(
                           borderRadius: BorderRadius.circular(22),
-                          color: Colors.deepPurple.shade500,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                         indicatorSize: TabBarIndicatorSize.tab,
                         dividerColor: Colors.transparent,
@@ -265,27 +258,23 @@ class _LibraryPageState extends State<LibraryPage>
       ),
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        // Only claim the gesture when it is clearly horizontal
         onHorizontalDragEnd: (details) {
           final vx = details.primaryVelocity ?? 0;
           final current = _tabController.index;
           final int next;
-          if (vx < -300 && current < 2) {
+          // Set a high velocity threshold so only fast/aggressive swipes switch tabs
+          const thresholdVelocity = 650.0;
+          if (vx < -thresholdVelocity && current < 2) {
             next = current + 1;
-          } else if (vx > 300 && current > 0) {
+          } else if (vx > thresholdVelocity && current > 0) {
             next = current - 1;
           } else {
             return;
           }
-          _pageController.animateToPage(
-            next,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOutCubic,
-          );
           _tabController.animateTo(next);
         },
-        child: PageView(
-          controller: _pageController,
+        child: TabBarView(
+          controller: _tabController,
           physics: const NeverScrollableScrollPhysics(),
           children: [
             _KeepAliveTabView(child: _buildPlaylistsView(bottomPad)),
@@ -341,6 +330,7 @@ class _LibraryPageState extends State<LibraryPage>
         final displayCount = showAll ? displayRadios.length : 5;
 
         return ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.only(top: 8, bottom: bottomPad),
           itemCount: displayCount + (showAll ? 0 : 1),
           itemBuilder: (context, index) {
@@ -386,103 +376,155 @@ class _LibraryPageState extends State<LibraryPage>
     );
   }
 
+  bool _isValidArtwork(String url) {
+    if (url.isEmpty) return false;
+    final uri = Uri.tryParse(url);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return false;
+    }
+
+    final host = uri.host.toLowerCase();
+    final path = uri.path.toLowerCase();
+    final thumbParam = uri.queryParameters['t']?.toLowerCase() ?? '';
+
+    if (host.startsWith('encrypted-tbn') && host.endsWith('gstatic.com')) {
+      return false;
+    }
+
+    if (host == 'de8as167a043l.cloudfront.net' ||
+        path.contains('/styles/images/logosplus/')) {
+      return false;
+    }
+
+    if (host == 'assets.laut.fm' && thumbParam.startsWith('_')) {
+      return false;
+    }
+
+    if (path.endsWith('/icon.png') || 
+        path.endsWith('/icon.ico') ||
+        path.endsWith('/favicon.ico')) {
+      return false;
+    }
+
+    if (path.contains('favicon')) {
+      return false;
+    }
+
+    return host.isNotEmpty &&
+        !path.endsWith('.ico') &&
+        !path.endsWith('.svg') &&
+        !path.endsWith('.bmp');
+  }
+
   Widget _buildRadioRow(dynamic radio, AudioPlayerService audioService) {
     final offlineMode = context.watch<SettingsModel>().offlineMode;
-    final hasArt = !offlineMode && (radio.artworkUrl as String).isNotEmpty;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () async {
-          final blockReason = await RadioPlaybackGuard.blockingMessage();
-          if (blockReason != null) {
-            final miniPlayerActive = audioService.isMiniPlayerVisible;
-            final bottomPad = MediaQuery.of(context).padding.bottom +
-                kBottomNavigationBarHeight +
-                (miniPlayerActive ? 70.0 : 0.0);
-            VoxelToast.show(
-              context,
-              blockReason,
-              bottomPadding: bottomPad,
-            );
-            return;
-          }
-          audioService.playRadioStation(radio);
-        },
-        splashColor: Colors.white.withOpacity(0.04),
-        highlightColor: Colors.white.withOpacity(0.03),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
+    final hasArt = !offlineMode && _isValidArtwork(radio.artworkUrl as String);
+    final accentColor = Theme.of(context).colorScheme.primary;
+
+    return GestureDetector(
+      onTap: () async {
+        final blockReason = await RadioPlaybackGuard.blockingMessage();
+        if (blockReason != null) {
+          final miniPlayerActive = audioService.isMiniPlayerVisible;
+          final bottomPad = MediaQuery.of(context).padding.bottom +
+              kBottomNavigationBarHeight +
+              (miniPlayerActive ? 70.0 : 0.0);
+          VoxelToast.show(
+            context,
+            blockReason,
+            bottomPadding: bottomPad,
+          );
+          return;
+        }
+        audioService.playRadioStation(radio);
+      },
+      onLongPress: () => _showRadioMenu(context, radio, audioService),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 16, right: 0, top: 6, bottom: 6),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: SizedBox(
+                width: 48,
+                height: 48,
                 child: hasArt
-                    ? Image.network(
-                        radio.artworkUrl as String,
-                        width: 56,
-                        height: 56,
+                    ? CachedNetworkImage(
+                        imageUrl: radio.artworkUrl as String,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _radioArtFallback(),
+                        filterQuality: FilterQuality.high,
+                        errorListener: (_) {},
+                        placeholder: (_, __) => Container(
+                          color: accentColor.withOpacity(0.2),
+                        ),
+                        errorWidget: (_, __, ___) => Container(
+                          color: accentColor.withOpacity(0.6),
+                          child: const Icon(Icons.radio,
+                              color: Colors.white, size: 24),
+                        ),
                       )
-                    : _radioArtFallback(),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      radio.name as String,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
+                    : Container(
+                        color: accentColor.withOpacity(0.6),
+                        child: const Icon(Icons.radio,
+                            color: Colors.white, size: 24),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    radio.name as String,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w400,
+                      fontSize: 16,
+                      color: Colors.white,
                     ),
-                    if ((radio.genre as String).isNotEmpty ||
-                        (radio.country as String).isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        [
-                          if ((radio.genre as String).isNotEmpty)
-                            radio.genre as String,
-                          if ((radio.country as String).isNotEmpty)
-                            radio.country as String,
-                        ].join(' · '),
-                        style: TextStyle(color: Colors.grey[500], fontSize: 13),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ],
-                ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    radio.genre as String,
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: 13,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
-              GestureDetector(
-                onTap: () => _confirmRemoveRadio(context, radio, audioService),
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: Icon(Icons.favorite_rounded,
-                      color: Colors.deepPurple.shade400, size: 20),
-                ),
-              ),
-            ],
-          ),
+            ),
+            IconButton(
+              onPressed: () => _showRadioMenu(context, radio, audioService),
+              icon: Icon(Icons.more_vert, color: Colors.grey[400], size: 22),
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _radioArtFallback() {
-    return Container(
-      width: 56,
-      height: 56,
-      decoration: BoxDecoration(
-        color: const Color(0xFFA855A8),
-        borderRadius: BorderRadius.circular(10),
+  void _showRadioMenu(
+      BuildContext context, dynamic radio, AudioPlayerService audioService) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      builder: (ctx) => RadioMenuSheet(
+        radio: radio,
+        accentColor: Theme.of(context).colorScheme.primary,
+        audioService: audioService,
+        onRemove: () => _confirmRemoveRadio(context, radio, audioService),
       ),
-      child: const Icon(Icons.radio_rounded, color: Colors.white, size: 26),
     );
   }
 
@@ -510,7 +552,7 @@ class _LibraryPageState extends State<LibraryPage>
               Navigator.of(ctx).pop();
             },
             child: Text('Remove',
-                style: TextStyle(color: Colors.deepPurple.shade300)),
+                style: TextStyle(color: Colors.red.shade300)),
           ),
         ],
       ),
@@ -565,6 +607,7 @@ class _LibraryPageState extends State<LibraryPage>
         }
 
         return ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.only(top: 8, bottom: bottomPad),
           children: [
             // ── System playlists ──
@@ -919,6 +962,7 @@ class _LibraryPageState extends State<LibraryPage>
     }
 
     return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.only(top: 8, bottom: bottomPad),
       itemCount: displayedArtists.length,
       itemBuilder: (context, index) {

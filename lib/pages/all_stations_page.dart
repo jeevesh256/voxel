@@ -5,6 +5,7 @@ import '../models/settings_model.dart';
 import '../services/audio_service.dart';
 import '../services/radio_playback_guard.dart';
 import '../widgets/voxel_toast.dart';
+import '../widgets/radio_menu_sheet.dart';
 import 'package:provider/provider.dart';
 
 bool _isValidArtwork(String url) {
@@ -69,30 +70,45 @@ class _AllStationsPageState extends State<AllStationsPage> {
   }
 
   Widget _buildHeroHeader(int stationCount) {
+    final accentColor = Theme.of(context).colorScheme.primary;
+
     return Stack(
       fit: StackFit.expand,
-        children: [
-          const Center(
-            child: Icon(
-              Icons.radio,
-              size: 120,
-              color: Colors.white24,
+      children: [
+        // Subtle accent color background glow
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                accentColor.withOpacity(0.25),
+                Colors.black,
+              ],
             ),
           ),
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                stops: [0.0, 0.55, 1.0],
-                colors: [
-                  Colors.transparent,
-                  Colors.black38,
-                  Colors.black,
-                ],
-              ),
+        ),
+        Center(
+          child: Icon(
+            Icons.radio,
+            size: 120,
+            color: accentColor.withOpacity(0.15),
+          ),
+        ),
+        Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              stops: [0.0, 0.55, 1.0],
+              colors: [
+                Colors.transparent,
+                Colors.black38,
+                Colors.black,
+              ],
             ),
           ),
+        ),
           Positioned(
             left: 20,
             right: 20,
@@ -201,6 +217,7 @@ class _AllStationsPageState extends State<AllStationsPage> {
                       }
                       audioService.playRadioStation(station);
                     },
+                    onLongPress: () => _showRadioOptions(context, station, audioService),
                     behavior: HitTestBehavior.opaque,
                     child: Padding(
                       padding: const EdgeInsets.only(
@@ -217,17 +234,18 @@ class _AllStationsPageState extends State<AllStationsPage> {
                                       imageUrl: station.artworkUrl,
                                       fit: BoxFit.cover,
                                       filterQuality: FilterQuality.high,
+                                      errorListener: (_) {},
                                       placeholder: (_, __) => Container(
-                                        color: const Color(0xFF2A1A3A),
+                                        color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
                                       ),
                                       errorWidget: (_, __, ___) => Container(
-                                        color: const Color(0xFF6A5B8E),
+                                        color: Theme.of(context).colorScheme.primary,
                                         child: const Icon(Icons.radio,
                                             color: Colors.white, size: 24),
                                       ),
                                     )
                                   : Container(
-                                      color: const Color(0xFF6A5B8E),
+                                      color: Theme.of(context).colorScheme.primary,
                                       child: const Icon(Icons.radio,
                                           color: Colors.white, size: 24),
                                     ),
@@ -269,7 +287,7 @@ class _AllStationsPageState extends State<AllStationsPage> {
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(
                                 minWidth: 40, minHeight: 40),
-                            onPressed: () {},
+                            onPressed: () => _showRadioOptions(context, station, audioService),
                           ),
                         ],
                       ),
@@ -281,6 +299,20 @@ class _AllStationsPageState extends State<AllStationsPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showRadioOptions(BuildContext context, RadioStation station, AudioPlayerService audioService) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      builder: (ctx) => RadioMenuSheet(
+        radio: station,
+        accentColor: Theme.of(context).colorScheme.primary,
+        audioService: audioService,
       ),
     );
   }

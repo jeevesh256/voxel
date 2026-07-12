@@ -291,11 +291,11 @@ class _ArtistPageState extends State<ArtistPage> {
                       width: 56,
                       height: 56,
                       decoration: BoxDecoration(
-                        color: Colors.deepPurple.shade400,
+                        color: Theme.of(context).colorScheme.primary,
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.deepPurple.shade400.withOpacity(0.3),
+                            color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
                             blurRadius: 12,
                             offset: const Offset(0, 4),
                           ),
@@ -365,6 +365,7 @@ class _ArtistPageState extends State<ArtistPage> {
                   onTap: () {
                     audioService.playFileInContext(file, widget.songs);
                   },
+                  onLongPress: () => _showSongOptionsSheet(file),
                   child: Padding(
                     padding: const EdgeInsets.only(
                         left: 16, right: 0, top: 6, bottom: 6),
@@ -599,6 +600,7 @@ class _ArtistPageState extends State<ArtistPage> {
                   onTap: () {
                     audioService.playFileInContext(file, widget.songs);
                   },
+                  onLongPress: () => _showSongOptionsSheet(file),
                   child: Padding(
                     padding: const EdgeInsets.only(
                         left: 24, right: 0, top: 8, bottom: 8),

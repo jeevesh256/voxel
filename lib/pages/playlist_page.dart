@@ -1398,11 +1398,11 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     width: 56,
                     height: 56,
                     decoration: BoxDecoration(
-                      color: Colors.deepPurple.shade400,
+                      color: Theme.of(context).colorScheme.primary,
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.deepPurple.shade400.withOpacity(0.3),
+                          color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -1736,6 +1736,7 @@ class _OptimizedSongTileState extends State<_OptimizedSongTile>
         onPressed: widget.onMoreTap,
       ),
       onTap: widget.onTap,
+      onLongPress: widget.onMoreTap,
     );
   }
 
