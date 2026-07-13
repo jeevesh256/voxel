@@ -131,9 +131,8 @@ class _LibraryPageState extends State<LibraryPage>
         70.0;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
-        backgroundColor: Colors.black,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         toolbarHeight: 68,
@@ -144,7 +143,6 @@ class _LibraryPageState extends State<LibraryPage>
             style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.w800,
-              color: Colors.white,
               letterSpacing: -0.5,
             ),
           ),
@@ -172,14 +170,14 @@ class _LibraryPageState extends State<LibraryPage>
                             horizontal: 18, vertical: 0),
                         indicator: BoxDecoration(
                           borderRadius: BorderRadius.circular(22),
-                          color: Theme.of(context).colorScheme.primary,
+                          color: Theme.of(context).colorScheme.primaryContainer,
                         ),
                         indicatorSize: TabBarIndicatorSize.tab,
                         dividerColor: Colors.transparent,
-                        labelColor: Colors.white,
-                        unselectedLabelColor: Colors.grey[500],
+                        labelColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                        unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.7),
                         labelStyle: const TextStyle(
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                           fontSize: 14,
                         ),
                         unselectedLabelStyle: const TextStyle(
@@ -233,21 +231,20 @@ class _LibraryPageState extends State<LibraryPage>
                   child: Container(
                     height: 44,
                     decoration: BoxDecoration(
-                      color: Colors.grey[900],
+                      color: Theme.of(context).colorScheme.surfaceContainerHigh,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: TextField(
                       controller: _searchController,
                       autofocus: true,
-                      style: const TextStyle(color: Colors.white, fontSize: 15),
-                      decoration: const InputDecoration(
+                      style: const TextStyle(fontSize: 15),
+                      decoration: InputDecoration(
                         hintText: 'Search...',
-                        hintStyle: TextStyle(color: Colors.grey, fontSize: 15),
                         border: InputBorder.none,
                         contentPadding:
-                            EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                         prefixIcon:
-                            Icon(Icons.search, color: Colors.grey, size: 18),
+                            Icon(Icons.search, color: Theme.of(context).colorScheme.onSurfaceVariant, size: 18),
                       ),
                       onChanged: (v) => setState(() => _searchQuery = v),
                     ),
@@ -522,48 +519,20 @@ class _LibraryPageState extends State<LibraryPage>
       BuildContext context, dynamic radio, AudioPlayerService audioService) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       isScrollControlled: true,
       useRootNavigator: true,
       builder: (ctx) => RadioMenuSheet(
         radio: radio,
         accentColor: Theme.of(context).colorScheme.primary,
         audioService: audioService,
-        onRemove: () => _confirmRemoveRadio(context, radio, audioService),
+        onRemove: () {
+          audioService.removeRadioFromPlaylist('favourite_radios', radio);
+        },
       ),
     );
   }
 
-  void _confirmRemoveRadio(
-      BuildContext context, dynamic radio, AudioPlayerService audioService) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Remove station?',
-            style: TextStyle(color: Colors.white)),
-        content: Text(
-          'Remove "${radio.name}" from your saved radios?',
-          style: TextStyle(color: Colors.grey[300]),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
-          ),
-          TextButton(
-            onPressed: () {
-              audioService.removeRadioFromPlaylist('favourite_radios', radio);
-              Navigator.of(ctx).pop();
-            },
-            child: Text('Remove',
-                style: TextStyle(color: Colors.red.shade300)),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   // ─── PLAYLISTS ───────────────────────────────────────────────────────────────
 
@@ -621,7 +590,7 @@ class _LibraryPageState extends State<LibraryPage>
                 'liked songs'.contains(_searchQuery.toLowerCase()))
               _buildPlaylistRow(
                 thumbnail: _solidThumbnail(
-                  color: Colors.deepPurple.shade200,
+                  color: Theme.of(context).colorScheme.primaryContainer,
                   icon: Icons.favorite_rounded,
                 ),
                 title: 'Liked Songs',
@@ -639,7 +608,7 @@ class _LibraryPageState extends State<LibraryPage>
                 'offline'.contains(_searchQuery.toLowerCase()))
               _buildPlaylistRow(
                 thumbnail: _solidThumbnail(
-                  color: const Color(0xFF5573B8),
+                  color: Theme.of(context).colorScheme.secondaryContainer,
                   icon: Icons.offline_pin_rounded,
                 ),
                 title: 'Offline',
@@ -662,7 +631,6 @@ class _LibraryPageState extends State<LibraryPage>
                   const Text(
                     'My Playlists',
                     style: TextStyle(
-                      color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
                     ),
@@ -671,7 +639,7 @@ class _LibraryPageState extends State<LibraryPage>
                   IconButton(
                     onPressed: _showCreatePlaylistDialog,
                     icon: Icon(Icons.add_rounded,
-                        color: Colors.deepPurple.shade300, size: 24),
+                        color: Theme.of(context).colorScheme.primary, size: 24),
                     tooltip: 'New playlist',
                   ),
                 ],
@@ -742,8 +710,8 @@ class _LibraryPageState extends State<LibraryPage>
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        splashColor: Colors.white.withOpacity(0.04),
-        highlightColor: Colors.white.withOpacity(0.03),
+        splashColor: Theme.of(context).colorScheme.primary.withOpacity(0.08),
+        highlightColor: Theme.of(context).colorScheme.primary.withOpacity(0.04),
         child: Padding(
           padding: const EdgeInsets.only(left: 16, right: 0, top: 8, bottom: 8),
           child: Row(
@@ -757,7 +725,6 @@ class _LibraryPageState extends State<LibraryPage>
                     Text(
                       title,
                       style: const TextStyle(
-                        color: Colors.white,
                         fontWeight: FontWeight.w600,
                         fontSize: 15,
                       ),
@@ -768,7 +735,7 @@ class _LibraryPageState extends State<LibraryPage>
                     Text(
                       subtitle,
                       style: TextStyle(
-                        color: Colors.grey[500],
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                         fontSize: 13,
                       ),
                     ),
@@ -795,7 +762,11 @@ class _LibraryPageState extends State<LibraryPage>
         color: color,
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Icon(icon, color: Colors.white, size: 26),
+      child: Icon(
+        icon,
+        color: color.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+        size: 26,
+      ),
     );
   }
 
@@ -803,7 +774,7 @@ class _LibraryPageState extends State<LibraryPage>
   Widget _playlistThumbnail(dynamic playlist, AudioPlayerService audioService) {
     final accentColor = playlist.artworkColor != null
         ? Color(playlist.artworkColor as int)
-        : const Color(0xFF80CBC4);
+        : Theme.of(context).colorScheme.tertiaryContainer;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),
@@ -826,8 +797,12 @@ class _LibraryPageState extends State<LibraryPage>
   Widget _coloredPlaylistThumb(Color color) {
     return Container(
       color: color,
-      child: const Center(
-        child: Icon(Icons.queue_music_rounded, color: Colors.white, size: 32),
+      child: Center(
+        child: Icon(
+          Icons.queue_music_rounded,
+          color: color.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+          size: 32,
+        ),
       ),
     );
   }
@@ -1015,7 +990,6 @@ class _LibraryPageState extends State<LibraryPage>
                         Text(
                           artist,
                           style: const TextStyle(
-                            color: Colors.white,
                             fontWeight: FontWeight.w600,
                             fontSize: 15,
                           ),
@@ -1026,7 +1000,7 @@ class _LibraryPageState extends State<LibraryPage>
                         Text(
                           '${songs.length} ${songs.length == 1 ? 'song' : 'songs'}',
                           style:
-                              TextStyle(color: Colors.grey[500], fontSize: 13),
+                              TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                         ),
                       ],
                     ),
@@ -1098,7 +1072,6 @@ class _LibraryPageState extends State<LibraryPage>
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       isScrollControlled: true,
       useRootNavigator: true,
       builder: (ctx) {
@@ -1256,7 +1229,6 @@ class _LibraryPageState extends State<LibraryPage>
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
-      backgroundColor: Colors.transparent,
       builder: (ctx) {
         bool dismissed = false;
         void dismiss() {
@@ -1327,7 +1299,6 @@ class _LibraryPageState extends State<LibraryPage>
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       isScrollControlled: true,
       isDismissible: true,
       enableDrag: true,
@@ -1363,7 +1334,6 @@ class _LibraryPageState extends State<LibraryPage>
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
-      backgroundColor: Colors.transparent,
       builder: (ctx) {
         bool dismissed = false;
         void dismiss() {
@@ -1428,7 +1398,6 @@ class _LibraryPageState extends State<LibraryPage>
     final result = await showModalBottomSheet<bool>(
       context: context,
       useRootNavigator: true,
-      backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) => DraggableScrollableSheet(
         initialChildSize: 0.3,

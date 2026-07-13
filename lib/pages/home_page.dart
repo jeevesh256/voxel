@@ -13,7 +13,8 @@ import '../services/radio_browser_service.dart';
 import '../services/radio_playback_guard.dart';
 import '../widgets/voxel_toast.dart';
 import 'playlist_page.dart'; // <-- Missing import added here
-import 'package:voxel/models/custom_playlist.dart';
+import '../services/artwork_validator.dart';
+import '../models/recently_played_item.dart';
 
 void pushMaterialPage(BuildContext context, Widget page) {
   Navigator.of(context).push(
@@ -83,7 +84,6 @@ class _HomePageState extends State<HomePage> {
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
-                  color: Colors.white,
                   letterSpacing: -0.3,
                 ),
               ),
@@ -92,7 +92,6 @@ class _HomePageState extends State<HomePage> {
                 onPressed: () =>
                     pushMaterialPage(context, AllStationsPage(stations: validStations)),
                 style: TextButton.styleFrom(
-                  foregroundColor: Colors.white70,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   shape: const StadiumBorder(),
@@ -104,9 +103,7 @@ class _HomePageState extends State<HomePage> {
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   visualDensity: VisualDensity.compact,
                 ),
-                child: const Text(
-                  'See all',
-                ),
+                child: const Text('See all'),
               ),
             ],
           ),
@@ -120,7 +117,7 @@ class _HomePageState extends State<HomePage> {
             itemCount: topStations.length,
             itemBuilder: (context, index) {
               final station = topStations[index];
-              final hasArt = _isValidArtwork(station.artworkUrl);
+              final hasArt = isValidArtwork(station.artworkUrl);
               return GestureDetector(
                 onTap: () async {
                   final blockReason =
@@ -151,25 +148,25 @@ class _HomePageState extends State<HomePage> {
                                 width: metrics.tileImageSize,
                                 fit: BoxFit.cover,
                                 filterQuality: FilterQuality.high,
-                                errorWidget: (_, __, ___) => Container(
+                                 errorWidget: (_, __, ___) => Container(
                                   height: metrics.tileImageSize,
                                   width: metrics.tileImageSize,
-                                  color: const Color(0xFF6A5B8E),
-                                  child: const Icon(Icons.radio,
-                                      color: Colors.white, size: 60),
+                                  color: Theme.of(context).colorScheme.primaryContainer,
+                                  child: Icon(Icons.radio,
+                                      color: Theme.of(context).colorScheme.onPrimaryContainer, size: 40),
                                 ),
                                 placeholder: (_, __) => Container(
                                   height: metrics.tileImageSize,
                                   width: metrics.tileImageSize,
-                                  color: const Color(0xFF2A1A3A),
+                                  color: Theme.of(context).colorScheme.surfaceContainerHigh,
                                 ),
                               )
                             : Container(
                                 height: metrics.tileImageSize,
                                 width: metrics.tileImageSize,
-                                color: const Color(0xFF6A5B8E),
-                                child: const Icon(Icons.radio,
-                                    color: Colors.white, size: 60),
+                                color: Theme.of(context).colorScheme.primaryContainer,
+                                child: Icon(Icons.radio,
+                                    color: Theme.of(context).colorScheme.onPrimaryContainer, size: 40),
                               ),
                       ),
                       const SizedBox(height: 12),
@@ -178,7 +175,6 @@ class _HomePageState extends State<HomePage> {
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 16,
-                          color: Colors.white,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -187,7 +183,7 @@ class _HomePageState extends State<HomePage> {
                       Text(
                         station.genre,
                         style: TextStyle(
-                          color: Colors.grey[400],
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 14,
                         ),
                         maxLines: 1,
@@ -262,8 +258,7 @@ class _HomePageState extends State<HomePage> {
     for (var station in validStations) {
       final stationGenre = station.genre.toLowerCase();
       for (var genre in allGenres) {
-        if (stationGenre.contains(genre.toLowerCase()) ||
-            _isGenreMatch(stationGenre, genre.toLowerCase())) {
+        if (_isGenreMatch(stationGenre, genre.toLowerCase())) {
           genreMap.putIfAbsent(genre, () => []).add(station);
           break; // Only add to first matching genre to avoid duplicates
         }
@@ -317,14 +312,14 @@ class _HomePageState extends State<HomePage> {
                           errorWidget: (_, __, ___) => Container(
                             height: metrics.tileImageSize,
                             width: metrics.tileImageSize,
-                            color: const Color(0xFF6A5B8E),
-                            child: const Icon(Icons.radio,
-                                color: Colors.white, size: 60),
+                            color: Theme.of(context).colorScheme.primaryContainer,
+                            child: Icon(Icons.radio,
+                                color: Theme.of(context).colorScheme.onPrimaryContainer, size: 40),
                           ),
                           placeholder: (_, __) => Container(
                             height: metrics.tileImageSize,
                             width: metrics.tileImageSize,
-                            color: const Color(0xFF2A1A3A),
+                            color: Theme.of(context).colorScheme.surfaceContainerHigh,
                           ),
                         ),
                       ),
@@ -334,7 +329,6 @@ class _HomePageState extends State<HomePage> {
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 16,
-                          color: Colors.white,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -343,7 +337,7 @@ class _HomePageState extends State<HomePage> {
                       Text(
                         '${stations.length} stations',
                         style: TextStyle(
-                          color: Colors.grey[400],
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 14,
                         ),
                         maxLines: 1,
@@ -399,17 +393,17 @@ class _HomePageState extends State<HomePage> {
         SliverAppBar(
           floating: true,
           snap: true,
-          backgroundColor: Colors.black,
+          backgroundColor: Theme.of(context).colorScheme.surface,
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           titleSpacing: 0,
           toolbarHeight: 68,
-          title: const Padding(
-            padding: EdgeInsets.fromLTRB(20, 0, 0, 0),
+          title: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 0, 0),
             child: Text(
               'Listen Now',
               style: TextStyle(
-                color: Colors.white,
+                color: Theme.of(context).colorScheme.onSurface,
                 fontSize: 28,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -0.5,
@@ -438,10 +432,10 @@ class _HomePageState extends State<HomePage> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       child: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 22,
           fontWeight: FontWeight.w800,
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.onSurface,
           letterSpacing: -0.3,
         ),
       ),
@@ -463,7 +457,7 @@ class _HomePageState extends State<HomePage> {
           title: 'Liked Songs',
           subtitle: '${likedFiles.length} song${likedFiles.length == 1 ? '' : 's'}',
           icon: Icons.favorite,
-          color: Colors.deepPurple.shade200,
+          color: Theme.of(context).colorScheme.primaryContainer,
           onTap: () {
             pushMaterialPage(
               context,
@@ -490,7 +484,7 @@ class _HomePageState extends State<HomePage> {
           icon: Icons.queue_music,
           color: playlist.artworkColor != null
               ? Color(playlist.artworkColor!)
-              : const Color(0xFF80CBC4),
+              : Theme.of(context).colorScheme.tertiaryContainer,
           imagePath: playlist.artworkPath,
           onTap: () {
             pushMaterialPage(
@@ -541,9 +535,16 @@ class _HomePageState extends State<HomePage> {
                                 errorBuilder: (_, __, ___) => Container(
                                   height: metrics.tileImageSize,
                                   width: metrics.tileImageSize,
-                                  color: item.color,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [item.color, item.color.withOpacity(0.5)],
+                                    ),
+                                  ),
                                   child: Icon(item.icon,
-                                      color: Colors.white, size: 60),
+                                      color: Colors.white, size: 40),
                                 ),
                               ),
                             )
@@ -551,11 +552,15 @@ class _HomePageState extends State<HomePage> {
                               height: metrics.tileImageSize,
                               width: metrics.tileImageSize,
                               decoration: BoxDecoration(
-                                color: item.color,
                                 borderRadius: BorderRadius.circular(12),
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [item.color, item.color.withOpacity(0.5)],
+                                ),
                               ),
                               child: Icon(item.icon,
-                                  color: Colors.white, size: 60),
+                                  color: Colors.white, size: 40),
                             ),
                       const SizedBox(height: 12),
                       Text(
@@ -563,7 +568,6 @@ class _HomePageState extends State<HomePage> {
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 16,
-                          color: Colors.white,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -572,7 +576,7 @@ class _HomePageState extends State<HomePage> {
                       Text(
                         item.subtitle,
                         style: TextStyle(
-                          color: Colors.grey[400],
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 14,
                         ),
                         maxLines: 1,
@@ -593,72 +597,16 @@ class _HomePageState extends State<HomePage> {
   Widget _buildRecentlyPlayedRow() {
     final metrics = _homeTileMetrics(context);
     final audioService = context.watch<AudioPlayerService>();
-    final List<_RecentlyPlayedItem> items = [];
-    // Use the new recently played playlist IDs for ordering
-    for (final playlistId in audioService.recentlyPlayedPlaylistIds) {
-      if (playlistId == 'liked') {
-        final likedFiles = audioService.getPlaylistSongs('liked');
-        if (likedFiles.isNotEmpty) {
-          items.add(_RecentlyPlayedItem(
-            title: 'Liked Songs',
-            subtitle:
-                '${likedFiles.length} song${likedFiles.length == 1 ? '' : 's'}',
-            icon: Icons.favorite,
-            color: Colors.deepPurple.shade200,
-            onTap: () {
-              pushMaterialPage(
-                context,
-                PlaylistPage(
-                  playlistId: 'liked',
-                  title: 'Liked Songs',
-                  icon: Icons.favorite,
-                  allowReorder: true,
-                ),
-              );
-            },
-          ));
-        }
-      } else {
-        final playlist = audioService.customPlaylists.firstWhere(
-          (p) => p.id == playlistId,
-          orElse: () => CustomPlaylist(
-            id: '',
-            name: '',
-            songPaths: const [],
-            createdAt: DateTime.fromMillisecondsSinceEpoch(0),
-            modifiedAt: DateTime.fromMillisecondsSinceEpoch(0),
-          ),
-        );
-        if (playlist.id.isNotEmpty) {
-          final songs = audioService.getPlaylistSongs(playlist.id);
-          if (songs.isNotEmpty) {
-            items.add(_RecentlyPlayedItem(
-              title: playlist.name,
-              subtitle: '${songs.length} song${songs.length == 1 ? '' : 's'}',
-              icon: Icons.queue_music,
-              color: playlist.artworkColor != null
-                  ? Color(playlist.artworkColor!)
-                  : const Color(0xFF80CBC4),
-              imagePath: playlist.artworkPath,
-              onTap: () {
-                pushMaterialPage(
-                  context,
-                  PlaylistPage(
-                    playlistId: playlist.id,
-                    title: playlist.name,
-                    icon: Icons.queue_music,
-                    allowReorder: true,
-                  ),
-                );
-              },
-            ));
-          }
-        }
-      }
-    }
+    final items = audioService.recentlyPlayedItems;
+
     if (items.isEmpty) {
       return const SizedBox.shrink();
     }
+
+    final primaryContainer = Theme.of(context).colorScheme.primaryContainer;
+    final secondaryContainer = Theme.of(context).colorScheme.secondaryContainer;
+    final tertiaryContainer = Theme.of(context).colorScheme.tertiaryContainer;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -670,49 +618,166 @@ class _HomePageState extends State<HomePage> {
             scrollDirection: Axis.horizontal,
             itemCount: items.length > 10 ? 10 : items.length,
             itemBuilder: (context, index) {
-              final item = items[index];
+              final RecentlyPlayedItem item = items[index];
+
+              // Tap action
+              final VoidCallback onTap = () async {
+                if (item.type == 'playlist') {
+                  pushMaterialPage(
+                    context,
+                    PlaylistPage(
+                      playlistId: item.id,
+                      title: item.title,
+                      icon: item.id == 'liked' ? Icons.favorite : Icons.queue_music,
+                      allowReorder: true,
+                    ),
+                  );
+                } else if (item.type == 'radio') {
+                  if (item.radioStation != null) {
+                    final blockReason = await RadioPlaybackGuard.blockingMessage();
+                    if (blockReason != null) {
+                      final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
+                      VoxelToast.show(context, blockReason, bottomPadding: bottomPad);
+                      return;
+                    }
+                    audioService.playRadioStation(item.radioStation!);
+                  }
+                } else if (item.type == 'song') {
+                  audioService.playFile(File(item.id));
+                }
+              };
+
+              // Fallback Icon and Color selection
+              IconData fallbackIcon;
+              Color fallbackBgColor;
+              if (item.type == 'playlist') {
+                if (item.id == 'liked') {
+                  fallbackIcon = Icons.favorite;
+                  fallbackBgColor = primaryContainer;
+                } else if (item.id == 'offline') {
+                  fallbackIcon = Icons.offline_pin_rounded;
+                  fallbackBgColor = secondaryContainer;
+                } else {
+                  fallbackIcon = Icons.queue_music;
+                  fallbackBgColor = tertiaryContainer;
+                }
+              } else if (item.type == 'radio') {
+                fallbackIcon = Icons.radio_rounded;
+                fallbackBgColor = primaryContainer;
+              } else {
+                fallbackIcon = Icons.music_note_rounded;
+                fallbackBgColor = tertiaryContainer;
+              }
+
+              // Artwork Widget builder
+              Widget artworkWidget;
+              if (item.artwork.isNotEmpty) {
+                if (item.type == 'radio') {
+                  artworkWidget = isValidArtwork(item.artwork)
+                      ? CachedNetworkImage(
+                          imageUrl: item.artwork,
+                          height: metrics.tileImageSize,
+                          width: metrics.tileImageSize,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.high,
+                          placeholder: (_, __) => Container(
+                            height: metrics.tileImageSize,
+                            width: metrics.tileImageSize,
+                            color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                          ),
+                          errorWidget: (_, __, ___) => Container(
+                            height: metrics.tileImageSize,
+                            width: metrics.tileImageSize,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [fallbackBgColor, fallbackBgColor.withOpacity(0.5)],
+                              ),
+                            ),
+                            child: Icon(fallbackIcon, color: Colors.white, size: 40),
+                          ),
+                        )
+                      : Container(
+                          height: metrics.tileImageSize,
+                          width: metrics.tileImageSize,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [fallbackBgColor, fallbackBgColor.withOpacity(0.5)],
+                            ),
+                          ),
+                          child: Icon(fallbackIcon, color: Colors.white, size: 40),
+                        );
+                } else {
+                  // Song or Playlist local file
+                  final artFile = File(item.artwork);
+                  artworkWidget = artFile.existsSync()
+                      ? Image.file(
+                          artFile,
+                          height: metrics.tileImageSize,
+                          width: metrics.tileImageSize,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            height: metrics.tileImageSize,
+                            width: metrics.tileImageSize,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [fallbackBgColor, fallbackBgColor.withOpacity(0.5)],
+                              ),
+                            ),
+                            child: Icon(fallbackIcon, color: Colors.white, size: 40),
+                          ),
+                        )
+                      : Container(
+                          height: metrics.tileImageSize,
+                          width: metrics.tileImageSize,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [fallbackBgColor, fallbackBgColor.withOpacity(0.5)],
+                            ),
+                          ),
+                          child: Icon(fallbackIcon, color: Colors.white, size: 40),
+                        );
+                }
+              } else {
+                artworkWidget = Container(
+                  height: metrics.tileImageSize,
+                  width: metrics.tileImageSize,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [fallbackBgColor, fallbackBgColor.withOpacity(0.5)],
+                    ),
+                  ),
+                  child: Icon(fallbackIcon, color: Colors.white, size: 40),
+                );
+              }
+
               return GestureDetector(
-                onTap: item.onTap,
+                onTap: onTap,
                 child: Container(
                   width: metrics.tileWidth,
                   margin: const EdgeInsets.only(right: 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      item.imagePath != null && item.imagePath!.isNotEmpty
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.file(
-                                File(item.imagePath!),
-                                height: metrics.tileImageSize,
-                                width: metrics.tileImageSize,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
-                                  height: metrics.tileImageSize,
-                                  width: metrics.tileImageSize,
-                                  color: item.color,
-                                  child: Icon(item.icon,
-                                      color: Colors.white, size: 60),
-                                ),
-                              ),
-                            )
-                          : Container(
-                              height: metrics.tileImageSize,
-                              width: metrics.tileImageSize,
-                              decoration: BoxDecoration(
-                                color: item.color,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Icon(item.icon,
-                                  color: Colors.white, size: 60),
-                            ),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: artworkWidget,
+                      ),
                       const SizedBox(height: 12),
                       Text(
                         item.title,
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 16,
-                          color: Colors.white,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -721,7 +786,7 @@ class _HomePageState extends State<HomePage> {
                       Text(
                         item.subtitle,
                         style: TextStyle(
-                          color: Colors.grey[400],
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 14,
                         ),
                         maxLines: 1,
@@ -770,49 +835,7 @@ class _HomeTileMetrics {
   final double rowHeight;
 }
 
-bool _isValidArtwork(String url) {
-  if (url.isEmpty) return false;
-  final uri = Uri.tryParse(url);
-  if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
-    return false;
-  }
-
-  final host = uri.host.toLowerCase();
-  final path = uri.path.toLowerCase();
-  final thumbParam = uri.queryParameters['t']?.toLowerCase() ?? '';
-
-  // These Google thumbnail URLs are often short-lived and return 404s.
-  if (host.startsWith('encrypted-tbn') && host.endsWith('gstatic.com')) {
-    return false;
-  }
-
-  // Known station-logo CDN entries that frequently fail DNS resolution.
-  if (host == 'de8as167a043l.cloudfront.net' ||
-      path.contains('/styles/images/logosplus/')) {
-    return false;
-  }
-
-  // Some laut.fm thumbnail variants are unstable and frequently return 404.
-  if (host == 'assets.laut.fm' && thumbParam.startsWith('_')) {
-    return false;
-  }
-
-  // Reject generic /icon.png and favicon-like paths that often return HTTP errors
-  if (path.endsWith('/icon.png') ||
-      path.endsWith('/icon.ico') ||
-      path.endsWith('/favicon.ico')) {
-    return false;
-  }
-
-  if (path.contains('favicon')) {
-    return false;
-  }
-
-  return host.isNotEmpty &&
-      !path.endsWith('.ico') &&
-      !path.endsWith('.svg') &&
-      !path.endsWith('.bmp');
-}
+// _isValidArtwork has been replaced by global isValidArtwork from services/artwork_validator.dart
 
 bool _isGenreMatch(String stationGenre, String targetGenre) {
   switch (targetGenre) {
@@ -844,7 +867,9 @@ bool _isGenreMatch(String stationGenre, String targetGenre) {
           stationGenre.contains('symphony') ||
           stationGenre.contains('opera');
     case 'country':
-      return stationGenre.contains('country') ||
+      return stationGenre.contains('country music') ||
+          stationGenre.contains('country-music') ||
+          stationGenre.contains('bluegrass') ||
           stationGenre.contains('folk') ||
           stationGenre.contains('americana');
     case 'blues':

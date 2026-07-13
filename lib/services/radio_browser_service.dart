@@ -22,7 +22,8 @@ class RadioBrowserService {
     try {
       final response = await http.get(uri);
       if (response.statusCode == 200) {
-        await prefs.setString(cacheKey, response.body);
+        final decodedBody = utf8.decode(response.bodyBytes);
+        await prefs.setString(cacheKey, decodedBody);
       }
     } catch (_) {}
   }
@@ -37,7 +38,8 @@ class RadioBrowserService {
     try {
       final response = await http.get(uri);
       if (response.statusCode == 200) {
-        await prefs.setString(cacheKey, response.body);
+        final decodedBody = utf8.decode(response.bodyBytes);
+        await prefs.setString(cacheKey, decodedBody);
       }
     } catch (_) {}
   }
@@ -56,7 +58,8 @@ class RadioBrowserService {
     try {
       final response = await http.get(uri);
       if (response.statusCode == 200) {
-        await prefs.setString(cacheKey, response.body);
+        final decodedBody = utf8.decode(response.bodyBytes);
+        await prefs.setString(cacheKey, decodedBody);
       }
     } catch (_) {}
   }
@@ -83,7 +86,8 @@ class RadioBrowserService {
     try {
       final response = await http.get(Uri.parse(_mirrorsUrl));
       if (response.statusCode == 200) {
-        final List mirrors = json.decode(response.body);
+        final decodedBody = utf8.decode(response.bodyBytes);
+        final List mirrors = json.decode(decodedBody);
         if (mirrors.isNotEmpty) {
           // Pick a random mirror
           final random = Random();
@@ -123,9 +127,10 @@ class RadioBrowserService {
         : '$baseUrl/stations/bytag/$genre?limit=$limit&hidebroken=true');
     final response = await http.get(uri);
     if (response.statusCode == 200) {
-      final List data = json.decode(response.body);
+      final decodedBody = utf8.decode(response.bodyBytes);
+      final List data = json.decode(decodedBody);
       // Save to cache
-      await prefs.setString(cacheKey, response.body);
+      await prefs.setString(cacheKey, decodedBody);
       return data.map((e) => RadioStation.fromJson(e)).where((s) => s.streamUrl.isNotEmpty).toList();
     }
     return [];
@@ -148,9 +153,10 @@ class RadioBrowserService {
     final uri = Uri.parse('$baseUrl/stations/topclick/$limit');
     final response = await http.get(uri);
     if (response.statusCode == 200) {
-      final List data = json.decode(response.body);
+      final decodedBody = utf8.decode(response.bodyBytes);
+      final List data = json.decode(decodedBody);
       // Save to cache
-      await prefs.setString(cacheKey, response.body);
+      await prefs.setString(cacheKey, decodedBody);
       return data.map((e) => RadioStation.fromJson(e)).where((s) => s.streamUrl.isNotEmpty).toList();
     }
     return [];
@@ -173,9 +179,10 @@ class RadioBrowserService {
     final uri = Uri.parse('$baseUrl/tags');
     final response = await http.get(uri);
     if (response.statusCode == 200) {
-      final List data = json.decode(response.body);
+      final decodedBody = utf8.decode(response.bodyBytes);
+      final List data = json.decode(decodedBody);
       // Save to cache
-      await prefs.setString(cacheKey, response.body);
+      await prefs.setString(cacheKey, decodedBody);
       return data.map((e) => e['name'] as String).toList();
     }
     return [];

@@ -55,17 +55,21 @@ class _PlaylistPageState extends State<PlaylistPage> {
   int _lastSongCount = 0;
   bool _isLoadingSongs = false;
 
-  // Consistent playlist colors - no extraction needed
-  final Color _playlistColor = Colors.deepPurple.shade400;
-  late final Color _playlistColorSubtle;
-  late final Color _playlistColorFaint;
+  late Color _playlistColor;
+  late Color _playlistColorSubtle;
+  late Color _playlistColorFaint;
   final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _initializeCache();
-    // Set consistent colors
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _playlistColor = Theme.of(context).colorScheme.primaryContainer;
     _playlistColorSubtle = _playlistColor.withOpacity(0.7);
     _playlistColorFaint = _playlistColor.withOpacity(0.15);
   }
@@ -423,7 +427,6 @@ class _PlaylistPageState extends State<PlaylistPage> {
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
-      backgroundColor: Colors.transparent,
       builder: (ctx) {
         bool dismissed = false;
         void dismiss() {
@@ -612,7 +615,6 @@ class _PlaylistPageState extends State<PlaylistPage> {
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
-      backgroundColor: Colors.transparent,
       barrierColor: Colors.black54,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setState) {
@@ -863,7 +865,6 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       isScrollControlled: true,
       useRootNavigator: true,
       builder: (context) => SongMenuSheet(
@@ -1004,7 +1005,6 @@ class _PlaylistPageState extends State<PlaylistPage> {
       onPressed: () {
         showModalBottomSheet(
           context: context,
-          backgroundColor: Colors.transparent,
           isScrollControlled: true,
           useRootNavigator: true,
           builder: (ctx) {
@@ -1155,7 +1155,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
     final customPlaylist = audioService.getCustomPlaylist(widget.playlistId);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       extendBodyBehindAppBar: true,
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight + 12),
@@ -1168,7 +1168,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     375.0)
                 .clamp(0.0, 1.0);
             return AppBar(
-              backgroundColor: Colors.black.withOpacity(opacity),
+              backgroundColor: Theme.of(context).colorScheme.surface.withOpacity(opacity),
               elevation: 0,
               surfaceTintColor: Colors.transparent,
               toolbarHeight: kToolbarHeight + 12,
@@ -1229,8 +1229,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        Colors.grey[900]!,
-                        Colors.black,
+                        Theme.of(context).colorScheme.surfaceContainerLow,
+                        Theme.of(context).colorScheme.surface,
                       ],
                     ),
                   ),
@@ -1290,9 +1290,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
                             end: Alignment.bottomCenter,
                             stops: const [0.0, 0.6, 1.0],
                             colors: [
-                              Colors.black.withOpacity(0.1),
-                              Colors.black.withOpacity(0.6),
-                              Colors.black,
+                              Theme.of(context).colorScheme.surface.withOpacity(0.1),
+                              Theme.of(context).colorScheme.surface.withOpacity(0.6),
+                              Theme.of(context).colorScheme.surface,
                             ],
                           ),
                         ),
@@ -1310,8 +1310,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     children: [
                       Text(
                         widget.title,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
                           fontSize: 40,
                           fontWeight: FontWeight.w900,
                           height: 1.0,
@@ -1321,10 +1321,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
                       const SizedBox(height: 10),
                       Text(
                         _isLoadingSongs
-                            ? 'Loading...'
+                             ? 'Loading...'
                             : '${allSongs.length} ${allSongs.length == 1 ? 'song' : 'songs'}',
                         style: TextStyle(
-                          color: Colors.grey[400],
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                         ),
@@ -1501,7 +1501,6 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       isScrollControlled: true,
       useRootNavigator: true,
       builder: (ctx) => SongMenuSheet(
@@ -1534,7 +1533,6 @@ class _PlaylistPageState extends State<PlaylistPage> {
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
-      backgroundColor: Colors.transparent,
       builder: (ctx) {
         bool dismissed = false;
         void dismiss() {

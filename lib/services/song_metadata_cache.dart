@@ -78,12 +78,20 @@ class SongMetadataCache {
         artist: cached['artist'] ?? 'Unknown Artist',
         album: cached['album'] ?? '',
         albumArt: cached['albumArt'] ?? '',
-        duration: Duration(milliseconds: cached['duration'] ?? 180000),
+        duration: Duration(milliseconds: cached['duration'] ?? 0),
       );
     }
 
-    // No cached metadata, use default Song.fromFile
-    return Song.fromFile(file);
+    // No cached metadata, return Song from File with Duration.zero to prevent 3-minute overrides
+    final name = file.path.split('/').last.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
+    return Song(
+      id: file.path,
+      filePath: file.path,
+      title: name,
+      artist: 'Unknown Artist',
+      album: '',
+      duration: Duration.zero,
+    );
   }
 
   /// Clear all cached metadata

@@ -16,7 +16,7 @@ class Song {
     required this.artist,
     this.album = '',
     this.albumArt = '',
-    this.duration = const Duration(minutes: 3),
+    this.duration = Duration.zero,
   });
 
   factory Song.fromFile(File file) {

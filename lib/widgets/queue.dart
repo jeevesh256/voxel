@@ -179,9 +179,9 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
             expand: false,
             builder: (context, scrollController) {
               return Container(
-                decoration: const BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.only(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                  borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(20),
                     topRight: Radius.circular(20),
                   ),
@@ -189,8 +189,8 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
                 clipBehavior: Clip.antiAlias,
                 child: NotificationListener<OverscrollNotification>(
                   onNotification: (notification) {
-                    // When scrolling past the edge, let the sheet handle it
-                    return false;
+                    // Prevent OverscrollNotification from bubbling up to StretchController during build/layout frame dispatch
+                    return true;
                   },
                   child: Consumer<PlaylistHandler>(
                     builder: (context, playlistHandler, _) {
@@ -224,7 +224,7 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
                                       child: Center(
                                         child: Text(
                                           'No songs in queue',
-                                          style: TextStyle(color: Colors.grey.shade400),
+                                          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                                         ),
                                       ),
                                     ),
@@ -319,19 +319,19 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
                                             if (audioService.isShuffling)
                                               Icon(
                                                 Icons.shuffle,
-                                                color: Colors.deepPurple.shade400,
+                                                color: Theme.of(context).colorScheme.primary,
                                                 size: 16,
                                               ),
                                             if (audioService.loopMode == LoopMode.all)
                                               Icon(
                                                 Icons.repeat,
-                                                color: Colors.deepPurple.shade400,
+                                                color: Theme.of(context).colorScheme.primary,
                                                 size: 16,
                                               )
                                             else if (audioService.loopMode == LoopMode.one)
                                               Icon(
                                                 Icons.repeat_one,
-                                                color: Colors.deepPurple.shade400,
+                                                color: Theme.of(context).colorScheme.primary,
                                                 size: 16,
                                               ),
                                             if (audioService.loopMode != LoopMode.off || audioService.isShuffling)
@@ -339,7 +339,7 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
                                             Text(
                                               '${queueSongs.length} ${queueSongs.length == 1 ? 'track' : 'tracks'}',
                                               style: TextStyle(
-                                                color: Colors.grey.shade400,
+                                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                                                 fontSize: 14,
                                               ),
                                             ),
@@ -362,7 +362,7 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
                                               audioService.loopMode == LoopMode.one 
                                                 ? Icons.repeat_one 
                                                 : Icons.queue_music,
-                                              color: Colors.grey.shade600,
+                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                                               size: 48,
                                             ),
                                             const SizedBox(height: 16),
@@ -371,7 +371,7 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
                                                 ? 'Current song on repeat'
                                                 : 'No more songs in queue',
                                               style: TextStyle(
-                                                color: Colors.grey.shade400,
+                                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                                                 fontSize: 16,
                                               ),
                                             ),
@@ -390,7 +390,7 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
                                               Text(
                                                 'Next Up',
                                                 style: TextStyle(
-                                                  color: Colors.grey.shade400,
+                                                  color: Theme.of(context).colorScheme.primary,
                                                   fontSize: 14,
                                                   fontWeight: FontWeight.w500,
                                                 ),
@@ -399,7 +399,7 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
                                               Container(
                                                 height: 1,
                                                 width: 20,
-                                                color: Colors.grey.shade600,
+                                                color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
                                               ),
                                             ],
                                           ),
@@ -451,7 +451,7 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
                                               Text(
                                                 'Later',
                                                 style: TextStyle(
-                                                  color: Colors.grey.shade400,
+                                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                                   fontSize: 14,
                                                   fontWeight: FontWeight.w500,
                                                 ),
@@ -460,7 +460,7 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
                                               Container(
                                                 height: 1,
                                                 width: 20,
-                                                color: Colors.grey.shade600,
+                                                color: Theme.of(context).colorScheme.outlineVariant,
                                               ),
                                             ],
                                           ),
@@ -528,7 +528,7 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
           width: 40,
           height: 4,
           decoration: BoxDecoration(
-            color: Colors.grey.shade400,
+            color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
             borderRadius: BorderRadius.circular(2),
           ),
         ),
@@ -538,17 +538,18 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
 
   Widget _buildQueueHeader() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
       width: double.infinity,
-      child: const Row(
+      child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
             'Queue',
             style: TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.1,
             ),
           ),
         ],
@@ -622,23 +623,25 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
         color: Colors.transparent,
         child: ListTile(
           key: ValueKey('listile_${song.id}'),
+          contentPadding: const EdgeInsets.only(left: 16, right: 0),
+          horizontalTitleGap: 12,
           leading: Builder(
             builder: (context) {
               final isPlaying = currentSong?.id == song.id;
               final artPath = song.albumArt ?? '';
 
               Widget placeholder(Color color) => Container(
-                    height: 44,
-                    width: 44,
+                    height: 50,
+                    width: 50,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(6),
                       color: color,
                     ),
                     child: isPlaying
-                        ? const Icon(Icons.play_circle, color: Colors.white)
+                        ? Icon(Icons.play_circle, color: Theme.of(context).colorScheme.primary)
                         : Icon(
                             isNextUp ? Icons.queue_music : Icons.music_note,
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                   );
 
@@ -647,48 +650,64 @@ class _DraggableQueueSheetState extends State<DraggableQueueSheet> {
                   borderRadius: BorderRadius.circular(6),
                   child: Image.file(
                     File(artPath),
-                    height: 44,
-                    width: 44,
+                    height: 50,
+                    width: 50,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => placeholder(
-                      isNextUp ? Colors.blue.shade200 : Colors.deepPurple.shade200,
+                      isNextUp
+                          ? Theme.of(context).colorScheme.secondaryContainer
+                          : Theme.of(context).colorScheme.surfaceContainerHighest,
                     ),
                   ),
                 );
               }
 
-              return placeholder(isNextUp ? Colors.blue.shade200 : Colors.deepPurple.shade200);
+              return placeholder(isNextUp
+                  ? Theme.of(context).colorScheme.secondaryContainer
+                  : Theme.of(context).colorScheme.surfaceContainerHighest);
             },
           ),
           title: Text(
             song.title,
-            style: const TextStyle(color: Colors.white),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           subtitle: Text(
             song.artist,
-            style: TextStyle(color: Colors.grey.shade400),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-          trailing: currentSong?.id == song.id 
-            ? Icon(
-                Icons.play_circle,
-                color: Colors.deepPurple.shade400,
-              )
-            : audioService.isShuffling && !isNextUp
-                ? const Icon(
-                    Icons.shuffle,
-                    color: Colors.grey,
-                    size: 16,
-                  )
-                : GestureDetector(
-                    onTap: () {}, // Absorb taps to prevent ListTile onTap
-                    child: ReorderableDragStartListener(
-                      index: index,
+          trailing: currentSong?.id == song.id
+              ? Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Icon(
+                    Icons.play_circle,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                )
+              : audioService.isShuffling && !isNextUp
+                  ? Padding(
+                      padding: const EdgeInsets.only(right: 12),
                       child: Icon(
-                        Icons.drag_handle,
-                        color: isNextUp ? Colors.blue.shade400 : Colors.grey,
+                        Icons.shuffle,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                        size: 16,
+                      ),
+                    )
+                  : ReorderableDragStartListener(
+                      index: index,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Icon(
+                          Icons.drag_handle,
+                          color: isNextUp
+                              ? Theme.of(context).colorScheme.secondary
+                              : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                        ),
                       ),
                     ),
-                  ),
           onTap: () {
             if (actualIndex >= 0 && actualIndex < songs.length) {
               audioService.playQueueItem(actualIndex);

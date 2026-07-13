@@ -41,7 +41,7 @@ class PersistentBottomBar extends StatelessWidget {
               items: [
                 BottomNavigationBarItem(
                   icon: Icon(
-                    currentIndex == 0 ? Icons.home_rounded : Icons.home_outlined,
+                    currentIndex == 0 ? Icons.home : Icons.home_outlined,
                   ),
                   label: 'Home',
                 ),

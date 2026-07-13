@@ -8,16 +8,17 @@ class LyricsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
       height: MediaQuery.of(context).size.height * 0.5,
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Lyrics',
             style: TextStyle(
-              color: Colors.white,
+              color: cs.onSurface,
               fontSize: 20,
               fontWeight: FontWeight.bold,
             ),
@@ -28,7 +29,7 @@ class LyricsView extends StatelessWidget {
               child: Text(
                 'No lyrics available',
                 style: TextStyle(
-                  color: Colors.grey.shade400,
+                  color: cs.onSurfaceVariant,
                   fontSize: 16,
                 ),
               ),
@@ -46,13 +47,12 @@ class FullScreenLyricsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
-    
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: Colors.transparent,
       body: GestureDetector(
         onTap: () => Navigator.pop(context),
         onVerticalDragEnd: (details) {
-          // Swipe down to dismiss
           if (details.primaryVelocity != null && details.primaryVelocity! > 300) {
             Navigator.pop(context);
           }
@@ -65,9 +65,9 @@ class FullScreenLyricsView extends StatelessWidget {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                Colors.deepPurple.shade400,
-                Colors.grey.shade900,
-                Colors.black,
+                cs.primaryContainer.withOpacity(0.6),
+                cs.surface,
+                cs.surfaceContainerLow,
               ],
             ),
           ),
@@ -76,12 +76,12 @@ class FullScreenLyricsView extends StatelessWidget {
               onTap: () {}, // Prevent tap from propagating to parent
               child: Column(
                 children: [
-                  _buildAppStyledHeader(context),
+                  _buildHeader(context),
                   const SizedBox(height: 24),
                   _buildSongInfo(context, audioService),
                   const SizedBox(height: 32),
                   Expanded(
-                    child: _buildLyricsContent(),
+                    child: _buildLyricsContent(context),
                   ),
                   const SizedBox(height: 40),
                 ],
@@ -93,13 +93,14 @@ class FullScreenLyricsView extends StatelessWidget {
     );
   }
 
-  Widget _buildAppStyledHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.close, color: Colors.white),
+            icon: Icon(Icons.close, color: cs.onSurface),
             onPressed: () => Navigator.pop(context),
             iconSize: 28,
           ),
@@ -109,14 +110,14 @@ class FullScreenLyricsView extends StatelessWidget {
               children: [
                 Icon(
                   Icons.lyrics,
-                  color: Colors.deepPurple.shade300,
+                  color: cs.primary,
                   size: 24,
                 ),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'Lyrics',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: cs.onSurface,
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
@@ -127,7 +128,7 @@ class FullScreenLyricsView extends StatelessWidget {
           IconButton(
             icon: Icon(
               Icons.share,
-              color: Colors.grey.shade400,
+              color: cs.onSurfaceVariant,
               size: 24,
             ),
             onPressed: () {
@@ -140,6 +141,7 @@ class FullScreenLyricsView extends StatelessWidget {
   }
 
   Widget _buildSongInfo(BuildContext context, AudioPlayerService audioService) {
+    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24.0),
       child: StreamBuilder<MediaItem?>(
@@ -148,16 +150,16 @@ class FullScreenLyricsView extends StatelessWidget {
           final metadata = snapshot.data;
           return Column(
             children: [
-              // Album art similar to main player
+              // Album art placeholder
               Container(
                 width: 120,
                 height: 120,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade800,
+                  color: cs.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.5),
+                      color: cs.shadow.withOpacity(0.4),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -165,16 +167,17 @@ class FullScreenLyricsView extends StatelessWidget {
                 ),
                 child: Icon(
                   Icons.music_note,
-                  color: Colors.grey.shade400,
+                  color: cs.onSurfaceVariant,
                   size: 48,
                 ),
               ),
               const SizedBox(height: 24),
               // Song title
               Text(
-                (metadata?.title ?? 'Unknown Track').replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), ''),
-                style: const TextStyle(
-                  color: Colors.white,
+                (metadata?.title ?? 'Unknown Track')
+                    .replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), ''),
+                style: TextStyle(
+                  color: cs.onSurface,
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
                 ),
@@ -187,7 +190,7 @@ class FullScreenLyricsView extends StatelessWidget {
               Text(
                 metadata?.artist ?? 'Unknown Artist',
                 style: TextStyle(
-                  color: Colors.grey.shade400,
+                  color: cs.onSurfaceVariant,
                   fontSize: 18,
                   fontWeight: FontWeight.w500,
                 ),
@@ -202,61 +205,60 @@ class FullScreenLyricsView extends StatelessWidget {
     );
   }
 
-  Widget _buildLyricsContent() {
+  Widget _buildLyricsContent(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32.0),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Icon with app styling
+          // Icon with themed styling
           Container(
             width: 100,
             height: 100,
             decoration: BoxDecoration(
-              color: Colors.deepPurple.shade400.withOpacity(0.2),
+              color: cs.primaryContainer.withOpacity(0.3),
               borderRadius: BorderRadius.circular(50),
               border: Border.all(
-                color: Colors.deepPurple.shade400.withOpacity(0.3),
+                color: cs.primary.withOpacity(0.3),
                 width: 2,
               ),
             ),
             child: Icon(
               Icons.lyrics_outlined,
               size: 50,
-              color: Colors.deepPurple.shade300,
+              color: cs.primary,
             ),
           ),
           const SizedBox(height: 32),
-          // Main message
-          const Text(
+          Text(
             'No lyrics available',
             style: TextStyle(
-              color: Colors.white,
+              color: cs.onSurface,
               fontSize: 28,
               fontWeight: FontWeight.bold,
             ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
-          // Subtitle
           Text(
             'Lyrics will appear here when they\'re\navailable for this track',
             style: TextStyle(
-              color: Colors.grey.shade400,
+              color: cs.onSurfaceVariant,
               fontSize: 16,
               height: 1.5,
             ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 40),
-          // Hint with app styling
+          // Swipe-to-close hint
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             decoration: BoxDecoration(
-              color: Colors.deepPurple.shade400.withOpacity(0.2),
+              color: cs.primaryContainer.withOpacity(0.25),
               borderRadius: BorderRadius.circular(25),
               border: Border.all(
-                color: Colors.deepPurple.shade400.withOpacity(0.3),
+                color: cs.primary.withOpacity(0.25),
                 width: 1,
               ),
             ),
@@ -266,13 +268,13 @@ class FullScreenLyricsView extends StatelessWidget {
                 Icon(
                   Icons.swipe_down_alt,
                   size: 18,
-                  color: Colors.deepPurple.shade300,
+                  color: cs.primary,
                 ),
                 const SizedBox(width: 10),
                 Text(
                   'Swipe down or tap to close',
                   style: TextStyle(
-                    color: Colors.grey.shade300,
+                    color: cs.onSurfaceVariant,
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
                   ),

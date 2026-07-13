@@ -5,6 +5,7 @@ import '../models/song.dart';  // Add this import
 import '../services/playlist_handler.dart';  // Add this import
 import '../models/radio_station.dart';
 import '../models/custom_playlist.dart';
+import '../models/recently_played_item.dart';
 import 'dart:io';
 import 'audio_queue_manager.dart';
 import 'package:rxdart/rxdart.dart';
@@ -65,6 +66,25 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
   late ConcatenatingAudioSource _playlist;
   
+  // BehaviorSubject that caches the last known valid duration.
+  // Unlike a stream getter, BehaviorSubject replays the last value to new
+  // subscribers immediately — so widget rebuilds after queue changes always
+  // receive the correct duration without waiting for durationStream to re-emit.
+  final BehaviorSubject<Duration> _durationSubject = BehaviorSubject.seeded(Duration.zero);
+
+  // BehaviorSubject that caches the last known current media track/station.
+  // Replays the current media instantly to new subscribers.
+  final BehaviorSubject<MediaItem?> _currentMediaSubject = BehaviorSubject.seeded(null);
+
+  /// Tracks whether ExoPlayer has emitted a real (file-parsed) duration for
+  /// the current song. Resets when the song changes. Used to reject
+  /// 180000ms tag re-emissions that occur after queue structural changes.
+  bool _durationConfirmedReal = false;
+
+  /// A stable duration stream. Always emits the last known good duration;
+  /// never regresses to Duration.zero or null during queue modifications.
+  Stream<Duration> get stableDurationStream => _durationSubject.stream;
+  
   // Spotify-style dual queue system
   final List<Song> _nextUpQueue = []; // Manually added songs (higher priority)
   bool _isCustomShuffling = false; // Our custom shuffle state
@@ -104,25 +124,74 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     _loadLikedTracks();
     _loadRecentlyPlayed();
 
-    // Listen to player index changes and shuffle mode changes
+    // Reset confirmation flag when song changes so new songs start fresh
     _player.currentIndexStream.listen((index) {
-      if (index != null) notifyListeners();
+      if (index != null) {
+        _durationConfirmedReal = false; // New song — treat next 180000ms as tag estimate, not rejection target
+        notifyListeners();
+      }
     });
 
     _player.shuffleModeEnabledStream.listen((enabled) {
       notifyListeners();
     });
+
+    // Feed valid durations into the BehaviorSubject.
+    // ExoPlayer emits the MediaItem tag duration (180000ms default) as a pre-estimate
+    // before parsing the actual file. On queue changes (move/insert), it re-emits
+    // 180000ms, overwriting the real duration. We reject those re-emissions once
+    // a real (non-180000ms) duration has been confirmed for the current song.
+    _player.durationStream.listen((d) {
+      if (d != null && d != Duration.zero) {
+        final isTagDefault = d.inMilliseconds == 180000;
+        if (!isTagDefault) {
+          // Real file-parsed duration — accept and mark confirmed
+          _durationConfirmedReal = true;
+          _durationSubject.add(d);
+        } else if (!_durationConfirmedReal) {
+          // Still waiting for real duration — accept tag estimate temporarily
+          _durationSubject.add(d);
+        }
+        // else: 180000ms after a real duration → queue change artifact, silently ignored
+      } else {
+        // null/zero (e.g. brief during structural queue change) → hold last good value
+        final current = _durationSubject.valueOrNull;
+        if (current != null && current != Duration.zero) {
+          _durationSubject.add(current);
+        }
+      }
+    });
+
+    // Listen to changes that affect the currently playing track metadata and update subject
+    _player.currentIndexStream.listen((_) => _updateCurrentMediaSubject());
+    _player.sequenceStream.listen((_) => _updateCurrentMediaSubject());
+    _player.durationStream.listen((_) => _updateCurrentMediaSubject());
+    _player.positionStream.listen((_) => _updateCurrentMediaSubject());
+  }
+
+  void _updateCurrentMediaSubject() {
+    final track = currentTrack;
+    if (_currentMediaSubject.value != track) {
+      _currentMediaSubject.add(track);
+    }
   }
   Future<void> _loadRecentlyPlayed() async {
     _prefs = await SharedPreferences.getInstance();
     final cached = _prefs.getStringList(_recentlyPlayedKey) ?? [];
-    _recentlyPlayedPlaylistIds.clear();
-    _recentlyPlayedPlaylistIds.addAll(cached);
+    _recentlyPlayedItems.clear();
+    for (final itemJson in cached) {
+      try {
+        _recentlyPlayedItems.add(RecentlyPlayedItem.fromJson(jsonDecode(itemJson)));
+      } catch (e) {
+        debugPrint('Error loading recently played item: $e');
+      }
+    }
     notifyListeners();
   }
 
   Future<void> _saveRecentlyPlayed() async {
-    await _prefs.setStringList(_recentlyPlayedKey, _recentlyPlayedPlaylistIds);
+    final encoded = _recentlyPlayedItems.map((item) => jsonEncode(item.toJson())).toList();
+    await _prefs.setStringList(_recentlyPlayedKey, encoded);
   }
 
   String? _currentPlaylistId;
@@ -142,6 +211,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   // Add missing getters
   Stream<Duration?> get durationStream => _player.durationStream;
   Duration? get duration => _player.duration;
+
   List<MapEntry<String, List<File>>> get allPlaylists {
     final allPlaylistEntries = <MapEntry<String, List<File>>>[];
     allPlaylistEntries.addAll(_playlists.entries);
@@ -150,16 +220,66 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
   // Get current track metadata
   MediaItem? get currentTrack {
-    if (_currentMedia != null) return _currentMedia;
     final sequence = player.sequence;
-    if (sequence == null || sequence.isEmpty) return null;
+    if (sequence == null || sequence.isEmpty) {
+      if (_currentMedia != null) {
+        final activeDur = player.duration ?? _currentMedia!.duration;
+        if (activeDur != null && activeDur != Duration.zero) {
+          return _currentMedia!.copyWith(duration: activeDur);
+        }
+      }
+      return _currentMedia;
+    }
 
     final currentIndex = player.currentIndex;
     if (currentIndex == null || currentIndex < 0 || currentIndex >= sequence.length) {
-      return null;
+      if (_currentMedia != null) {
+        final activeDur = player.duration ?? _currentMedia!.duration;
+        if (activeDur != null && activeDur != Duration.zero) {
+          return _currentMedia!.copyWith(duration: activeDur);
+        }
+      }
+      return _currentMedia;
     }
 
-    return sequence[currentIndex].tag as MediaItem?;
+    final item = sequence[currentIndex].tag as MediaItem?;
+    if (item != null) {
+      // Cross-reference with metadata cache for any edited tags
+      final cached = _metadataCache.getMetadata(item.id);
+      var displayItem = item;
+      if (cached != null) {
+        final cachedTitle = cached['title'] as String?;
+        final cachedArtist = cached['artist'] as String?;
+        final cachedAlbum = cached['album'] as String?;
+        final cachedAlbumArt = cached['albumArt'] as String?;
+
+        Uri? artUri;
+        if (cachedAlbumArt != null && cachedAlbumArt.isNotEmpty) {
+          final artFile = File(cachedAlbumArt);
+          if (artFile.existsSync()) {
+            artUri = Uri.file(cachedAlbumArt);
+          }
+        }
+        displayItem = item.copyWith(
+          title: cachedTitle ?? item.title,
+          artist: cachedArtist ?? item.artist,
+          album: (cachedAlbum != null && cachedAlbum.isNotEmpty) ? cachedAlbum : item.album,
+          artUri: artUri,
+        );
+      }
+
+      // If the duration is missing, zero, or exactly equal to the 3-minute fallback (180,000ms),
+      // override it with the actual loaded player duration.
+      final itemDurationMs = displayItem.duration?.inMilliseconds ?? 0;
+      final needsOverride = itemDurationMs == 0 || itemDurationMs == 180000;
+      final activeDuration = needsOverride ? (player.duration ?? displayItem.duration) : (displayItem.duration ?? player.duration);
+      
+      if (activeDuration != null && activeDuration != Duration.zero) {
+        return displayItem.copyWith(duration: activeDuration);
+      }
+      return displayItem;
+    }
+    return item ?? _currentMedia;
   }
 
   // Check if current track is liked
@@ -351,16 +471,14 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
     _player.sequenceStateStream.listen((state) {
       if (state?.currentSource?.tag != null) {
-        _currentMedia = state!.currentSource!.tag as MediaItem;
+        final tag = state!.currentSource!.tag as MediaItem;
+        _currentMedia = tag;
+
         // Only clear _currentRadioStation if the album is not 'Radio'
-        // _currentRadioStation is set properly in playRadioStation()
         if (_currentMedia?.album != 'Radio') {
           _currentRadioStation = null;
         }
-        
-        // Clean up played next up songs
         _cleanupPlayedNextUpSongs();
-        
         notifyListeners();
       }
     });
@@ -785,13 +903,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
         }
       }
       
-      // ConcatenatingAudioSource.move() handles the indices correctly
-      // No adjustment needed - just pass through
+      // Move item inside concatenating source
       await _playlist.move(oldIndex, newIndex);
-      
-      if (currentIndex == oldIndex) {
-        await _player.seek(_player.position, index: newIndex);
-      }
       
       notifyListeners();
     } catch (e) {
@@ -814,14 +927,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
   String? get currentPlaylistId => _currentPlaylistId;
 
-  Stream<MediaItem?> get currentMediaStream => Rx.combineLatest2(
-    _player.currentIndexStream,
-    _player.sequenceStream,
-    (index, sequence) {
-      if (index == null || sequence == null || sequence.isEmpty) return null;
-      return sequence[index].tag as MediaItem?;
-    },
-  ).distinct().asBroadcastStream();
+  Stream<MediaItem?> get currentMediaStream => _currentMediaSubject.stream;
 
   Future<void> toggleShuffle() async {
     try {
@@ -889,6 +995,18 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       _currentRadioStation = station;
       _currentPlaylistId = null;
       _currentMedia = _buildRadioMediaItem(station);
+      
+      // Track recently played radio station
+      _addRecentlyPlayedItem(RecentlyPlayedItem(
+        type: 'radio',
+        id: station.id,
+        title: station.name,
+        subtitle: station.genre,
+        artwork: station.artworkUrl,
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        radioStation: station,
+      ));
+      
       notifyListeners();
 
       try {
@@ -901,7 +1019,9 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       } catch (e) {
         debugPrint('Error setting audio source: $e');
       }
+      _updateCurrentMediaSubject();
       await _player.play();
+      _updateCurrentMediaSubject();
       notifyListeners();
     } catch (e) {
       debugPrint('Error playing radio: $e');
@@ -1095,106 +1215,29 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   /// metadata can rebuild immediately after edits.
   Future<void> refreshCurrentMetadata() async {
     try {
-      final currentIndex = _player.currentIndex;
-      if (currentIndex == null) {
-        notifyListeners();
-        return;
-      }
-      
       final sequence = _player.sequence;
-      if (sequence == null || sequence.isEmpty) {
-        notifyListeners();
-        return;
-      }
-      
-      // Build refreshed audio sources and queue entries from cache
-      final updatedSources = <AudioSource>[];
-      final updatedQueueSongs = <Song>[];
+      if (sequence != null && sequence.isNotEmpty) {
+        final updatedQueueSongs = <Song>[];
+        for (final source in sequence) {
+          final mediaItem = source.tag as MediaItem?;
+          if (mediaItem == null) continue;
 
-      for (final source in sequence) {
-        final mediaItem = source.tag as MediaItem?;
-
-        // If we cannot resolve the media item, keep the original source
-        if (mediaItem == null) {
-          updatedSources.add(source);
-          continue;
-        }
-
-        final file = File(mediaItem.id);
-        if (!await file.exists()) {
-          updatedSources.add(source);
-          continue;
-        }
-
-        final song = _metadataCache.createSongFromFile(file);
-
-        // Use cached album art only if the file still exists
-        Uri? artUri;
-        if (song.albumArt.isNotEmpty) {
-          final artFile = File(song.albumArt);
-          if (await artFile.exists()) {
-            artUri = Uri.file(song.albumArt);
-            debugPrint('Album art found for ${song.title}: ${song.albumArt}');
-          } else {
-            debugPrint('Album art file missing for ${song.title}: ${song.albumArt}');
+          final file = File(mediaItem.id);
+          if (await file.exists()) {
+            final song = _metadataCache.createSongFromFile(file);
+            updatedQueueSongs.add(song);
           }
         }
 
-        final refreshedMediaItem = MediaItem(
-          id: song.id,
-          title: song.title,
-          artist: song.artist,
-          album: mediaItem.album, // Preserve playlist context / Next Up marker
-          artUri: artUri,
-          duration: song.duration,
-        );
-
-        updatedSources.add(
-          AudioSource.file(
-            song.filePath,
-            tag: refreshedMediaItem,
-          ),
-        );
-
-        updatedQueueSongs.add(
-          song.copyWith(
-            album: refreshedMediaItem.album ?? song.album,
-            artist: refreshedMediaItem.artist ?? song.artist,
-          ),
-        );
-      }
-      
-      // Remember current position/state
-      final currentPosition = _player.position;
-      final wasPlaying = _player.playing;
-
-      // Swap in a fresh concatenating source so the player/sequence stream picks up new tags
-      final refreshedPlaylist = ConcatenatingAudioSource(children: updatedSources);
-      await _player.setAudioSource(
-        refreshedPlaylist,
-        initialIndex: currentIndex,
-        initialPosition: currentPosition,
-      );
-      _playlist = refreshedPlaylist;
-
-      // Keep the queue model in sync with refreshed metadata
-      if (updatedQueueSongs.isNotEmpty) {
-        _playlistHandler.updateQueue(updatedQueueSongs, playlistContext: _currentPlaylistId);
+        // Keep the queue model in sync with refreshed metadata
+        if (updatedQueueSongs.isNotEmpty) {
+          _playlistHandler.updateQueue(updatedQueueSongs, playlistContext: _currentPlaylistId);
+        }
       }
 
-      // Notify listeners so any UI using cached metadata refreshes immediately
-      notifyListeners();
-
-      if (wasPlaying) {
-        await _player.play();
-      }
-      
-      // Update cached current media reference
-      final refreshedSequence = _player.sequence;
-      if (refreshedSequence != null && refreshedSequence.isNotEmpty) {
-        _currentMedia = refreshedSequence[currentIndex].tag as MediaItem?;
-      }
-
+      // Explicitly update the cached media reference from currentTrack
+      _currentMedia = currentTrack;
+      _updateCurrentMediaSubject();
       notifyListeners();
     } catch (e) {
       debugPrint('Error refreshing metadata: $e');
@@ -1202,23 +1245,47 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   }
 
   // --- Recently Played State ---
-  final List<String> _recentlyPlayedPlaylistIds = [];
+  final List<RecentlyPlayedItem> _recentlyPlayedItems = [];
 
-  void addRecentlyPlayedPlaylist(String playlistId) {
-    _recentlyPlayedPlaylistIds.remove(playlistId);
-    _recentlyPlayedPlaylistIds.insert(0, playlistId);
-    if (_recentlyPlayedPlaylistIds.length > 10) {
-      _recentlyPlayedPlaylistIds.removeLast();
+  void _addRecentlyPlayedItem(RecentlyPlayedItem item) {
+    _recentlyPlayedItems.removeWhere((i) => i.type == item.type && i.id == item.id);
+    _recentlyPlayedItems.insert(0, item);
+    if (_recentlyPlayedItems.length > 25) {
+      _recentlyPlayedItems.removeLast();
     }
     _saveRecentlyPlayed();
     notifyListeners();
   }
 
-  List<String> get recentlyPlayedPlaylistIds => List.unmodifiable(_recentlyPlayedPlaylistIds);
+  void addRecentlyPlayedPlaylist(String playlistId) {
+    String playlistTitle = playlistId == 'liked' ? 'Liked Songs' : (playlistId == 'offline' ? 'Offline Files' : playlistId);
+    final customPlaylist = _customPlaylists[playlistId];
+    if (customPlaylist != null) {
+      playlistTitle = customPlaylist.name;
+    }
+    _addRecentlyPlayedItem(RecentlyPlayedItem(
+      type: 'playlist',
+      id: playlistId,
+      title: playlistTitle,
+      subtitle: '${getPlaylistSongs(playlistId).length} songs',
+      artwork: customPlaylist?.artworkPath ?? '',
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+    ));
+  }
+
+  List<RecentlyPlayedItem> get recentlyPlayedItems => List.unmodifiable(_recentlyPlayedItems);
+
+  Future<void> clearRecentlyPlayed() async {
+    _recentlyPlayedItems.clear();
+    await _prefs.remove(_recentlyPlayedKey);
+    notifyListeners();
+  }
 
   @override
   void dispose() {
     _currentRadioStation = null;
+    _durationSubject.close();
+    _currentMediaSubject.close();
     _player.dispose();
     super.dispose();
   }

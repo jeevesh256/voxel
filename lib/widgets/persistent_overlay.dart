@@ -1,3 +1,5 @@
+import 'package:flutter/cupertino.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -35,11 +37,23 @@ class _PersistentOverlayState extends State<PersistentOverlay>
       vsync: this,
       duration: const Duration(milliseconds: 450),
     );
-    _checkConnectivity();
-    Connectivity().onConnectivityChanged.listen(
-          (_) => _checkConnectivity(),
-          onError: (_) {},
-        );
+    _checkInitialConnection();
+    Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      if (mounted) {
+        setState(() {
+          _hasNetwork = results.any((r) => r != ConnectivityResult.none);
+        });
+      }
+    });
+  }
+
+  Future<void> _checkInitialConnection() async {
+    final results = await Connectivity().checkConnectivity();
+    if (mounted) {
+      setState(() {
+        _hasNetwork = results.any((r) => r != ConnectivityResult.none);
+      });
+    }
   }
 
   @override
@@ -48,146 +62,127 @@ class _PersistentOverlayState extends State<PersistentOverlay>
     super.dispose();
   }
 
-  Future<void> _checkConnectivity() async {
-    try {
-      final results = await Connectivity().checkConnectivity();
-      final hasNetwork = results.any((r) => r != ConnectivityResult.none);
-      if (mounted && _hasNetwork != hasNetwork) {
-        setState(() {
-          _hasNetwork = hasNetwork;
-        });
-      }
-    } catch (_) {
-      if (mounted && _hasNetwork != false) {
-        setState(() {
-          _hasNetwork = false;
-        });
-      }
-    }
-  }
-
   double _lerp(double a, double b, double t) => a + (b - a) * t;
 
   @override
   Widget build(BuildContext context) {
     final metrics = BottomChromeMetrics.of(context);
+    final scheme = Theme.of(context).colorScheme;
     final isOffline = !_hasNetwork;
     final topInset = MediaQuery.of(context).padding.top;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
     final audioService = context.watch<AudioPlayerService>();
     final isPlayerVisible = audioService.isMiniPlayerVisible;
 
-    return WillPopScope(
-      onWillPop: () async {
-        if (_playerController.value > 0.0) {
-          _playerController.animateTo(0.0, curve: Curves.easeOutCubic);
-          return false;
-        }
-        return true;
-      },
-      child: Container(
-        color: Colors.black,
-        child: Stack(
-          children: [
-            MediaQuery(
-              data: MediaQuery.of(context).copyWith(
-                padding: MediaQuery.of(context).padding.copyWith(
-                  bottom: MediaQuery.of(context).padding.bottom +
-                      metrics.navBarHeight +
-                      (isPlayerVisible ? metrics.miniPlayerHeight : 0.0),
-                ),
-              ),
-              child: widget.child,
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
+    // Custom Bottom Navigation Bar to avoid standard M3 NavigationBar height stretching
+    final destinations = [
+      (icon: Symbols.home_rounded, selectedIcon: Symbols.home_rounded, label: 'Home', usesFill: true),
+      (icon: Icons.search_rounded, selectedIcon: Icons.search_rounded, label: 'Search', usesFill: false),
+      (icon: Icons.library_music_outlined, selectedIcon: Icons.library_music_rounded, label: 'Library', usesFill: false),
+      (icon: Icons.settings_outlined, selectedIcon: Icons.settings_rounded, label: 'Settings', usesFill: false),
+    ];
+
+    final customNavBar = Container(
+      height: metrics.navBarHeight + bottomInset,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainer,
+        border: Border(
+          top: BorderSide(
+            color: scheme.outlineVariant.withOpacity(0.3),
+            width: 0.8,
+          ),
+        ),
+      ),
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: List.generate(destinations.length, (index) {
+          final isSelected = widget.currentIndex == index;
+          final item = destinations[index];
+          final color = isSelected ? scheme.primary : scheme.onSurfaceVariant.withOpacity(0.7);
+          
+          return Expanded(
+            child: InkWell(
+              onTap: () => widget.onTabChanged(index),
+              splashColor: Colors.transparent,
+              highlightColor: Colors.transparent,
               child: Column(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (isPlayerVisible)
-                    SizedBox(height: metrics.miniPlayerHeight),
-                  Theme(
-                    data: Theme.of(context).copyWith(
-                      splashColor: Colors.transparent,
-                      highlightColor: Colors.transparent,
-                    ),
-                    child: SizedBox(
-                      height: metrics.navBarHeight,
-                      child: BottomNavigationBar(
-                        type: BottomNavigationBarType.fixed,
-                        backgroundColor: Colors.black,
-                        selectedItemColor: Theme.of(context).colorScheme.primary,
-                        unselectedItemColor: Colors.grey,
-                        selectedFontSize: metrics.navLabelFontSize,
-                        unselectedFontSize: metrics.navLabelFontSize,
-                        iconSize: metrics.navIconSize,
-                        currentIndex: widget.currentIndex,
-                        elevation: 0,
-                        enableFeedback: false,
-                        onTap: widget.onTabChanged,
-                        items: [
-                          BottomNavigationBarItem(
-                            icon: Icon(
-                              widget.currentIndex == 0
-                                  ? Icons.home_rounded
-                                  : Icons.home_outlined,
-                            ),
-                            label: 'Home',
-                          ),
-                          BottomNavigationBarItem(
-                            icon: const Icon(
-                              Icons.search_rounded,
-                            ),
-                            label: 'Search',
-                          ),
-                          BottomNavigationBarItem(
-                            icon: Icon(
-                              widget.currentIndex == 2
-                                  ? Icons.library_music_rounded
-                                  : Icons.library_music_outlined,
-                            ),
-                            label: 'Library',
-                          ),
-                          BottomNavigationBarItem(
-                            icon: Icon(
-                              widget.currentIndex == 3
-                                  ? Icons.settings_rounded
-                                  : Icons.settings_outlined,
-                            ),
-                            label: 'Settings',
-                          ),
-                        ],
-                      ),
+                  Icon(
+                    isSelected ? item.selectedIcon : item.icon,
+                    color: color,
+                    size: metrics.navIconSize,
+                    fill: (isSelected && item.usesFill) ? 1.0 : 0.0,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    item.label,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: metrics.navLabelFontSize,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                     ),
                   ),
                 ],
               ),
             ),
+          );
+        }),
+      ),
+    );
 
+    return Scaffold(
+      backgroundColor: scheme.surface,
+      body: WillPopScope(
+        onWillPop: () async {
+          if (_playerController.value > 0.0) {
+            _playerController.animateTo(0.0, curve: Curves.easeOutCubic);
+            return false;
+          }
+          return true;
+        },
+        child: Stack(
+          children: [
+            // Body Content Area
+            Positioned.fill(
+              child: MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  padding: MediaQuery.of(context).padding.copyWith(
+                    bottom: bottomInset +
+                        metrics.navBarHeight +
+                        (isPlayerVisible ? metrics.miniPlayerHeight + 4.0 : 0.0),
+                  ),
+                ),
+                child: widget.child,
+              ),
+            ),
+
+            // Offline Indicator
             if (isOffline && !widget.hideOfflineIndicator)
               Positioned(
                 top: topInset + 8,
                 right: 12,
                 child: IgnorePointer(
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.32),
+                      color: scheme.surfaceContainerHigh.withOpacity(0.85),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.white24, width: 0.6),
+                      border: Border.all(
+                          color: scheme.outlineVariant, width: 0.6),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
+                      children: [
                         Icon(Icons.wifi_off_rounded,
-                            size: 12, color: Colors.white70),
-                        SizedBox(width: 6),
+                            size: 12, color: scheme.onSurfaceVariant),
+                        const SizedBox(width: 6),
                         Text(
                           'Offline',
                           style: TextStyle(
-                            color: Colors.white70,
+                            color: scheme.onSurfaceVariant,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 0.2,
@@ -199,20 +194,39 @@ class _PersistentOverlayState extends State<PersistentOverlay>
                 ),
               ),
 
-            // Sliding player sheet
+            // Bottom Navigation Bar Layer
+            AnimatedBuilder(
+              animation: _playerController,
+              builder: (context, child) {
+                final t = _playerController.value;
+                // Move nav bar fully out of screen boundary on player expand
+                final offset = _lerp(0.0, metrics.navBarHeight + bottomInset, t);
+                return Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: -offset,
+                  child: customNavBar,
+                );
+              },
+            ),
+
+            // Mini Player / Full Screen Sliding Player Sheet overlay
             if (isPlayerVisible)
               AnimatedBuilder(
                 animation: _playerController,
                 builder: (context, child) {
                   final t = _playerController.value;
                   final screenHeight = MediaQuery.of(context).size.height;
-                  final bottomPos = _lerp(metrics.navBarHeight, 0.0, t);
+                  
+                  // Position mini player directly above active navBar (metrics.navBarHeight + bottomInset)
+                  final currentNavBarHeight = _lerp(metrics.navBarHeight + bottomInset, 0.0, t);
+                  
                   final playerHeight = _lerp(metrics.miniPlayerHeight, screenHeight, t);
 
                   return Positioned(
                     left: 0,
                     right: 0,
-                    bottom: bottomPos,
+                    bottom: currentNavBarHeight,
                     height: playerHeight,
                     child: SlidingPlayer(
                       controller: _playerController,

@@ -32,7 +32,6 @@ class EditMetadataSheet extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
-      backgroundColor: Colors.transparent,
       barrierColor: Colors.black54,
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.9,

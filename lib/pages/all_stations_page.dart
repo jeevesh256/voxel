@@ -8,50 +8,9 @@ import '../services/radio_playback_guard.dart';
 import '../widgets/voxel_toast.dart';
 import '../widgets/radio_menu_sheet.dart';
 import 'package:provider/provider.dart';
+import '../services/artwork_validator.dart';
 
-bool _isValidArtwork(String url) {
-  if (url.isEmpty) return false;
-  final uri = Uri.tryParse(url);
-  if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
-    return false;
-  }
-
-  final host = uri.host.toLowerCase();
-  final path = uri.path.toLowerCase();
-  final thumbParam = uri.queryParameters['t']?.toLowerCase() ?? '';
-
-  // These Google thumbnail URLs are often short-lived and return 404s.
-  if (host.startsWith('encrypted-tbn') && host.endsWith('gstatic.com')) {
-    return false;
-  }
-
-  // Known station-logo CDN entries that frequently fail DNS resolution.
-  if (host == 'de8as167a043l.cloudfront.net' ||
-      path.contains('/styles/images/logosplus/')) {
-    return false;
-  }
-
-  // Some laut.fm thumbnail variants are unstable and frequently return 404.
-  if (host == 'assets.laut.fm' && thumbParam.startsWith('_')) {
-    return false;
-  }
-
-  // Reject generic /icon.png and favicon-like paths that often return HTTP errors
-  if (path.endsWith('/icon.png') || 
-      path.endsWith('/icon.ico') ||
-      path.endsWith('/favicon.ico')) {
-    return false;
-  }
-
-  if (path.contains('favicon')) {
-    return false;
-  }
-
-  return host.isNotEmpty &&
-      !path.endsWith('.ico') &&
-      !path.endsWith('.svg') &&
-      !path.endsWith('.bmp');
-}
+// _isValidArtwork has been replaced by global isValidArtwork from services/artwork_validator.dart
 
 class AllStationsPage extends StatefulWidget {
   final List<RadioStation> stations;
@@ -147,7 +106,7 @@ class _AllStationsPageState extends State<AllStationsPage> {
   Widget build(BuildContext context) {
     final audioService = context.read<AudioPlayerService>();
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       extendBodyBehindAppBar: true,
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight + 12),
@@ -160,7 +119,7 @@ class _AllStationsPageState extends State<AllStationsPage> {
                     320.0)
                 .clamp(0.0, 1.0);
             return AppBar(
-              backgroundColor: Colors.black.withOpacity(opacity),
+              backgroundColor: Theme.of(context).colorScheme.surface.withOpacity(opacity),
               elevation: 0,
               surfaceTintColor: Colors.transparent,
               toolbarHeight: kToolbarHeight + 12,
@@ -202,7 +161,7 @@ class _AllStationsPageState extends State<AllStationsPage> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final station = widget.stations[index];
-                   final hasArt = _isValidArtwork(station.artworkUrl);
+                  final hasArt = isValidArtwork(station.artworkUrl);
                   return GestureDetector(
                     onTap: () async {
                       final blockReason = await RadioPlaybackGuard.blockingMessage();
@@ -312,7 +271,6 @@ class _AllStationsPageState extends State<AllStationsPage> {
   void _showRadioOptions(BuildContext context, RadioStation station, AudioPlayerService audioService) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       isScrollControlled: true,
       useRootNavigator: true,
       builder: (ctx) => RadioMenuSheet(

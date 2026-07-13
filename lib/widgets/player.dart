@@ -17,6 +17,7 @@ import '../widgets/song_menu_sheet.dart';
 import 'queue.dart';
 import 'bottom_chrome_metrics.dart';
 import 'lyrics.dart';
+import '../services/artwork_validator.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -170,7 +171,7 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
               child: Container(
                 decoration: BoxDecoration(
                   borderRadius: radius,
-                  color: collapsedColor,
+                  color: Theme.of(context).colorScheme.surfaceContainerHigh,
                 ),
                 child: ClipRRect(
                   borderRadius: radius,
@@ -180,10 +181,12 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                       Positioned.fill(
                         child: Opacity(
                           opacity: t,
-                          child: DynamicBackground(
-                            metadata: metadata,
-                            fallbackColor: Theme.of(context).colorScheme.primary,
-                            child: const SizedBox.expand(),
+                          child: RepaintBoundary(
+                            child: DynamicBackground(
+                              metadata: metadata,
+                              fallbackColor: Theme.of(context).colorScheme.primary,
+                              child: const SizedBox.expand(),
+                            ),
                           ),
                         ),
                       ),
@@ -197,85 +200,87 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                           height: metrics.miniPlayerHeight,
                           child: Opacity(
                             opacity: miniPlayerOpacity,
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      SizedBox(
-                                        height: metrics.miniPlayerTitleHeight,
-                                        child: AutoScrollText(
-                                          isRadio && radio != null
-                                              ? radio.name
-                                              : metadata?.title ?? 'No Track Playing',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
+                            child: RepaintBoundary(
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        SizedBox(
+                                          height: metrics.miniPlayerTitleHeight,
+                                          child: AutoScrollText(
+                                            isRadio && radio != null
+                                                ? radio.name
+                                                : metadata?.title ?? 'No Track Playing',
+                                            style: TextStyle(
+                                              color: Theme.of(context).colorScheme.onSurface,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            velocity: 20.0,
+                                            pauseAfterRound: const Duration(milliseconds: 1600),
+                                            syncKey: isRadio && radio != null
+                                                ? 'radio-${radio.id}'
+                                                : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
                                           ),
-                                          velocity: 20,
-                                          pauseAfterRound: const Duration(milliseconds: 1600),
-                                          syncKey: isRadio && radio != null
-                                              ? 'radio-${radio.id}'
-                                              : 'song-${metadata?.id ?? metadata?.title ?? "unknown"}',
                                         ),
-                                      ),
-                                      SizedBox(
-                                        height: metrics.miniPlayerArtistHeight,
-                                        child: Text(
-                                          isRadio && radio != null
-                                              ? (radio.genre)
-                                              : primaryArtist(metadata?.artist),
-                                          style: TextStyle(
-                                            color: Colors.grey.shade400,
-                                            fontSize: 12,
+                                        SizedBox(
+                                          height: metrics.miniPlayerArtistHeight,
+                                          child: Text(
+                                            isRadio && radio != null
+                                                ? (radio.genre)
+                                                : primaryArtist(metadata?.artist),
+                                            style: TextStyle(
+                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                              fontSize: 12,
+                                            ),
+                                            maxLines: 1,
+                                            softWrap: false,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                          maxLines: 1,
-                                          softWrap: false,
-                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                IconButton(
-                                  icon: Icon(
-                                    isLiked ? Icons.favorite : Icons.favorite_border,
-                                    color: isLiked
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Colors.white,
-                                  ),
-                                  iconSize: 24,
-                                  onPressed: () {
-                                    _triggerHapticLike();
-                                    if (isRadio && radio != null) {
-                                      if (audioService
-                                          .getPlaylistRadios('favourite_radios')
-                                          .any((r) => r.id == radio.id)) {
-                                        audioService.removeRadioFromPlaylist(
-                                            'favourite_radios', radio);
+                                  IconButton(
+                                    icon: Icon(
+                                      isLiked ? Icons.favorite : Icons.favorite_border,
+                                      color: isLiked
+                                          ? Theme.of(context).colorScheme.primary
+                                          : Colors.white,
+                                    ),
+                                    iconSize: 24,
+                                    onPressed: () {
+                                      _triggerHapticLike();
+                                      if (isRadio && radio != null) {
+                                        if (audioService
+                                            .getPlaylistRadios('favourite_radios')
+                                            .any((r) => r.id == radio.id)) {
+                                          audioService.removeRadioFromPlaylist(
+                                              'favourite_radios', radio);
+                                        } else {
+                                          audioService.addRadioToPlaylist(
+                                              'favourite_radios', radio);
+                                        }
                                       } else {
-                                        audioService.addRadioToPlaylist(
-                                            'favourite_radios', radio);
+                                        audioService.toggleLike();
                                       }
-                                    } else {
-                                      audioService.toggleLike();
-                                    }
-                                  },
-                                ),
-                                IconButton(
-                                  icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
-                                  color: Colors.white,
-                                  iconSize: 24,
-                                  onPressed: () {
-                                    _triggerHapticPlayPause();
-                                    audioService.playPause();
-                                  },
-                                ),
-                                SizedBox(width: metrics.miniPlayerHeight * 0.16),
-                              ],
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
+                                    color: Theme.of(context).colorScheme.onSurface,
+                                    iconSize: 24,
+                                    onPressed: () {
+                                      _triggerHapticPlayPause();
+                                      audioService.playPause();
+                                    },
+                                  ),
+                                  SizedBox(width: metrics.miniPlayerHeight * 0.16),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -288,7 +293,9 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                           top: 0,
                           child: Opacity(
                             opacity: fullScreenOpacity,
-                            child: _buildHeader(context),
+                            child: RepaintBoundary(
+                              child: _buildHeader(context),
+                            ),
                           ),
                         ),
 
@@ -301,14 +308,16 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                           top: expandedTop + expandedSize + 8.0,
                           child: Opacity(
                             opacity: fullScreenOpacity,
-                            child: SingleChildScrollView(
-                              physics: const ClampingScrollPhysics(),
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  minHeight: (screenHeight - (expandedTop + expandedSize + 8.0) - (bottomInset + 16.0)).clamp(0.0, double.infinity),
-                                ),
-                                child: Center(
-                                  child: _buildControls(context),
+                            child: RepaintBoundary(
+                              child: SingleChildScrollView(
+                                physics: const ClampingScrollPhysics(),
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    minHeight: (screenHeight - (expandedTop + expandedSize + 8.0) - (bottomInset + 16.0)).clamp(0.0, double.infinity),
+                                  ),
+                                  child: Center(
+                                    child: _buildControls(context),
+                                  ),
                                 ),
                               ),
                             ),
@@ -337,11 +346,13 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(t * 15.0 + 5.0),
-                            child: _buildArtworkWidget(
-                              context,
-                              isRadio: isRadio,
-                              radio: radio,
-                              metadata: metadata,
+                            child: RepaintBoundary(
+                              child: _buildArtworkWidget(
+                                context,
+                                isRadio: isRadio,
+                                radio: radio,
+                                metadata: metadata,
+                              ),
                             ),
                           ),
                         ),
@@ -376,44 +387,54 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
       required RadioStation? radio,
       required MediaItem? metadata,
   }) {
-    final fallbackIcon = const Center(
-      child: FittedBox(
-        fit: BoxFit.contain,
-        child: Padding(
-          padding: EdgeInsets.all(12.0),
-          child: Icon(Icons.music_note_rounded, size: 80, color: Colors.white),
+    Widget getFallbackIcon(bool isRadioItem) {
+      return Center(
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Icon(
+              isRadioItem ? Icons.radio_rounded : Icons.music_note_rounded,
+              size: 80,
+              color: Colors.white,
+            ),
+          ),
         ),
-      ),
-    );
+      );
+    }
 
-    if (isRadio && radio != null && radio.artworkUrl.isNotEmpty) {
+    if (isRadio && radio != null && radio.artworkUrl.isNotEmpty && isValidArtwork(radio.artworkUrl)) {
       return Image.network(
         radio.artworkUrl,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => fallbackIcon,
+        errorBuilder: (_, __, ___) => getFallbackIcon(true),
       );
     } else if (metadata?.artUri != null) {
-      if (metadata!.artUri!.scheme == 'file') {
+      final artUrlStr = metadata!.artUri!.toString();
+      if (metadata.artUri!.scheme == 'file') {
         return Image.file(
           File(metadata.artUri!.toFilePath()),
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => fallbackIcon,
+          errorBuilder: (_, __, ___) => getFallbackIcon(false),
+        );
+      } else if (isValidArtwork(artUrlStr)) {
+        return Image.network(
+          artUrlStr,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => getFallbackIcon(false),
         );
       } else {
-        return Image.network(
-          metadata.artUri.toString(),
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => fallbackIcon,
-        );
+        return getFallbackIcon(isRadio);
       }
     } else {
-      return fallbackIcon;
+      return getFallbackIcon(isRadio);
     }
   }
 
   Widget _buildHeader(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
     final playlistName = audioService.currentPlaylistName;
+    final isRadio = audioService.isRadioPlaying;
     final topInset = MediaQuery.of(context).padding.top;
 
     return Stack(
@@ -442,7 +463,7 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Playing from',
+                        isRadio ? 'Tuned into' : 'Playing from',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.7),
@@ -450,7 +471,7 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                         ),
                       ),
                       Text(
-                        playlistName ?? 'Library',
+                        isRadio ? 'Radio' : (playlistName ?? 'Library'),
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.9),
@@ -520,7 +541,6 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
 
       showModalBottomSheet(
         context: context,
-        backgroundColor: Colors.transparent,
         isScrollControlled: true,
         useRootNavigator: true,
         builder: (ctx) => SongMenuSheet(
@@ -679,67 +699,58 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
     final audioService = context.watch<AudioPlayerService>();
     final isRadio = audioService.isRadioPlaying;
 
-    return StreamBuilder<(Duration, Duration?)>(
+    return StreamBuilder<(Duration, Duration)>(
       stream: Rx.combineLatest2(
         audioService.player.positionStream,
-        audioService.player.durationStream,
+        audioService.stableDurationStream,
         (position, duration) => (position, duration),
       ).asBroadcastStream(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SizedBox(height: 48);
 
         final position = snapshot.data!.$1;
-        final duration = snapshot.data!.$2 ?? Duration.zero;
+        final duration = snapshot.data!.$2;
 
         if (isRadio || duration == Duration.zero) {
-          return Column(
-            children: [
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  SliderTheme(
-                    data: SliderThemeData(
-                      trackHeight: 1.5,
-                      thumbShape: SliderComponentShape.noThumb,
-                      overlayShape: SliderComponentShape.noOverlay,
-                      activeTrackColor: Colors.white,
-                      inactiveTrackColor: Colors.white,
-                    ),
-                    child: Slider(
-                      value: 1.0,
-                      min: 0.0,
-                      max: 1.0,
-                      onChanged: null,
-                    ),
-                  ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          final theme = Theme.of(context);
+          final trackColor = theme.colorScheme.onSurfaceVariant.withOpacity(0.25);
+          return Container(
+            height: 48,
+            alignment: Alignment.center,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.85),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      'Live Radio Stream',
-                      style: TextStyle(
-                        color: Colors.grey.shade300,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                      ),
+                      color: trackColor,
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                ],
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Text(
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
                     'LIVE',
-                    style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withOpacity(0.8),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
+                    ),
                   ),
-                ],
-              ),
-            ],
+                ),
+                Expanded(
+                  child: Container(
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: trackColor,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           );
         }
 
@@ -755,10 +766,10 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                 trackHeight: 2,
                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                activeTrackColor: Colors.white,
-                inactiveTrackColor: Colors.grey.shade600,
-                thumbColor: Colors.white,
-                overlayColor: Colors.white.withOpacity(0.2),
+                activeTrackColor: Theme.of(context).colorScheme.primary,
+                inactiveTrackColor: Theme.of(context).colorScheme.outlineVariant,
+                thumbColor: Theme.of(context).colorScheme.primary,
+                overlayColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
                 trackShape: CustomTrackShape(),
               ),
               child: Slider(
@@ -859,13 +870,13 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                         },
                 ),
                 Container(
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                   child: IconButton(
                     icon: Icon(playing ? Icons.pause : Icons.play_arrow),
-                    color: Colors.black,
+                    color: Theme.of(context).colorScheme.onPrimary,
                     iconSize: 40,
                     onPressed: () {
                       _triggerHapticPlayPause();
@@ -963,7 +974,6 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                       _triggerHapticTap();
                       showModalBottomSheet(
                         context: context,
-                        backgroundColor: Colors.transparent,
                         isScrollControlled: true,
                         useRootNavigator: true,
                         builder: (context) => const DraggableQueueSheet(),
@@ -1371,7 +1381,7 @@ class _SyncRegistry {
   static int generation(String key) => _gens[key] ?? 0;
 }
 
-class DynamicBackground extends StatefulWidget {
+class DynamicBackground extends StatelessWidget {
   final MediaItem? metadata;
   final Color fallbackColor;
   final Widget child;
@@ -1384,116 +1394,72 @@ class DynamicBackground extends StatefulWidget {
   });
 
   @override
-  State<DynamicBackground> createState() => _DynamicBackgroundState();
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final primaryColor = scheme.primary;
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            primaryColor.withOpacity(0.85),
+            scheme.surfaceContainerLow.withOpacity(0.95),
+            scheme.surface,
+          ],
+        ),
+      ),
+      child: child,
+    );
+  }
 }
 
-class _DynamicBackgroundState extends State<DynamicBackground> {
-  static final Map<String, Color> _colorCache = {};
-  Color? _extractedColor;
-  String? _lastId;
+class _LivePulseDot extends StatefulWidget {
+  final Color accentColor;
+  const _LivePulseDot({required this.accentColor});
+
+  @override
+  State<_LivePulseDot> createState() => _LivePulseDotState();
+}
+
+class _LivePulseDotState extends State<_LivePulseDot> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
-    _extractColor();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    )..repeat(reverse: true);
   }
 
   @override
-  void didUpdateWidget(covariant DynamicBackground oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.metadata?.id != oldWidget.metadata?.id) {
-      _extractColor();
-    }
-  }
-
-  Future<void> _extractColor() async {
-    final media = widget.metadata;
-    if (media == null) {
-      setState(() {
-        _extractedColor = null;
-        _lastId = null;
-      });
-      return;
-    }
-
-    final id = media.id;
-    _lastId = id;
-
-    if (_colorCache.containsKey(id)) {
-      setState(() {
-        _extractedColor = _colorCache[id];
-      });
-      return;
-    }
-
-    try {
-      ImageProvider? imageProvider;
-      if (media.artUri != null) {
-        if (media.artUri!.scheme == 'file') {
-          imageProvider = FileImage(File(media.artUri!.toFilePath()));
-        } else {
-          imageProvider = NetworkImage(media.artUri.toString());
-        }
-      }
-
-      if (imageProvider != null) {
-        final palette = await PaletteGenerator.fromImageProvider(
-          imageProvider,
-          maximumColorCount: 8, // Keep it low for maximum speed
-        ).timeout(const Duration(seconds: 2));
-
-        if (!mounted || _lastId != id) return;
-
-        // Extract most vibrant or dominant color
-        final color = palette.vibrantColor?.color ??
-            palette.dominantColor?.color ??
-            palette.darkMutedColor?.color ??
-            widget.fallbackColor;
-
-        _colorCache[id] = color;
-        setState(() {
-          _extractedColor = color;
-        });
-      } else {
-        setState(() {
-          _extractedColor = null;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error extracting artwork color: $e');
-      if (mounted && _lastId == id) {
-        setState(() {
-          _extractedColor = null;
-        });
-      }
-    }
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final targetColor = _extractedColor ?? widget.fallbackColor;
-
-    return TweenAnimationBuilder<Color?>(
-      tween: ColorTween(
-        begin: widget.fallbackColor,
-        end: targetColor,
-      ),
-      duration: const Duration(milliseconds: 600),
-      builder: (context, color, child) {
-        final currentColor = color ?? widget.fallbackColor;
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
         return Container(
+          width: 8 + (3 * _controller.value),
+          height: 8 + (3 * _controller.value),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                currentColor.withOpacity(0.85),
-                Colors.grey.shade900.withOpacity(0.95),
-                Colors.black,
-              ],
-            ),
+            color: widget.accentColor,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: widget.accentColor.withOpacity(0.6 * (1.0 - _controller.value)),
+                blurRadius: 6,
+                spreadRadius: 3 * _controller.value,
+              ),
+            ],
           ),
-          child: widget.child,
         );
       },
     );

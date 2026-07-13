@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:ui';
 import '../models/settings_model.dart';
 import '../services/audio_service.dart';
 import '../widgets/voxel_toast.dart';
@@ -13,18 +12,16 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).padding.bottom + 16.0;
 
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: Colors.black,
       appBar: AppBar(
         title: const Text('Settings'),
-        backgroundColor: Colors.black,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
       ),
       body: ListView(
         padding: EdgeInsets.only(bottom: bottomInset),
         children: [
           _buildSection(
+            context,
             'Playback',
             [
               Builder(
@@ -55,6 +52,7 @@ class SettingsPage extends StatelessWidget {
           ),
           _buildSectionDivider(),
           _buildSection(
+            context,
             'Preferences',
             [
               Builder(
@@ -63,14 +61,14 @@ class SettingsPage extends StatelessWidget {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         child: Text(
                           'Accent Color',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
-                            color: Colors.white,
+                            color: scheme.onSurface,
                           ),
                         ),
                       ),
@@ -79,8 +77,81 @@ class SettingsPage extends StatelessWidget {
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
                           padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount: SettingsModel.accentPresets.length,
+                          itemCount: SettingsModel.accentPresets.length + 1,
                           itemBuilder: (context, index) {
+                            if (index == SettingsModel.accentPresets.length) {
+                              // Custom Color Picker Button
+                              final isCustom = !SettingsModel.accentPresets.contains(settings.accentColor);
+                              return GestureDetector(
+                                onTap: () async {
+                                  Color selectedColor = settings.accentColor;
+                                  final newColor = await showDialog<Color>(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Text('Choose Accent Color'),
+                                      content: Container(
+                                        width: 280,
+                                        child: GridView.count(
+                                          shrinkWrap: true,
+                                          physics: const NeverScrollableScrollPhysics(),
+                                          crossAxisCount: 4,
+                                          mainAxisSpacing: 8,
+                                          crossAxisSpacing: 8,
+                                          children: [
+                                            Colors.red, Colors.pink, Colors.purple, Colors.deepPurple,
+                                            Colors.indigo, Colors.blue, Colors.lightBlue, Colors.cyan,
+                                            Colors.teal, Colors.green, Colors.lightGreen, Colors.lime,
+                                            Colors.yellow, Colors.amber, Colors.orange, Colors.deepOrange,
+                                            Colors.brown, Colors.grey, Colors.blueGrey, const Color(0xFF7C5CBF),
+                                          ].map((color) {
+                                            return GestureDetector(
+                                              onTap: () => Navigator.of(context).pop(color),
+                                              child: Container(
+                                                decoration: BoxDecoration(
+                                                  color: color,
+                                                  shape: BoxShape.circle,
+                                                  border: settings.accentColor.value == color.value
+                                                      ? Border.all(color: scheme.onSurface, width: 3)
+                                                      : null,
+                                                ),
+                                              ),
+                                            );
+                                          }).toList(),
+                                        ),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.of(context).pop(),
+                                          child: const Text('Cancel'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (newColor != null) {
+                                    settings.setAccentColor(newColor);
+                                  }
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.only(right: 16),
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: isCustom ? settings.accentColor : scheme.surfaceContainerHigh,
+                                    border: Border.all(
+                                      color: isCustom ? scheme.onSurface : scheme.outline,
+                                      width: isCustom ? 3 : 1.5,
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    Icons.colorize_rounded,
+                                    color: isCustom ? Colors.white : scheme.onSurfaceVariant,
+                                    size: 18,
+                                  ),
+                                ),
+                              );
+                            }
+
                             final preset = SettingsModel.accentPresets[index];
                             final isSelected = settings.accentColor.value == preset.value;
                             return GestureDetector(
@@ -93,7 +164,7 @@ class SettingsPage extends StatelessWidget {
                                   shape: BoxShape.circle,
                                   color: preset,
                                   border: isSelected
-                                      ? Border.all(color: Colors.white, width: 3)
+                                      ? Border.all(color: scheme.onSurface, width: 3)
                                       : null,
                                   boxShadow: isSelected
                                       ? [
@@ -122,13 +193,14 @@ class SettingsPage extends StatelessWidget {
           ),
           _buildSectionDivider(),
           _buildSection(
+            context,
             'Haptics',
             [
               Builder(
                 builder: (context) {
                   return ListTile(
                     title: const Text('Haptics Settings'),
-                    trailing: Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey[400], size: 16),
+                    trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
@@ -143,11 +215,12 @@ class SettingsPage extends StatelessWidget {
           ),
           _buildSectionDivider(),
           _buildSection(
+            context,
             'Maintenance',
             [
               ListTile(
                 title: const Text('Clear App Cache'),
-                trailing: const Icon(Icons.cleaning_services_outlined),
+                trailing: Icon(Icons.cleaning_services_outlined, color: scheme.onSurfaceVariant),
                 onTap: () async {
                   final confirm = await _showConfirmDialog(
                     context,
@@ -164,6 +237,9 @@ class SettingsPage extends StatelessWidget {
                   );
                   final settings = context.read<SettingsModel>();
                   final removed = await settings.clearAppCache();
+                  if (context.mounted) {
+                    await context.read<AudioPlayerService>().clearRecentlyPlayed();
+                  }
                   if (!context.mounted) return;
                   VoxelToast.show(
                     context,
@@ -174,7 +250,7 @@ class SettingsPage extends StatelessWidget {
               ),
               ListTile(
                 title: const Text('Update All Song Metadata'),
-                trailing: const Icon(Icons.library_music_outlined),
+                trailing: Icon(Icons.library_music_outlined, color: scheme.onSurfaceVariant),
                 onTap: () async {
                   final confirm = await _showConfirmDialog(
                     context,
@@ -214,11 +290,12 @@ class SettingsPage extends StatelessWidget {
           ),
           _buildSectionDivider(),
           _buildSection(
+            context,
             'About',
             [
-              ListTile(
-                title: const Text('App Version'),
-                subtitle: const Text('1.0.0'),
+              const ListTile(
+                title: Text('App Version'),
+                subtitle: Text('1.0.0'),
               ),
               ListTile(
                 title: const Text('Open Source Licenses'),
@@ -239,22 +316,20 @@ class SettingsPage extends StatelessWidget {
 
   Future<bool> _showConfirmDialog(
       BuildContext context, String title, String content) async {
-    final settings = Provider.of<SettingsModel>(context, listen: false);
     return await showModalBottomSheet<bool>(
           context: context,
-          backgroundColor: Colors.transparent,
           isScrollControlled: true,
           useRootNavigator: true,
           builder: (context) => VoxelConfirmationSheet(
             title: title,
             content: content,
-            accentColor: settings.accentColor,
           ),
         ) ??
         false;
   }
 
-  Widget _buildSection(String title, List<Widget> children) {
+  Widget _buildSection(BuildContext context, String title, List<Widget> children) {
+    final scheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -262,9 +337,11 @@ class SettingsPage extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
           child: Text(
             title,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: scheme.primary,
+              letterSpacing: 0.8,
             ),
           ),
         ),
@@ -274,14 +351,7 @@ class SettingsPage extends StatelessWidget {
   }
 
   Widget _buildSectionDivider() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16),
-      child: Divider(
-        height: 24,
-        thickness: 0.7,
-        color: Colors.white24,
-      ),
-    );
+    return const Divider(height: 24, indent: 16, endIndent: 16);
   }
 }
 
@@ -291,12 +361,8 @@ class HapticsSettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
       appBar: AppBar(
         title: const Text('Haptics Settings'),
-        backgroundColor: Colors.black,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
       ),
       body: ListView(
         children: [
@@ -312,10 +378,7 @@ class HapticsSettingsPage extends StatelessWidget {
               );
             },
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Divider(color: Colors.white24, thickness: 0.7),
-          ),
+          const Divider(height: 24, indent: 16, endIndent: 16),
           Builder(
             builder: (context) {
               final settings = Provider.of<SettingsModel>(context);
@@ -382,114 +445,98 @@ class VoxelConfirmationSheet extends StatelessWidget {
   final String title;
   final String content;
   final String confirmLabel;
-  final Color accentColor;
 
   const VoxelConfirmationSheet({
     super.key,
     required this.title,
     required this.content,
     this.confirmLabel = 'Confirm',
-    required this.accentColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1B1B1F).withOpacity(0.95),
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(28),
-          topRight: Radius.circular(28),
-        ),
-      ),
-      child: ClipRRect(
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(28),
-          topRight: Radius.circular(28),
-        ),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 24),
-                    width: 48,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  ),
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    content,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 14.5,
-                      height: 1.4,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 28),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextButton(
-                          onPressed: () => Navigator.of(context).pop(false),
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text(
-                            'Cancel',
-                            style: TextStyle(color: Colors.grey, fontSize: 15, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.of(context).pop(true),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: accentColor,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: Text(
-                            confirmLabel,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // M3 drag handle
+            Container(
+              margin: const EdgeInsets.only(bottom: 24),
+              width: 32,
+              height: 4,
+              decoration: BoxDecoration(
+                color: scheme.onSurfaceVariant.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-          ),
+            Text(
+              title,
+              style: TextStyle(
+                color: scheme.onSurface,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              content,
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: 14.5,
+                height: 1.4,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 28),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: BorderSide(color: scheme.outlineVariant),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text('Cancel',
+                        style: TextStyle(
+                            color: scheme.onSurface,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: scheme.primary,
+                      foregroundColor: scheme.onPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      confirmLabel,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

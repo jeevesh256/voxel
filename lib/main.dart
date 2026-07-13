@@ -154,21 +154,141 @@ class MyApp extends StatelessWidget {
     final settings = context.watch<SettingsModel>();
     final accentColor = settings.accentColor;
 
+    final scheme = ColorScheme.fromSeed(
+      seedColor: accentColor,
+      brightness: Brightness.dark,
+    ).copyWith(primary: accentColor);
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Voxel Music Player',
       theme: ThemeData(
-        colorScheme: ColorScheme.dark(
-          primary: accentColor,
-          secondary: accentColor.withOpacity(0.7),
-          background: Colors.black,
-          surface: Colors.grey.shade900,
-        ),
+        colorScheme: scheme,
         useMaterial3: true,
-        scaffoldBackgroundColor: Colors.black,
+        scaffoldBackgroundColor: scheme.surface,
         splashColor: Colors.transparent,
         highlightColor: Colors.transparent,
         splashFactory: NoSplash.splashFactory,
+
+        // ── AppBar ──────────────────────────────────────────────
+        appBarTheme: AppBarTheme(
+          backgroundColor: scheme.surface,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          iconTheme: IconThemeData(color: scheme.onSurface),
+          titleTextStyle: TextStyle(
+            color: scheme.onSurface,
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.3,
+          ),
+        ),
+
+        navigationBarTheme: NavigationBarThemeData(
+          backgroundColor: scheme.surfaceContainer,
+          indicatorColor: Colors.transparent,
+          iconTheme: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return IconThemeData(color: scheme.primary, size: 24);
+            }
+            return IconThemeData(color: scheme.onSurfaceVariant.withOpacity(0.7), size: 24);
+          }),
+          labelTextStyle: WidgetStateProperty.resolveWith((states) {
+            final base = TextStyle(fontSize: 11, color: scheme.onSurfaceVariant.withOpacity(0.7));
+            if (states.contains(WidgetState.selected)) {
+              return base.copyWith(
+                color: scheme.primary,
+                fontWeight: FontWeight.w600,
+              );
+            }
+            return base;
+          }),
+          elevation: 0,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        ),
+
+        // ── Bottom Sheet ───────────────────────────────────────
+        bottomSheetTheme: BottomSheetThemeData(
+          backgroundColor: scheme.surfaceContainerHigh,
+          modalBackgroundColor: scheme.surfaceContainerHigh,
+          surfaceTintColor: Colors.transparent,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          showDragHandle: false,
+        ),
+
+        // ── Dialog ────────────────────────────────────────────
+        dialogTheme: DialogThemeData(
+          backgroundColor: scheme.surfaceContainerHigh,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          titleTextStyle: TextStyle(
+            color: scheme.onSurface,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+          ),
+          contentTextStyle: TextStyle(color: scheme.onSurfaceVariant, fontSize: 14),
+        ),
+
+        // ── Divider ────────────────────────────────────────────
+        dividerTheme: DividerThemeData(
+          color: scheme.outlineVariant,
+          thickness: 0.7,
+          space: 0,
+        ),
+
+        // ── Switch ────────────────────────────────────────────
+        switchTheme: SwitchThemeData(
+          thumbIcon: WidgetStateProperty.fromMap({
+            WidgetState.selected: const Icon(Icons.check),
+            WidgetState.any: null,
+          }),
+        ),
+
+        // ── ListTile ──────────────────────────────────────────
+        listTileTheme: ListTileThemeData(
+          iconColor: scheme.onSurfaceVariant,
+          textColor: scheme.onSurface,
+          subtitleTextStyle: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+        ),
+
+        // ── TabBar ────────────────────────────────────────────
+        tabBarTheme: TabBarThemeData(
+          labelColor: scheme.onSurface,
+          unselectedLabelColor: scheme.onSurfaceVariant,
+          dividerColor: Colors.transparent,
+          indicator: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            color: scheme.primaryContainer,
+          ),
+          indicatorSize: TabBarIndicatorSize.tab,
+          labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          unselectedLabelStyle:
+              const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+        ),
+
+        // ── Slider ────────────────────────────────────────────
+        sliderTheme: SliderThemeData(
+          activeTrackColor: scheme.primary,
+          inactiveTrackColor: scheme.surfaceContainerHighest,
+          thumbColor: scheme.primary,
+          overlayColor: scheme.primary.withOpacity(0.2),
+          trackHeight: 3,
+          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+          overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+        ),
+
+        // ── Chip ──────────────────────────────────────────────
+        chipTheme: ChipThemeData(
+          backgroundColor: scheme.surfaceContainerHigh,
+          selectedColor: scheme.primaryContainer,
+          labelStyle: TextStyle(color: scheme.onSurface, fontSize: 13),
+          side: BorderSide.none,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        ),
       ),
       home: const MusicApp(),
     );

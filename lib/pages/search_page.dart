@@ -17,49 +17,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import '../widgets/voxel_toast.dart';
 import '../widgets/song_menu_sheet.dart';
-bool _isValidArtwork(String url) {
-  if (url.isEmpty) return false;
-  final uri = Uri.tryParse(url);
-  if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
-    return false;
-  }
-
-  final host = uri.host.toLowerCase();
-  final path = uri.path.toLowerCase();
-  final thumbParam = uri.queryParameters['t']?.toLowerCase() ?? '';
-
-  // These Google thumbnail URLs are often short-lived and return 404s.
-  if (host.startsWith('encrypted-tbn') && host.endsWith('gstatic.com')) {
-    return false;
-  }
-
-  // Known station-logo CDN entries that frequently fail DNS resolution.
-  if (host == 'de8as167a043l.cloudfront.net' ||
-      path.contains('/styles/images/logosplus/')) {
-    return false;
-  }
-
-  // Some laut.fm thumbnail variants are unstable and frequently return 404.
-  if (host == 'assets.laut.fm' && thumbParam.startsWith('_')) {
-    return false;
-  }
-
-  // Reject generic /icon.png and favicon-like paths that often return HTTP errors
-  if (path.endsWith('/icon.png') ||
-      path.endsWith('/icon.ico') ||
-      path.endsWith('/favicon.ico')) {
-    return false;
-  }
-
-  if (path.contains('favicon')) {
-    return false;
-  }
-
-  return host.isNotEmpty &&
-      !path.endsWith('.ico') &&
-      !path.endsWith('.svg') &&
-      !path.endsWith('.bmp');
-}
+import '../services/artwork_validator.dart';
+// _isValidArtwork has been replaced by global isValidArtwork from services/artwork_validator.dart
 
 // Helper for Cupertino-style page transitions
 void pushMaterialPage(BuildContext context, Widget page) {
@@ -565,9 +524,7 @@ class SearchPageState extends State<SearchPage>
     final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
 
     return Scaffold(
-      backgroundColor: Colors.black,
       appBar: AppBar(
-        backgroundColor: Colors.black,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         automaticallyImplyLeading: false,
@@ -583,7 +540,6 @@ class SearchPageState extends State<SearchPage>
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.w800,
-                    color: Colors.white,
                     letterSpacing: -0.5,
                   ),
                 ),
@@ -592,7 +548,7 @@ class SearchPageState extends State<SearchPage>
           preferredSize: Size.fromHeight(
               (_searchFocus.hasFocus || _query.isNotEmpty) ? 132 : 120),
           child: Container(
-            color: Colors.black,
+            color: Theme.of(context).colorScheme.surface,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -622,7 +578,6 @@ class SearchPageState extends State<SearchPage>
                                 padding: EdgeInsets.only(bottom: 8),
                                 child: Icon(
                                   Icons.arrow_back_ios_new_rounded,
-                                  color: Colors.white,
                                   size: 22,
                                 ),
                               ),
@@ -725,7 +680,7 @@ class SearchPageState extends State<SearchPage>
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
-                    color: Colors.deepPurple.shade300,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
               ),
@@ -760,7 +715,6 @@ class SearchPageState extends State<SearchPage>
                       child: Text(
                         term,
                         style: const TextStyle(
-                          color: Colors.white,
                           fontSize: 15,
                           fontWeight: FontWeight.w400,
                         ),
@@ -802,17 +756,6 @@ class SearchPageState extends State<SearchPage>
         isScrollable: true,
         tabAlignment: TabAlignment.start,
         labelPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 0),
-        indicator: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
-          color: Theme.of(context).colorScheme.primary,
-        ),
-        indicatorSize: TabBarIndicatorSize.tab,
-        dividerColor: Colors.transparent,
-        labelColor: Colors.white,
-        unselectedLabelColor: Colors.grey[500],
-        labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-        unselectedLabelStyle:
-            const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
       ),
     );
   }
@@ -1257,8 +1200,8 @@ class SearchPageState extends State<SearchPage>
                   children: [
                     Text(
                       artist.artistName,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
                         fontWeight: FontWeight.w600,
                         fontSize: 15,
                       ),
@@ -1269,7 +1212,7 @@ class SearchPageState extends State<SearchPage>
                       const SizedBox(height: 3),
                       Text(
                         artist.primaryGenre,
-                        style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1345,8 +1288,8 @@ class SearchPageState extends State<SearchPage>
                         Expanded(
                           child: Text(
                             artist.artistName,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface,
                               fontWeight: FontWeight.w600,
                               fontSize: 15,
                             ),
@@ -1381,7 +1324,7 @@ class SearchPageState extends State<SearchPage>
                     const SizedBox(height: 3),
                     Text(
                       '${artist.files.length} track${artist.files.length == 1 ? '' : 's'} in library',
-                      style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1512,7 +1455,6 @@ class SearchPageState extends State<SearchPage>
     final song = result.song;
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       isScrollControlled: true,
       useRootNavigator: true,
       builder: (ctx) => SongMenuSheet(
@@ -1674,8 +1616,8 @@ class SearchPageState extends State<SearchPage>
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
         child: Text(
           label,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface,
             fontSize: 18,
             fontWeight: FontWeight.w700,
             letterSpacing: -0.3,
@@ -1750,8 +1692,8 @@ class SearchPageState extends State<SearchPage>
                   children: [
                     Text(
                       track.trackName,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
                       ),
@@ -1763,7 +1705,7 @@ class SearchPageState extends State<SearchPage>
                       track.collectionName.isNotEmpty
                           ? '${track.artistName} · ${track.collectionName}'
                           : track.artistName,
-                      style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1797,17 +1739,16 @@ class SearchPageState extends State<SearchPage>
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       isScrollControlled: true,
       useRootNavigator: true,
       builder: (ctx) => SongMenuSheet(
         song: menuSong,
-        accentColor: Colors.deepPurple.shade400,
+        accentColor: Theme.of(context).colorScheme.primary,
         options: [
           SongMenuOption(
             icon: Icons.play_arrow_rounded,
             title: 'Play from library',
-            color: Colors.deepPurple.shade300,
+            color: Theme.of(context).colorScheme.primary,
             onTap: () {
               _saveRecentSearch(track.trackName);
               _playLocalMatch(track, audioService);
@@ -1840,7 +1781,7 @@ class SearchPageState extends State<SearchPage>
       RadioStation station, AudioPlayerService audioService) {
     final isPlaying = audioService.currentRadioStation?.id == station.id;
     final isLiked = audioService.isRadioLiked(station);
-    final hasArt = _isValidArtwork(station.artworkUrl);
+    final hasArt = isValidArtwork(station.artworkUrl);
 
     return Material(
       color: Colors.transparent,
@@ -1987,11 +1928,12 @@ class SearchPageState extends State<SearchPage>
   }
 
   Widget _artPlaceholder({required bool isRadio}) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
-      color: isRadio ? const Color(0xFF1A0A2E) : Colors.grey[900],
+      color: isRadio ? cs.primaryContainer : cs.surfaceContainerHigh,
       child: Icon(
         isRadio ? Icons.radio_rounded : Icons.music_note_rounded,
-        color: isRadio ? Colors.deepPurple.shade800 : Colors.grey[700],
+        color: isRadio ? cs.onPrimaryContainer : cs.onSurfaceVariant,
         size: isRadio ? 24 : 20,
       ),
     );
@@ -2044,52 +1986,66 @@ class SearchPageState extends State<SearchPage>
 
   Widget _buildCategoryCard(int index) {
     final cat = _categories[index];
+    final scheme = Theme.of(context).colorScheme;
+    
+    // Choose dynamic container fills and matching text colors from the theme
+    final containerColor = index % 3 == 0 
+        ? scheme.primaryContainer 
+        : index % 3 == 1 
+            ? scheme.secondaryContainer 
+            : scheme.tertiaryContainer;
+            
+    final onContainerColor = index % 3 == 0 
+        ? scheme.onPrimaryContainer 
+        : index % 3 == 1 
+            ? scheme.onSecondaryContainer 
+            : scheme.onTertiaryContainer;
+
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
-      child: Ink(
+      child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: cat.colors,
-          ),
+          borderRadius: BorderRadius.circular(16),
+          color: containerColor,
+          boxShadow: [
+            BoxShadow(
+              color: scheme.shadow.withOpacity(0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: InkWell(
           onTap: () => _searchCategory(cat.label),
-          splashColor: const Color(0x1EFFFFFF),
-          highlightColor: const Color(0x0AFFFFFF),
+          splashColor: onContainerColor.withOpacity(0.12),
+          highlightColor: onContainerColor.withOpacity(0.06),
           child: Stack(
             children: [
-              // Large watermark icon at bottom-right
+              // Large stylized watermark icon rotated at bottom-right
               Positioned(
-                bottom: -14,
-                right: -14,
-                child: Icon(
-                  cat.icon,
-                  size: 84,
-                  color: _categoryIconColor,
+                bottom: -16,
+                right: -16,
+                child: Transform.rotate(
+                  angle: 0.25, // Subtle rotate for premium look
+                  child: Icon(
+                    cat.icon,
+                    size: 80,
+                    color: onContainerColor.withOpacity(0.12),
+                  ),
                 ),
               ),
               // Genre label
               Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
                 child: Text(
                   cat.label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    color: onContainerColor,
                     letterSpacing: -0.2,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black38,
-                        blurRadius: 4,
-                        offset: Offset(0, 1),
-                      ),
-                    ],
                   ),
                 ),
               ),

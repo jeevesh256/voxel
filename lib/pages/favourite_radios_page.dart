@@ -6,50 +6,9 @@ import '../services/radio_playback_guard.dart';
 import '../models/radio_station.dart';
 import '../models/settings_model.dart';
 import '../widgets/voxel_toast.dart';
+import '../services/artwork_validator.dart';
 
-bool _isValidArtwork(String url) {
-  if (url.isEmpty) return false;
-  final uri = Uri.tryParse(url);
-  if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
-    return false;
-  }
-
-  final host = uri.host.toLowerCase();
-  final path = uri.path.toLowerCase();
-  final thumbParam = uri.queryParameters['t']?.toLowerCase() ?? '';
-
-  // These Google thumbnail URLs are often short-lived and return 404s.
-  if (host.startsWith('encrypted-tbn') && host.endsWith('gstatic.com')) {
-    return false;
-  }
-
-  // Known station-logo CDN entries that frequently fail DNS resolution.
-  if (host == 'de8as167a043l.cloudfront.net' ||
-      path.contains('/styles/images/logosplus/')) {
-    return false;
-  }
-
-  // Some laut.fm thumbnail variants are unstable and frequently return 404.
-  if (host == 'assets.laut.fm' && thumbParam.startsWith('_')) {
-    return false;
-  }
-
-  // Reject generic /icon.png and favicon-like paths that often return HTTP errors
-  if (path.endsWith('/icon.png') || 
-      path.endsWith('/icon.ico') ||
-      path.endsWith('/favicon.ico')) {
-    return false;
-  }
-
-  if (path.contains('favicon')) {
-    return false;
-  }
-
-  return host.isNotEmpty &&
-      !path.endsWith('.ico') &&
-      !path.endsWith('.svg') &&
-      !path.endsWith('.bmp');
-}
+// _isValidArtwork has been replaced by global isValidArtwork from services/artwork_validator.dart
 
 // Helper for Cupertino-style page transitions
 void pushMaterialPage(BuildContext context, Widget page) {
@@ -140,38 +99,27 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Favourite Radios'),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
       ),
-      backgroundColor: Colors.black,
       body: Column(
         children: [
           // Search Bar
           Container(
             margin: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.grey[900],
+              color: Theme.of(context).colorScheme.surfaceContainerHigh,
               borderRadius: BorderRadius.circular(12),
             ),
             child: TextField(
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-              ),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: 'Search radios by name, genre, or country...',
-                hintStyle: TextStyle(
-                  color: Colors.grey,
-                  fontSize: 16,
-                ),
                 border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(
+                contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 16,
                 ),
                 prefixIcon: Icon(
                   Icons.search,
-                  color: Colors.grey,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   size: 20,
                 ),
               ),
@@ -187,14 +135,14 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Row(
               children: [
-                Icon(Icons.sort, color: Colors.grey[400]),
+                Icon(Icons.sort, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 const SizedBox(width: 8),
-                Text('Sort by:', style: TextStyle(color: Colors.grey[400])),
+                Text('Sort by:', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                 const SizedBox(width: 8),
                 Expanded(
                   child: DropdownButton<RadioSortOption>(
                     value: _sortOption,
-                    dropdownColor: Colors.grey[900],
+                    dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                     style: const TextStyle(color: Colors.white),
                     items: const [
                       DropdownMenuItem(
@@ -294,7 +242,7 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                         itemCount: radios.length,
                         itemBuilder: (context, index) {
                           final radio = radios[index];
-                          final hasArt = _isValidArtwork(radio.artworkUrl);
+                          final hasArt = isValidArtwork(radio.artworkUrl);
                           return ListTile(
                             leading: hasArt
                                 ? ClipRRect(
@@ -307,9 +255,9 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                                       errorBuilder: (_, __, ___) => Container(
                                         width: 48,
                                         height: 48,
-                                        color: Colors.deepPurple.shade200,
-                                        child: const Icon(Icons.radio,
-                                            color: Colors.white, size: 24),
+                                        color: Theme.of(context).colorScheme.primaryContainer,
+                                        child: Icon(Icons.radio,
+                                            color: Theme.of(context).colorScheme.onPrimaryContainer, size: 24),
                                       ),
                                     ),
                                   )
@@ -317,11 +265,11 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                                     width: 48,
                                     height: 48,
                                     decoration: BoxDecoration(
-                                      color: Colors.deepPurple.shade200,
+                                      color: Theme.of(context).colorScheme.primaryContainer,
                                       borderRadius: BorderRadius.circular(8),
                                     ),
-                                    child: const Icon(Icons.radio,
-                                        color: Colors.white, size: 24),
+                                    child: Icon(Icons.radio,
+                                        color: Theme.of(context).colorScheme.onPrimaryContainer, size: 24),
                                   ),
                             title: Text(
                               radio.name,

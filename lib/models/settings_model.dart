@@ -24,7 +24,8 @@ class SettingsModel extends ChangeNotifier {
     }
     // Clear song metadata cache
     await SongMetadataCache().clearCache();
-    // Optionally: clear other caches here
+    // Clear recently played cache key
+    await prefs.remove('recently_played_items');
     return removed;
   }
 

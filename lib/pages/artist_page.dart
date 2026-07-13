@@ -133,7 +133,7 @@ class _ArtistPageState extends State<ArtistPage> {
     final audioService = context.watch<AudioPlayerService>();
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       extendBodyBehindAppBar: true,
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight + 12),
@@ -146,7 +146,7 @@ class _ArtistPageState extends State<ArtistPage> {
                     375.0)
                 .clamp(0.0, 1.0);
             return AppBar(
-              backgroundColor: Colors.black.withOpacity(opacity),
+              backgroundColor: Theme.of(context).colorScheme.surface.withOpacity(opacity),
               elevation: 0,
               surfaceTintColor: Colors.transparent,
               toolbarHeight: kToolbarHeight + 12,
@@ -716,7 +716,6 @@ class _ArtistPageState extends State<ArtistPage> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       isScrollControlled: true,
       useRootNavigator: true,
       builder: (context) => SongMenuSheet(
@@ -936,7 +935,6 @@ class _ArtistPageState extends State<ArtistPage> {
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
-      backgroundColor: Colors.transparent,
       builder: (ctx) {
         bool dismissed = false;
         void dismiss() {
@@ -1256,7 +1254,6 @@ class _ArtistPageState extends State<ArtistPage> {
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
-      backgroundColor: Colors.transparent,
       barrierColor: Colors.black54,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setState) {
