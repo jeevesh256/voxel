@@ -55,15 +55,18 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   final List<String> _likedTracks = [];
   final List<String> _hiddenTracks = [];
   final Set<String> _likedRadios = {};
+  final List<String> _hiddenRadios = [];
   final Map<String, CustomPlaylist> _customPlaylists = {};
   static const String _likedTracksKey = 'liked_tracks';
   static const String _hiddenTracksKey = 'hidden_tracks';
   static const String _likedRadiosKey = 'liked_radios';
+  static const String _hiddenRadiosKey = 'hidden_radios';
   static const String _customPlaylistsKey = 'custom_playlists';
   static const String _recentlyPlayedKey = 'recently_played_playlists';
   late SharedPreferences _prefs;
   final SongMetadataCache _metadataCache = SongMetadataCache();
 
+  int _playSessionId = 0;
   late ConcatenatingAudioSource _playlist;
   
   // BehaviorSubject that caches the last known valid duration.
@@ -136,6 +139,10 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       notifyListeners();
     });
 
+    _player.playerStateStream.listen((state) {
+      notifyListeners();
+    });
+
     // Feed valid durations into the BehaviorSubject.
     // ExoPlayer emits the MediaItem tag duration (180000ms default) as a pre-estimate
     // before parsing the actual file. On queue changes (move/insert), it re-emits
@@ -204,9 +211,13 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   AudioPlayer get player => _player;
   MediaItem? get currentMedia => _currentMedia;
   bool get isPlaying => _player.playing;
-  bool get isMiniPlayerVisible =>
-      (currentMedia ?? currentTrack) != null &&
-      _player.processingState != ProcessingState.idle;
+  bool _hasPlayedOnce = false;
+  bool get isMiniPlayerVisible {
+    if (!_hasPlayedOnce && (currentMedia ?? currentTrack) != null) {
+      _hasPlayedOnce = true;
+    }
+    return _hasPlayedOnce;
+  }
 
   // Add missing getters
   Stream<Duration?> get durationStream => _player.durationStream;
@@ -337,6 +348,10 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     _hiddenTracks.clear();
     _hiddenTracks.addAll(hiddenTracks);
 
+    final hiddenRadios = _prefs.getStringList(_hiddenRadiosKey) ?? [];
+    _hiddenRadios.clear();
+    _hiddenRadios.addAll(hiddenRadios);
+
     // Load liked radios (persisted as JSON)
     final likedRadiosJson = _prefs.getStringList(_likedRadiosKey) ?? [];
     _radioPlaylists['favourite_radios'] = likedRadiosJson
@@ -376,10 +391,32 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   // RadioStation playlist logic
   List<RadioStation> getPlaylistRadios(String playlistId) {
     if (playlistId == 'all_radios') {
-      // Return the global list of all radios
-      return allRadios;
+      // Return the global list of all radios excluding hidden ones
+      return allRadios.where((r) => !_hiddenRadios.contains(r.id)).toList();
     }
-    return _radioPlaylists[playlistId] ?? [];
+    final list = _radioPlaylists[playlistId] ?? [];
+    return list.where((r) => !_hiddenRadios.contains(r.id)).toList();
+  }
+
+  void hideRadioStation(RadioStation station) async {
+    if (!_hiddenRadios.contains(station.id)) {
+      _hiddenRadios.add(station.id);
+      await _prefs.setStringList(_hiddenRadiosKey, _hiddenRadios);
+      // Remove from favorites if hidden
+      removeRadioFromPlaylist('favourite_radios', station);
+      notifyListeners();
+    }
+  }
+
+  void unhideRadioStation(RadioStation station) async {
+    if (_hiddenRadios.remove(station.id)) {
+      await _prefs.setStringList(_hiddenRadiosKey, _hiddenRadios);
+      notifyListeners();
+    }
+  }
+
+  bool isRadioHidden(String stationId) {
+    return _hiddenRadios.contains(stationId);
   }
 
   void addRadioToPlaylist(String playlistId, RadioStation station) {
@@ -691,7 +728,22 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
   Future<void> playFileInContext(File file, List<File> playlistFiles) async {
     if (playlistFiles.isEmpty) return;
+    
+    // If the clicked song is already the active track, just seek to beginning and play
+    if (currentTrack?.id == file.path) {
+      await _player.seek(Duration.zero);
+      if (!_player.playing) {
+        await _player.play();
+      }
+      return;
+    }
+
+    final currentSessionId = ++_playSessionId;
     try {
+      // Cleanly stop and reset player to terminate any pending operations
+      await _player.stop();
+      if (_playSessionId != currentSessionId) return;
+
       // Clear radio station when playing songs
       _currentRadioStation = null;
       
@@ -729,17 +781,40 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       final selectedIndex = playlistFiles.indexOf(file);
       // Ensure shuffle is disabled when playing from playlist
       await _player.setShuffleModeEnabled(false);
+      if (_playSessionId != currentSessionId) return;
+
       await _player.setAudioSource(_playlist, initialIndex: selectedIndex, initialPosition: Duration.zero);
+      if (_playSessionId != currentSessionId) return;
+
       await _player.play();
+      if (_playSessionId != currentSessionId) return;
+
       notifyListeners();
     } catch (e) {
-      debugPrint('Error playing file in context: $e');
+      if (_playSessionId == currentSessionId) {
+        debugPrint('Error playing file in context: $e');
+      }
     }
   }
 
   Future<void> playFileInContextWithPlaylistId(File file, List<File> playlistFiles, String playlistId) async {
     if (playlistFiles.isEmpty) return;
+ 
+    // If the clicked song is already the active track, just seek to beginning and play
+    if (currentTrack?.id == file.path) {
+      await _player.seek(Duration.zero);
+      if (!_player.playing) {
+        await _player.play();
+      }
+      return;
+    }
+ 
+    final currentSessionId = ++_playSessionId;
     try {
+      // Cleanly stop and reset player to terminate any pending operations
+      await _player.stop();
+      if (_playSessionId != currentSessionId) return;
+
       // Clear radio station when playing songs
       _currentRadioStation = null;
       _currentPlaylistId = playlistId;
@@ -767,11 +842,19 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       final selectedIndex = playlistFiles.indexOf(file);
       // Ensure shuffle is disabled when playing from playlist
       await _player.setShuffleModeEnabled(false);
+      if (_playSessionId != currentSessionId) return;
+
       await _player.setAudioSource(_playlist, initialIndex: selectedIndex, initialPosition: Duration.zero);
+      if (_playSessionId != currentSessionId) return;
+
       await _player.play();
+      if (_playSessionId != currentSessionId) return;
+
       notifyListeners();
     } catch (e) {
-      debugPrint('Error playing file in context: $e');
+      if (_playSessionId == currentSessionId) {
+        debugPrint('Error playing file in context: $e');
+      }
     }
   }
 
@@ -799,14 +882,6 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   @override
   Future<void> addToQueue(Song song) async {
     try {
-      // Add to next up queue and audio source
-      _nextUpQueue.add(song);
-      
-      // Get current index to insert after current song
-      final currentIndex = _player.currentIndex ?? 0;
-      final insertIndex = currentIndex + 1;
-
-      // Create audio source for the song with special marker for manually added
       final audioSource = AudioSource.file(
         song.filePath,
         tag: MediaItem(
@@ -818,6 +893,28 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
           duration: song.duration,
         ),
       );
+
+      if (_currentRadioStation != null) {
+        // If a radio station was active, stop it, clear the queue, and start playing the queued song immediately
+        await _player.stop();
+        _currentRadioStation = null;
+        _nextUpQueue.clear();
+        _nextUpQueue.add(song);
+
+        await _playlist.clear();
+        await _playlist.add(audioSource);
+        await _player.setAudioSource(_playlist);
+        await _player.play();
+        notifyListeners();
+        return;
+      }
+
+      // Standard queue insertion
+      _nextUpQueue.add(song);
+      
+      // Get current index to insert after current song
+      final currentIndex = _player.currentIndex ?? 0;
+      final insertIndex = currentIndex + 1;
 
       // Insert the song right after the current song in the audio player
       await _playlist.insert(insertIndex, audioSource);
@@ -831,6 +928,33 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   @override
   Future<void> insertAtQueue(Song song, int index) async {
     try {
+      final audioSource = AudioSource.file(
+        song.filePath,
+        tag: MediaItem(
+          id: song.id,
+          title: song.title,
+          artist: song.artist,
+          album: 'Next Up', // Special marker for manually added songs
+          artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+          duration: song.duration,
+        ),
+      );
+
+      if (_currentRadioStation != null) {
+        // If a radio station was active, stop it, clear the queue, and start playing the queued song immediately
+        await _player.stop();
+        _currentRadioStation = null;
+        _nextUpQueue.clear();
+        _nextUpQueue.add(song);
+
+        await _playlist.clear();
+        await _playlist.add(audioSource);
+        await _player.setAudioSource(_playlist);
+        await _player.play();
+        notifyListeners();
+        return;
+      }
+
       final currentIdx = _player.currentIndex ?? -1;
       final relativeNextUpIndex = (index - currentIdx - 1).clamp(0, _nextUpQueue.length);
       final clampedInsertIndex = index.clamp(0, _playlist.length);
@@ -877,6 +1001,42 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       notifyListeners();
     } catch (e) {
       debugPrint('Error updating queue: $e');
+    }
+  }
+
+  @override
+  Future<void> clearQueue() async {
+    try {
+      _nextUpQueue.clear();
+
+      final currentIndex = _player.currentIndex;
+      // Iterate backwards to safely remove from concatenating playlist
+      for (int i = _playlist.length - 1; i >= 0; i--) {
+        if (i == currentIndex) continue;
+        final source = _playlist.sequence[i];
+        final mediaItem = source.tag as MediaItem?;
+        if (mediaItem?.album == 'Next Up') {
+          await _playlist.removeAt(i);
+        }
+      }
+
+      // Sync updated queue back to _playlistHandler
+      final currentQueueSongs = _playlist.sequence.map((source) {
+        final mediaItem = source.tag as MediaItem?;
+        return Song(
+          id: mediaItem?.id ?? '',
+          filePath: mediaItem?.id ?? '',
+          title: mediaItem?.title ?? 'Unknown',
+          artist: mediaItem?.artist ?? 'Unknown Artist',
+          album: mediaItem?.album ?? '',
+          duration: mediaItem?.duration ?? Duration.zero,
+        );
+      }).toList();
+
+      _playlistHandler.updateQueue(currentQueueSongs, playlistContext: _currentPlaylistId);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error clearing queue: $e');
     }
   }
 
@@ -991,6 +1151,9 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
         debugPrint('Radio playback blocked: no network connection');
         return;
       }
+
+      // Cleanly stop and reset player to terminate any pending operations
+      await _player.stop();
 
       _currentRadioStation = station;
       _currentPlaylistId = null;
@@ -1258,7 +1421,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   }
 
   void addRecentlyPlayedPlaylist(String playlistId) {
-    String playlistTitle = playlistId == 'liked' ? 'Liked Songs' : (playlistId == 'offline' ? 'Offline Files' : playlistId);
+    String playlistTitle = playlistId == 'liked' ? 'Liked Songs' : (playlistId == 'offline' ? 'Offline' : playlistId);
     final customPlaylist = _customPlaylists[playlistId];
     if (customPlaylist != null) {
       playlistTitle = customPlaylist.name;
@@ -1273,11 +1436,29 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     ));
   }
 
-  List<RecentlyPlayedItem> get recentlyPlayedItems => List.unmodifiable(_recentlyPlayedItems);
+  List<RecentlyPlayedItem> get recentlyPlayedItems {
+    return List.unmodifiable(_recentlyPlayedItems.where((item) {
+      if (item.type == 'radio') {
+        return !_hiddenRadios.contains(item.id);
+      }
+      if (item.type == 'song') {
+        return !_hiddenTracks.contains(item.id);
+      }
+      return true;
+    }));
+  }
 
   Future<void> clearRecentlyPlayed() async {
     _recentlyPlayedItems.clear();
     await _prefs.remove(_recentlyPlayedKey);
+    notifyListeners();
+  }
+
+  Future<void> clearHiddenRadiosAndTracks() async {
+    _hiddenRadios.clear();
+    _hiddenTracks.clear();
+    await _prefs.remove(_hiddenRadiosKey);
+    await _prefs.remove(_hiddenTracksKey);
     notifyListeners();
   }
 

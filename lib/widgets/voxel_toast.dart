@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
-/// Production-quality toast that instantly replaces itself on repeated calls.
-/// No animation queue — works like Spotify / Apple Music toasts.
+/// Non-disruptive pill-style overlay toast.
+/// Floats above all content, IgnorePointer so taps pass straight through.
+/// Replaces itself instantly on rapid-fire calls (no queue).
 class VoxelToast {
   VoxelToast._();
 
@@ -11,30 +12,33 @@ class VoxelToast {
   static OverlayEntry? _entry;
   static Timer? _timer;
 
-  /// Show a toast.
+  /// Show a toast pill.
   ///
-  /// [bottomPadding] — distance from the bottom edge of the screen
-  /// (include kBottomNavigationBarHeight + safe area + mini-player height).
+  /// [bottomPadding] — distance from bottom of screen.
+  /// [icon] — optional leading icon inside the pill.
   static void show(
     BuildContext context,
     String message, {
     Duration duration = const Duration(seconds: 2),
     double? bottomPadding,
+    IconData? icon,
   }) {
     _timer?.cancel();
 
-    final resolvedPadding = bottomPadding ?? (MediaQuery.of(context).padding.bottom + 8.0);
+    final resolvedPadding =
+        bottomPadding ?? (MediaQuery.of(context).padding.bottom + kBottomNavigationBarHeight + 8.0);
 
     final state = _key.currentState;
     if (state != null) {
-      // Already visible — just update text and reset the timer; no re-animation.
-      state.update(message);
+      // Already visible — just swap text, no re-animation.
+      state.update(message, icon);
     } else {
       _entry?.remove();
       _entry = OverlayEntry(
         builder: (_) => _VoxelToastWidget(
           key: _key,
           initialMessage: message,
+          initialIcon: icon,
           bottomPadding: resolvedPadding,
           onDismissed: _cleanup,
         ),
@@ -55,6 +59,7 @@ class VoxelToast {
 
 class _VoxelToastWidget extends StatefulWidget {
   final String initialMessage;
+  final IconData? initialIcon;
   final double? bottomPadding;
   final VoidCallback onDismissed;
 
@@ -62,6 +67,7 @@ class _VoxelToastWidget extends StatefulWidget {
     super.key,
     required this.initialMessage,
     required this.onDismissed,
+    this.initialIcon,
     this.bottomPadding,
   });
 
@@ -73,24 +79,25 @@ class _VoxelToastWidgetState extends State<_VoxelToastWidget>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _opacity;
-  late Animation<Offset> _slide;
+  late Animation<double> _scale;
   late String _message;
+  IconData? _icon;
 
   @override
   void initState() {
     super.initState();
     _message = widget.initialMessage;
+    _icon = widget.initialIcon;
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration: const Duration(milliseconds: 200),
     );
 
     _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
-    _slide = Tween<Offset>(
-      begin: const Offset(0, 0.4),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _scale = Tween<double>(begin: 0.82, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
+    );
 
     _controller.forward();
   }
@@ -101,27 +108,23 @@ class _VoxelToastWidgetState extends State<_VoxelToastWidget>
     super.dispose();
   }
 
-  /// Update message without re-animating.
-  void update(String message) {
-    if (mounted) setState(() => _message = message);
+  void update(String message, IconData? icon) {
+    if (mounted) setState(() { _message = message; _icon = icon; });
   }
 
-  /// Fade out, then notify parent to remove the overlay entry.
   void dismiss() {
     if (!mounted) return;
     _controller
         .animateTo(0,
-            duration: const Duration(milliseconds: 180), curve: Curves.easeIn)
-        .whenCompleteOrCancel(() {
-      widget.onDismissed();
-    });
+            duration: const Duration(milliseconds: 160), curve: Curves.easeIn)
+        .whenCompleteOrCancel(widget.onDismissed);
   }
 
   @override
   Widget build(BuildContext context) {
-    final mq = MediaQuery.of(context);
+    final scheme = Theme.of(context).colorScheme;
     final bottom = widget.bottomPadding ??
-        mq.padding.bottom + kBottomNavigationBarHeight + 8.0;
+        MediaQuery.of(context).padding.bottom + kBottomNavigationBarHeight + 8.0;
 
     return Positioned(
       left: 0,
@@ -130,31 +133,46 @@ class _VoxelToastWidgetState extends State<_VoxelToastWidget>
       child: IgnorePointer(
         child: FadeTransition(
           opacity: _opacity,
-          child: SlideTransition(
-            position: _slide,
+          child: ScaleTransition(
+            scale: _scale,
+            alignment: Alignment.bottomCenter,
             child: Material(
               type: MaterialType.transparency,
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  color: Colors.deepPurple.shade400,
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black54,
-                      blurRadius: 6,
-                      offset: Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  _message,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+                  decoration: BoxDecoration(
+                    color: scheme.inverseSurface,
+                    borderRadius: BorderRadius.circular(100),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.22),
+                        blurRadius: 14,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_icon != null) ...[
+                        Icon(_icon, color: scheme.onInverseSurface, size: 18),
+                        const SizedBox(width: 8),
+                      ],
+                      Flexible(
+                        child: Text(
+                          _message,
+                          style: TextStyle(
+                            color: scheme.onInverseSurface,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.1,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

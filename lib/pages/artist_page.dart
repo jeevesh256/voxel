@@ -747,41 +747,28 @@ class _ArtistPageState extends State<ArtistPage> {
             title: 'Add to queue',
             color: Colors.blue.shade400,
             onTap: () {
+              if (audioService.isRadioPlaying) {
+                audioService.addToQueue(cachedSong);
+                return;
+              }
               if (_isMiniPlayerActive(audioService)) {
-                final bottomMargin = MediaQuery.of(context).padding.bottom + 8.0;
                 final playlistHandler = context.read<PlaylistHandler>();
                 final insertIndex = (audioService.player.currentIndex ?? 0) + 1;
                 playlistHandler.insertAtQueue(cachedSong, insertIndex);
 
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    behavior: SnackBarBehavior.floating,
-                    margin: EdgeInsets.only(
-                      left: 16,
-                      right: 16,
-                      bottom: bottomMargin,
-                    ),
-                    content: const Text('Added to queue'),
-                    backgroundColor: Colors.deepPurple.shade400,
-                  ),
+                VoxelToast.show(
+                  context,
+                  'Added to queue',
+                  icon: Icons.queue_music_rounded,
                 );
               } else {
                 audioService.playFileInContextWithPlaylistId(
                     file, widget.songs, 'artist-${widget.artistName}');
 
-                final bottomMargin = MediaQuery.of(context).padding.bottom + 8.0;
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    behavior: SnackBarBehavior.floating,
-                    margin: EdgeInsets.only(
-                      left: 16,
-                      right: 16,
-                      bottom: bottomMargin,
-                    ),
-                    content: const Text('Playing now'),
-                    backgroundColor: Colors.deepPurple.shade400,
-                  ),
+                VoxelToast.show(
+                  context,
+                  'Playing now',
+                  icon: Icons.play_arrow_rounded,
                 );
               }
             },
@@ -897,24 +884,11 @@ class _ArtistPageState extends State<ArtistPage> {
                     onTap: () {
                       Navigator.of(context).pop();
                       audioService.addSongToCustomPlaylist(playlist.id, song);
-                      Future.delayed(const Duration(milliseconds: 100), () {
-                        final miniPlayerHeight =
-                            _isMiniPlayerActive(audioService) ? 70.0 : 0.0;
-                        final bottomMargin =
-                            MediaQuery.of(context).padding.bottom + 8.0;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            behavior: SnackBarBehavior.floating,
-                            margin: EdgeInsets.only(
-                              left: 16,
-                              right: 16,
-                              bottom: bottomMargin,
-                            ),
-                            content: Text('Added to ${playlist.name}'),
-                            backgroundColor: Colors.deepPurple.shade400,
-                          ),
-                        );
-                      });
+                      VoxelToast.show(
+                        context,
+                        'Added to ${playlist.name}',
+                        icon: Icons.playlist_add_rounded,
+                      );
                     },
                   )),
             ],
@@ -995,21 +969,11 @@ class _ArtistPageState extends State<ArtistPage> {
       // Add the song to the newly created playlist
       audioService.addSongToCustomPlaylist(playlist.id, song);
 
-      Future.delayed(const Duration(milliseconds: 100), () {
-        final bottomMargin = MediaQuery.of(context).padding.bottom + 8.0;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            margin: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              bottom: bottomMargin,
-            ),
-            content: Text('Created "${result['name']}" and added song'),
-            backgroundColor: Colors.deepPurple.shade400,
-          ),
-        );
-      });
+      VoxelToast.show(
+        context,
+        'Created "${result['name']}" and added song',
+        icon: Icons.playlist_add_check_rounded,
+      );
     }
   }
 
@@ -1053,19 +1017,10 @@ class _ArtistPageState extends State<ArtistPage> {
     // Show results or error
     if (errorMessage != null) {
       if (context.mounted) {
-        final audioService = context.read<AudioPlayerService>();
-        final bottomMargin = MediaQuery.of(context).padding.bottom + 8.0;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            margin: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              bottom: bottomMargin,
-            ),
-            content: Text('Error updating metadata: $errorMessage'),
-            backgroundColor: Colors.red.shade400,
-          ),
+        VoxelToast.show(
+          context,
+          'Error updating metadata',
+          icon: Icons.error_outline_rounded,
         );
       }
     } else if (updatedSong != null && context.mounted) {

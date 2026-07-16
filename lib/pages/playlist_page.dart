@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
@@ -13,6 +14,7 @@ import '../widgets/song_menu_sheet.dart';
 import '../widgets/edit_metadata_sheet.dart';
 import '../models/custom_playlist.dart';
 import '../models/song.dart';
+import '../widgets/voxel_toast.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
@@ -311,103 +313,98 @@ class _PlaylistPageState extends State<PlaylistPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             // Create new playlist option
-            ListTile(
-              leading: Icon(Icons.add, color: _playlistColor),
-              title: const Text('Create New Playlist',
-                  style: TextStyle(color: Colors.white)),
-              subtitle: Text('Create a new playlist with this song',
-                  style: TextStyle(color: Colors.grey[400])),
-              onTap: () async {
-                Navigator.of(context).pop();
-                await _createPlaylistWithSong(song);
-              },
+            Material(
+              color: Colors.transparent,
+              child: ListTile(
+                leading: Icon(Icons.add, color: _playlistColor),
+                title: const Text('Create New Playlist',
+                    style: TextStyle(color: Colors.white)),
+                subtitle: Text('Create a new playlist with this song',
+                    style: TextStyle(color: Colors.grey[400])),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  await _createPlaylistWithSong(song);
+                },
+              ),
             ),
             if (customPlaylists.isNotEmpty) ...[
               const Divider(color: Colors.grey),
               // Existing playlists
-              ...customPlaylists.map((playlist) => ListTile(
-                    leading: playlist.artworkPath != null
-                        ? Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(6),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black26,
-                                  blurRadius: 3,
-                                  offset: const Offset(0, 1),
-                                ),
-                              ],
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(6),
-                              child: Image.file(
-                                File(playlist.artworkPath!),
-                                width: 48,
-                                height: 48,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    playlist.artworkColor != null
-                                        ? Container(
-                                            width: 48,
-                                            height: 48,
-                                            decoration: BoxDecoration(
-                                              color:
-                                                  Color(playlist.artworkColor!),
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                            ),
-                                            child: const Icon(
-                                              Icons.queue_music,
-                                              color: Colors.white,
-                                              size: 20,
-                                            ),
-                                          )
-                                        : Icon(
-                                            Icons.queue_music,
-                                            color: Colors.deepPurple.shade400,
-                                          ),
+              ...customPlaylists.map((playlist) => Material(
+                    color: Colors.transparent,
+                    child: ListTile(
+                      leading: playlist.artworkPath != null
+                          ? Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(6),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black26,
+                                    blurRadius: 3,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
                               ),
-                            ),
-                          )
-                        : playlist.artworkColor != null
-                            ? Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  color: _playlistColor,
-                                  borderRadius: BorderRadius.circular(6),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: Image.file(
+                                  File(playlist.artworkPath!),
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) =>
+                                      playlist.artworkColor != null
+                                          ? Container(
+                                              width: 48,
+                                              height: 48,
+                                              decoration: BoxDecoration(
+                                                color:
+                                                    Color(playlist.artworkColor!),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                              child: const Icon(
+                                                Icons.queue_music,
+                                                color: Colors.white,
+                                                size: 20,
+                                              ),
+                                            )
+                                          : Icon(
+                                              Icons.queue_music,
+                                              color: Colors.deepPurple.shade400,
+                                            ),
                                 ),
-                                child: const Icon(
-                                  Icons.queue_music,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                              )
-                            : Icon(Icons.queue_music, color: _playlistColor),
-                    title: Text(playlist.name,
-                        style: const TextStyle(color: Colors.white)),
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      audioService.addSongToCustomPlaylist(playlist.id, song);
-                      Future.delayed(const Duration(milliseconds: 100), () {
-                        final bottomMargin =
-                            MediaQuery.of(context).padding.bottom + 8.0;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            behavior: SnackBarBehavior.floating,
-                            margin: EdgeInsets.only(
-                              left: 16,
-                              right: 16,
-                              bottom: bottomMargin,
-                            ),
-                            content: Text('Added to ${playlist.name}'),
-                            backgroundColor: Colors.deepPurple.shade400,
-                          ),
+                              ),
+                            )
+                          : playlist.artworkColor != null
+                              ? Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: _playlistColor,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Icon(
+                                    Icons.queue_music,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                )
+                              : Icon(Icons.queue_music, color: _playlistColor),
+                      title: Text(playlist.name,
+                          style: const TextStyle(color: Colors.white)),
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        audioService.addSongToCustomPlaylist(playlist.id, song);
+                      VoxelToast.show(
+                          context,
+                          'Added to ${playlist.name}',
+                          icon: Icons.playlist_add_rounded,
                         );
-                      });
-                    },
+                      },
+                    ),
                   )),
             ],
           ],
@@ -487,21 +484,11 @@ class _PlaylistPageState extends State<PlaylistPage> {
       // Add the song to the newly created playlist
       audioService.addSongToCustomPlaylist(playlist.id, song);
 
-      Future.delayed(const Duration(milliseconds: 100), () {
-        final bottomMargin = MediaQuery.of(context).padding.bottom + 8.0;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            margin: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              bottom: bottomMargin,
-            ),
-            content: Text('Created "${result['name']}" and added song'),
-            backgroundColor: _playlistColor,
-          ),
-        );
-      });
+      VoxelToast.show(
+        context,
+        'Created "${result['name']}" and added song',
+        icon: Icons.playlist_add_check_rounded,
+      );
     }
   }
 
@@ -558,18 +545,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
       // Show confirmation
       if (mounted) {
-        final bottomMargin = MediaQuery.of(context).padding.bottom + 8.0;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            margin: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              bottom: bottomMargin,
-            ),
-            content: const Text('Metadata updated'),
-            backgroundColor: _playlistColor,
-          ),
+        VoxelToast.show(
+          context,
+          'Metadata updated',
+          icon: Icons.check_circle_outline_rounded,
         );
       }
     }
@@ -896,41 +875,28 @@ class _PlaylistPageState extends State<PlaylistPage> {
             title: 'Add to queue',
             color: Colors.blue.shade400,
             onTap: () {
+              if (audioService.isRadioPlaying) {
+                audioService.addToQueue(cachedSong);
+                return;
+              }
               if (_isMiniPlayerActive(audioService)) {
-                final bottomMargin = MediaQuery.of(context).padding.bottom + 8.0;
                 final playlistHandler = context.read<PlaylistHandler>();
                 final insertIndex = (audioService.player.currentIndex ?? 0) + 1;
                 playlistHandler.insertAtQueue(cachedSong, insertIndex);
 
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    behavior: SnackBarBehavior.floating,
-                    margin: EdgeInsets.only(
-                      left: 16,
-                      right: 16,
-                      bottom: bottomMargin,
-                    ),
-                    content: const Text('Added to queue'),
-                    backgroundColor: Colors.deepPurple.shade400,
-                  ),
+                VoxelToast.show(
+                  context,
+                  'Added to queue',
+                  icon: Icons.queue_music_rounded,
                 );
               } else {
                 audioService.playFileInContextWithPlaylistId(
                     file, songs, widget.playlistId);
 
-                final bottomMargin = MediaQuery.of(context).padding.bottom + 8.0;
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    behavior: SnackBarBehavior.floating,
-                    margin: EdgeInsets.only(
-                      left: 16,
-                      right: 16,
-                      bottom: bottomMargin,
-                    ),
-                    content: const Text('Playing now'),
-                    backgroundColor: Colors.deepPurple.shade400,
-                  ),
+                VoxelToast.show(
+                  context,
+                  'Playing now',
+                  icon: Icons.play_arrow_rounded,
                 );
               }
             },
@@ -950,19 +916,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
             onTap: () {
               audioService.removeSongFromPlaylist(widget.playlistId, file);
 
-              final bottomMargin = MediaQuery.of(context).padding.bottom + 8.0;
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  behavior: SnackBarBehavior.floating,
-                  margin: EdgeInsets.only(
-                    left: 16,
-                    right: 16,
-                    bottom: bottomMargin,
-                  ),
-                  content: const Text('Removed from playlist'),
-                  backgroundColor: Colors.red.shade400,
-                ),
+              VoxelToast.show(
+                context,
+                'Removed from playlist',
+                icon: Icons.remove_circle_outline_rounded,
               );
             },
           ),
@@ -1600,18 +1557,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
       if (mounted) {
         setState(() {});
-        final bottomMargin = MediaQuery.of(context).padding.bottom + 8.0;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            margin: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              bottom: bottomMargin,
-            ),
-            content: const Text('Playlist updated'),
-            backgroundColor: _playlistColor,
-          ),
+        VoxelToast.show(
+          context,
+          'Playlist updated',
+          icon: Icons.check_rounded,
         );
       }
     }
@@ -1676,6 +1625,7 @@ class _OptimizedSongTileState extends State<_OptimizedSongTile>
     with AutomaticKeepAliveClientMixin {
   late Song _cachedSong;
   bool _isPlaying = false;
+  StreamSubscription? _mediaSubscription;
 
   @override
   bool get wantKeepAlive => true;
@@ -1685,14 +1635,19 @@ class _OptimizedSongTileState extends State<_OptimizedSongTile>
     super.initState();
     _cachedSong = widget.metadataCache.createSongFromFile(widget.file);
     _updatePlayingState();
-    widget.audioService.currentMediaStream.listen(_onMediaChanged);
+    _mediaSubscription = widget.audioService.currentMediaStream.listen(_onMediaChanged);
   }
 
   @override
   void didUpdateWidget(_OptimizedSongTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Reload cached song data when widget updates (e.g., after metadata edit)
     _cachedSong = widget.metadataCache.createSongFromFile(widget.file);
+  }
+
+  @override
+  void dispose() {
+    _mediaSubscription?.cancel();
+    super.dispose();
   }
 
   void _updatePlayingState() {
@@ -1700,9 +1655,11 @@ class _OptimizedSongTileState extends State<_OptimizedSongTile>
         .audioService.player.sequenceState?.currentSource?.tag as MediaItem?;
     final newIsPlaying = currentMedia?.id == widget.file.path;
     if (_isPlaying != newIsPlaying) {
-      setState(() {
-        _isPlaying = newIsPlaying;
-      });
+      if (mounted) {
+        setState(() {
+          _isPlaying = newIsPlaying;
+        });
+      }
     }
   }
 

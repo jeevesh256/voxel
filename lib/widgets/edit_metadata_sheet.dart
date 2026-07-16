@@ -1,15 +1,19 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 
 import '../models/song.dart';
 import '../services/audio_service.dart';
 import '../services/metadata_service.dart';
 import '../services/song_metadata_cache.dart';
 import '../widgets/voxel_toast.dart';
+import 'applyable_metadata_item.dart';
+import 'squishy_action_button.dart';
 
 class EditMetadataSheet extends StatefulWidget {
   final Song song;
@@ -58,6 +62,7 @@ class _EditMetadataSheetState extends State<EditMetadataSheet> {
   late TextEditingController _albumController;
   String? _selectedAlbumArt;
   bool _isAutoUpdating = false;
+  final _metadataService = MetadataService();
 
   @override
   void initState() {
@@ -79,12 +84,14 @@ class _EditMetadataSheetState extends State<EditMetadataSheet> {
   }
 
   InputDecoration _metadataFieldDecoration(String label) {
+    final scheme = Theme.of(context).colorScheme;
     return InputDecoration(
       labelText: label,
-      labelStyle: TextStyle(color: widget.accentColor),
+      labelStyle: TextStyle(color: scheme.onSurfaceVariant.withValues(alpha: 0.7)),
+      floatingLabelStyle: TextStyle(color: widget.accentColor, fontWeight: FontWeight.w600),
       filled: true,
-      fillColor: Colors.white.withOpacity(0.05),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      fillColor: scheme.surfaceContainer,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide.none,
@@ -193,9 +200,10 @@ class _EditMetadataSheetState extends State<EditMetadataSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF1B1B1F).withOpacity(0.95),
+        color: scheme.surfaceContainerHigh.withValues(alpha: 0.95),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: ClipRRect(
@@ -211,7 +219,7 @@ class _EditMetadataSheetState extends State<EditMetadataSheet> {
                   width: 48,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(3),
                   ),
                 ),
@@ -238,7 +246,7 @@ class _EditMetadataSheetState extends State<EditMetadataSheet> {
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                    physics: const BouncingScrollPhysics(),
+                    physics: const NeverScrollableScrollPhysics(),
                     child: Column(
                       children: [
                         // Album Art Picker
@@ -248,51 +256,51 @@ class _EditMetadataSheetState extends State<EditMetadataSheet> {
                             alignment: Alignment.center,
                             children: [
                               Container(
-                                width: 200,
-                                height: 200,
+                                width: 120,
+                                height: 120,
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.05),
-                                  borderRadius: BorderRadius.circular(20),
+                                  color: scheme.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(16),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.2),
-                                      blurRadius: 15,
-                                      offset: const Offset(0, 8),
+                                      color: Colors.black.withValues(alpha: 0.15),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
                                     ),
                                   ],
                                 ),
                                 child: _selectedAlbumArt != null && _selectedAlbumArt!.isNotEmpty
                                     ? ClipRRect(
-                                        borderRadius: BorderRadius.circular(20),
+                                        borderRadius: BorderRadius.circular(16),
                                         child: Image.file(
                                           File(_selectedAlbumArt!),
                                           fit: BoxFit.cover,
                                           errorBuilder: (_, __, ___) => Icon(
                                             Icons.add_photo_alternate_rounded,
-                                            size: 60,
-                                            color: widget.accentColor.withOpacity(0.5),
+                                            size: 40,
+                                            color: widget.accentColor.withValues(alpha: 0.5),
                                           ),
                                         ),
                                       )
                                     : Icon(
                                         Icons.add_photo_alternate_rounded,
-                                        size: 60,
-                                        color: widget.accentColor.withOpacity(0.5),
+                                        size: 40,
+                                        color: widget.accentColor.withValues(alpha: 0.5),
                                       ),
                               ),
                               // Edit Overlay
                               Container(
-                                width: 200,
-                                height: 200,
+                                width: 120,
+                                height: 120,
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.3),
-                                  borderRadius: BorderRadius.circular(20),
+                                  color: Colors.black.withValues(alpha: 0.25),
+                                  borderRadius: BorderRadius.circular(16),
                                 ),
                                 child: const Center(
                                   child: Icon(
                                     Icons.edit_rounded,
                                     color: Colors.white,
-                                    size: 40,
+                                    size: 26,
                                   ),
                                 ),
                               ),
@@ -301,107 +309,78 @@ class _EditMetadataSheetState extends State<EditMetadataSheet> {
                         ),
                         if (_selectedAlbumArt != null && _selectedAlbumArt!.isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.only(top: 12.0),
+                            padding: const EdgeInsets.only(top: 8.0),
                             child: TextButton.icon(
                               onPressed: () => setState(() => _selectedAlbumArt = ''),
-                              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
-                              label: const Text('Remove album art', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 16),
+                              label: const Text('Remove album art', style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.w600)),
                               style: TextButton.styleFrom(
-                                backgroundColor: Colors.redAccent.withOpacity(0.1),
+                                backgroundColor: Colors.redAccent.withValues(alpha: 0.1),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                               ),
                             ),
                           ),
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 16),
                         TextField(
                           controller: _titleController,
-                          style: const TextStyle(color: Colors.white, fontSize: 16),
+                          style: const TextStyle(color: Colors.white, fontSize: 15),
                           decoration: _metadataFieldDecoration('Title'),
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 10),
                         TextField(
                           controller: _artistController,
-                          style: const TextStyle(color: Colors.white, fontSize: 16),
+                          style: const TextStyle(color: Colors.white, fontSize: 15),
                           decoration: _metadataFieldDecoration('Artist'),
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 10),
                         TextField(
                           controller: _albumController,
-                          style: const TextStyle(color: Colors.white, fontSize: 16),
+                          style: const TextStyle(color: Colors.white, fontSize: 15),
                           decoration: _metadataFieldDecoration('Album'),
                         ),
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 16),
                         
                         // Action Buttons
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: _isAutoUpdating ? null : _autoUpdate,
-                                icon: _isAutoUpdating
-                                    ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: widget.accentColor))
-                                    : Icon(Icons.auto_fix_high_rounded, color: widget.accentColor),
-                                label: Text(
-                                  _isAutoUpdating ? 'Updating...' : 'Auto update',
-                                  style: const TextStyle(fontWeight: FontWeight.w600),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: widget.accentColor.withOpacity(0.15),
-                                  foregroundColor: Colors.white,
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            if (widget.onAdvancedSearch != null) ...[
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: () async {
-                                    final result = await widget.onAdvancedSearch!();
-                                    if (result != null && mounted) {
-                                      setState(() {
-                                        _titleController.text = result['title'];
-                                        _artistController.text = result['artist'];
-                                        _albumController.text = result['album'];
-                                        _selectedAlbumArt = result['albumArt'];
-                                      });
-                                    }
-                                  },
-                                  icon: const Icon(Icons.travel_explore_rounded, color: Colors.blue),
-                                  label: const Text('Search', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.w600)),
-                                  style: OutlinedButton.styleFrom(
-                                    side: BorderSide(color: Colors.blue.withOpacity(0.5)),
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: _revertMetadata,
-                            icon: const Icon(Icons.restore_rounded, color: Colors.orange),
-                            label: const Text('Revert to Original', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w600)),
-                            style: OutlinedButton.styleFrom(
-                              side: BorderSide(color: Colors.orange.withOpacity(0.5)),
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
+                        ExpressiveButtonRow(
+                          leftFlex: 1.0,
+                          rightFlex: 1.0,
+                          left: SquishyButtonParams(
+                            icon: _isAutoUpdating
+                                ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: widget.accentColor))
+                                : Icon(Icons.auto_fix_high_rounded, color: widget.accentColor),
+                            label: Text(_isAutoUpdating ? 'Updating...' : 'Auto update'),
+                            backgroundColor: widget.accentColor.withValues(alpha: 0.15),
+                            foregroundColor: Colors.white,
+                            onTap: _isAutoUpdating ? null : _autoUpdate,
                           ),
+                          right: SquishyButtonParams(
+                            icon: const Icon(Icons.travel_explore_rounded, color: Colors.blueAccent),
+                            label: const Text('Search'),
+                            backgroundColor: Colors.blue.withValues(alpha: 0.15),
+                            foregroundColor: Colors.white,
+                            onTap: () async {
+                              final result = widget.onAdvancedSearch != null
+                                  ? await widget.onAdvancedSearch!()
+                                  : await _showBuiltInSearch(context);
+                              if (result != null && mounted) {
+                                setState(() {
+                                  _titleController.text = result['title'] ?? '';
+                                  _artistController.text = result['artist'] ?? '';
+                                  _albumController.text = result['album'] ?? '';
+                                  _selectedAlbumArt = result['albumArt'];
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SquishyActionButton(
+                          icon: const Icon(Icons.restore_rounded, color: Colors.orangeAccent),
+                          label: const Text('Revert to Original'),
+                          backgroundColor: Colors.orange.withValues(alpha: 0.15),
+                          foregroundColor: Colors.white,
+                          onTap: _revertMetadata,
                         ),
                       ],
                     ),
@@ -409,53 +388,300 @@ class _EditMetadataSheetState extends State<EditMetadataSheet> {
                 ),
                 // Footer
                 Container(
-                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.2),
-                    border: Border(top: BorderSide(color: Colors.white.withOpacity(0.05))),
+                    color: Colors.black.withValues(alpha: 0.25),
+                    border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.white70,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          ),
-                          child: const Text('Cancel', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.of(context).pop({
-                              'title': _titleController.text.trim(),
-                              'artist': _artistController.text.trim(),
-                              'album': _albumController.text.trim(),
-                              'albumArt': _selectedAlbumArt ?? widget.song.albumArt,
-                            });
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: widget.accentColor,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            elevation: 4,
-                            shadowColor: widget.accentColor.withOpacity(0.4),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          ),
-                          child: const Text('Save Changes', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                        ),
-                      ),
-                    ],
+                  child: ExpressiveButtonRow(
+                    leftFlex: 1.0,
+                    rightFlex: 2.0,
+                    left: SquishyButtonParams(
+                      label: const Text('Cancel'),
+                      backgroundColor: Colors.white.withValues(alpha: 0.08),
+                      foregroundColor: Colors.white70,
+                      onTap: () => Navigator.of(context).pop(),
+                    ),
+                    right: SquishyButtonParams(
+                      label: const Text('Save Changes'),
+                      backgroundColor: widget.accentColor,
+                      foregroundColor: Colors.white,
+                      onTap: () {
+                        Navigator.of(context).pop({
+                          'title': _titleController.text.trim(),
+                          'artist': _artistController.text.trim(),
+                          'album': _albumController.text.trim(),
+                          'albumArt': _selectedAlbumArt ?? widget.song.albumArt,
+                        });
+                      },
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>?> _showBuiltInSearch(BuildContext context) async {
+    final titleController = TextEditingController(text: _titleController.text);
+    final artistController = TextEditingController(text: _artistController.text);
+    Future<List<MetadataResult>>? futureResults;
+    final Map<String, Future<Uint8List?>> artPreviewCache = {};
+
+    InputDecoration searchFieldDecoration(String hint) {
+      return InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(color: Colors.grey[500]),
+        filled: true,
+        fillColor: const Color(0xFF232327),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+      );
+    }
+
+    return showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      barrierColor: Colors.black54,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) {
+          void triggerSearch() {
+            setState(() {
+              futureResults = _metadataService.searchMetadataOptions(
+                title: titleController.text.trim(),
+                artist: artistController.text.trim(),
+                limit: 12,
+              );
+            });
+          }
+
+          Future<Uint8List?> fetchCoverArtPreview(String? url) async {
+            if (url == null || url.isEmpty) return null;
+            final candidates = <String>{
+              url,
+              url.replaceAll('1000x1000', '600x600'),
+              url.replaceAll('1000x1000', '300x300'),
+              url.replaceFirst('front-500', 'front-250'),
+            }.where((e) => e.isNotEmpty).toList();
+
+            for (final candidate in candidates) {
+              try {
+                final uri = Uri.parse(candidate);
+                final response = await http.get(uri).timeout(const Duration(seconds: 3));
+                if (response.statusCode >= 200 &&
+                    response.statusCode < 300 &&
+                    response.bodyBytes.isNotEmpty) {
+                  return response.bodyBytes;
+                }
+              } catch (_) {}
+            }
+            return null;
+          }
+
+          Future<Uint8List?> getPreviewFuture(String? url) {
+            if (url == null || url.isEmpty) return Future.value(null);
+            if (artPreviewCache.containsKey(url)) {
+              return artPreviewCache[url]!;
+            }
+            final future = fetchCoverArtPreview(url);
+            artPreviewCache[url] = future;
+            return future;
+          }
+
+          final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+          return SafeArea(
+            top: false,
+            child: AnimatedPadding(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              padding: EdgeInsets.only(bottom: bottomInset),
+              child: FractionallySizedBox(
+                heightFactor: 0.88,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF151518),
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                  ),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 10),
+                      Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[700],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 10, 10),
+                        child: Row(
+                          children: [
+                            Icon(Icons.travel_explore, color: widget.accentColor),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Text(
+                                'Find Metadata',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.of(ctx).pop(),
+                              icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
+                          children: [
+                            TextField(
+                              controller: titleController,
+                              style: const TextStyle(color: Colors.white),
+                              decoration: searchFieldDecoration('Song title'),
+                              textInputAction: TextInputAction.next,
+                            ),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: artistController,
+                              style: const TextStyle(color: Colors.white),
+                              decoration: searchFieldDecoration('Artist (optional)'),
+                              textInputAction: TextInputAction.search,
+                              onSubmitted: (_) => triggerSearch(),
+                            ),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 44,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: widget.accentColor,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                onPressed: triggerSearch,
+                                icon: const Icon(Icons.search_rounded, size: 18),
+                                label: const Text('Search metadata'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: Container(
+                          margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF131316),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: FutureBuilder<List<MetadataResult>>(
+                            future: futureResults,
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState == ConnectionState.waiting) {
+                                return const Center(
+                                  child: SizedBox(
+                                    width: 26,
+                                    height: 26,
+                                    child: CircularProgressIndicator(strokeWidth: 2.2),
+                                  ),
+                                );
+                              }
+
+                              if (futureResults == null) {
+                                return Center(
+                                  child: Text(
+                                    'Search by title and artist to get matches',
+                                    style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                                  ),
+                                );
+                              }
+
+                              if (snapshot.hasError) {
+                                return Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Text(
+                                    'Search failed: ${snapshot.error}',
+                                    style: const TextStyle(color: Colors.redAccent),
+                                  ),
+                                );
+                              }
+
+                              final results = snapshot.data ?? [];
+                              if (results.isEmpty) {
+                                return Center(
+                                  child: Text(
+                                    'No matches found. Try different keywords.',
+                                    style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                                  ),
+                                );
+                              }
+
+                              return ListView.separated(
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                                itemCount: results.length,
+                                physics: const BouncingScrollPhysics(),
+                                separatorBuilder: (_, __) => Divider(color: Colors.grey.shade800, height: 1),
+                                itemBuilder: (context, index) {
+                                  final result = results[index];
+                                  final isITunes = (result.source ?? '').toLowerCase() == 'itunes';
+
+                                  return Padding(
+                                    padding: const EdgeInsets.only(left: 8),
+                                    child: RepaintBoundary(
+                                      child: ApplyableMetadataItem(
+                                        result: result,
+                                        isITunes: isITunes,
+                                        metadataService: _metadataService,
+                                        onApply: (artPath) {
+                                          final finalResult = {
+                                            'title': result.title,
+                                            'artist': result.artist,
+                                            'album': result.album.isNotEmpty ? result.album : 'Unknown',
+                                            'albumArt': artPath ?? widget.song.albumArt,
+                                          };
+                                          Navigator.of(ctx).pop(finalResult);
+                                        },
+                                        getPreviewFuture: getPreviewFuture,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

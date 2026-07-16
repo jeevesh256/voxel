@@ -102,9 +102,24 @@ class _AllStationsPageState extends State<AllStationsPage> {
       );
   }
 
+  Widget _buildFallbackArt(BuildContext context) {
+    return Container(
+      color: Theme.of(context).colorScheme.primaryContainer,
+      child: Center(
+        child: Icon(
+          Icons.radio_rounded,
+          color: Theme.of(context).colorScheme.onPrimaryContainer,
+          size: 24,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final audioService = context.read<AudioPlayerService>();
+    final audioService = context.watch<AudioPlayerService>();
+    final activeStations = widget.stations.where((s) => !audioService.isRadioHidden(s.id)).toList();
+
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       extendBodyBehindAppBar: true,
@@ -150,7 +165,7 @@ class _AllStationsPageState extends State<AllStationsPage> {
           SliverToBoxAdapter(
             child: SizedBox(
               height: 360,
-              child: _buildHeroHeader(widget.stations.length),
+              child: _buildHeroHeader(activeStations.length),
             ),
           ),
           SliverPadding(
@@ -160,7 +175,7 @@ class _AllStationsPageState extends State<AllStationsPage> {
             sliver: SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
-                  final station = widget.stations[index];
+                  final station = activeStations[index];
                   final hasArt = isValidArtwork(station.artworkUrl);
                   return GestureDetector(
                     onTap: () async {
@@ -189,31 +204,25 @@ class _AllStationsPageState extends State<AllStationsPage> {
                           left: 16, right: 0, top: 6, bottom: 6),
                       child: Row(
                         children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: SizedBox(
-                              width: 48,
-                              height: 48,
+                           Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              color: Colors.transparent,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              clipBehavior: Clip.antiAlias,
                               child: hasArt
                                   ? CachedNetworkImage(
                                       imageUrl: station.artworkUrl,
                                       fit: BoxFit.cover,
-                                      filterQuality: FilterQuality.high,
-                                      errorListener: (_) {},
-                                      placeholder: (_, __) => Container(
-                                        color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
-                                      ),
-                                      errorWidget: (_, __, ___) => Container(
-                                        color: Theme.of(context).colorScheme.primary,
-                                        child: const Icon(Icons.radio,
-                                            color: Colors.white, size: 24),
-                                      ),
+                                      filterQuality: FilterQuality.medium,
+                                      errorWidget: (_, __, ___) => _buildFallbackArt(context),
+                                      placeholder: (_, __) => _buildFallbackArt(context),
                                     )
-                                  : Container(
-                                      color: Theme.of(context).colorScheme.primary,
-                                      child: const Icon(Icons.radio,
-                                          color: Colors.white, size: 24),
-                                    ),
+                                  : _buildFallbackArt(context),
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -224,18 +233,18 @@ class _AllStationsPageState extends State<AllStationsPage> {
                                 Text(
                                   station.name,
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.w400,
-                                    fontSize: 16,
                                     color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(height: 2),
+                                const SizedBox(height: 4),
                                 Text(
                                   station.genre,
                                   style: TextStyle(
-                                    color: Colors.grey[500],
+                                    color: Colors.grey[400],
                                     fontSize: 13,
                                   ),
                                   maxLines: 1,
@@ -245,21 +254,17 @@ class _AllStationsPageState extends State<AllStationsPage> {
                             ),
                           ),
                           IconButton(
-                            icon: Icon(
-                              Icons.more_vert,
-                              color: Colors.grey[400],
-                            ),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                                minWidth: 40, minHeight: 40),
-                            onPressed: () => _showRadioOptions(context, station, audioService),
+                            icon: const Icon(Icons.more_vert, color: Colors.white70),
+                            onPressed: () {
+                              _showRadioOptions(context, station, audioService);
+                            },
                           ),
                         ],
                       ),
                     ),
                   );
                 },
-                childCount: widget.stations.length,
+                childCount: activeStations.length,
               ),
             ),
           ),

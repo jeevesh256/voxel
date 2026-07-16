@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:math' as math;
+import 'voxel_toast.dart';
 
 /// Curated pool of playlist accent colors — medium-brightness tones
 /// similar in feel to the app's deepPurple.shade400, but distinct from it.
@@ -120,21 +121,12 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Error opening picker. Try choosing a color instead.'),
-            backgroundColor: Colors.red,
-            action: SnackBarAction(
-              label: 'Choose Color',
-              textColor: Colors.white,
-              onPressed: () {
-                if (mounted) {
-                  _showColorPicker();
-                }
-              },
-            ),
-          ),
+        VoxelToast.show(
+          context,
+          'Error opening picker. Using color instead.',
+          icon: Icons.error_outline_rounded,
         );
+        _showColorPicker();
       }
     }
   }
@@ -156,21 +148,12 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Error selecting image. Try choosing a color instead.'),
-            backgroundColor: Colors.red,
-            action: SnackBarAction(
-              label: 'Choose Color',
-              textColor: Colors.white,
-              onPressed: () {
-                if (mounted) {
-                  _showColorPicker();
-                }
-              },
-            ),
-          ),
+        VoxelToast.show(
+          context,
+          'Error selecting image. Using color instead.',
+          icon: Icons.error_outline_rounded,
         );
+        _showColorPicker();
       }
     }
   }

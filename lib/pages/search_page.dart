@@ -17,6 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import '../widgets/voxel_toast.dart';
 import '../widgets/song_menu_sheet.dart';
+import '../widgets/voxel_like_button.dart';
 import '../services/artwork_validator.dart';
 // _isValidArtwork has been replaced by global isValidArtwork from services/artwork_validator.dart
 
@@ -209,7 +210,9 @@ class SearchPageState extends State<SearchPage>
       setState(() {
         _tracks = results[0] as List<ITunesTrack>;
         _itunesArtists = results[1] as List<ITunesArtist>;
-        _stations = results[2] as List<RadioStation>;
+        _stations = (results[2] as List<RadioStation>)
+            .where((s) => !audioService.isRadioHidden(s.id))
+            .toList();
         _localSongs = localSongs;
         _localArtists = localArtists;
         _loading = false;
@@ -1894,7 +1897,11 @@ class SearchPageState extends State<SearchPage>
                 ),
               ),
               // Heart
-              IconButton(
+              VoxelLikeButton(
+                isLiked: isLiked,
+                iconSize: 20.0,
+                activeColor: Colors.deepPurple.shade400,
+                color: Colors.grey[700],
                 onPressed: () {
                   final settings = Provider.of<SettingsModel>(context, listen: false);
                   if (settings.hapticsEnabled && settings.hapticsOnLikes) {
@@ -1908,17 +1915,6 @@ class SearchPageState extends State<SearchPage>
                         'favourite_radios', station);
                   }
                 },
-                icon: Icon(
-                  isLiked
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  color:
-                      isLiked ? Colors.deepPurple.shade400 : Colors.grey[700],
-                  size: 20,
-                ),
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
               ),
             ],
           ),

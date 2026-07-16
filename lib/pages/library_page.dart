@@ -449,6 +449,7 @@ class _LibraryPageState extends State<LibraryPage>
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
+              clipBehavior: Clip.antiAlias,
               child: SizedBox(
                 width: 48,
                 height: 48,
@@ -459,18 +460,18 @@ class _LibraryPageState extends State<LibraryPage>
                         filterQuality: FilterQuality.high,
                         errorListener: (_) {},
                         placeholder: (_, __) => Container(
-                          color: accentColor.withOpacity(0.2),
+                          color: Theme.of(context).colorScheme.primaryContainer,
                         ),
                         errorWidget: (_, __, ___) => Container(
-                          color: accentColor.withOpacity(0.6),
-                          child: const Icon(Icons.radio,
-                              color: Colors.white, size: 24),
+                          color: Theme.of(context).colorScheme.primaryContainer,
+                          child: Icon(Icons.radio_rounded,
+                              color: Theme.of(context).colorScheme.onPrimaryContainer, size: 24),
                         ),
                       )
                     : Container(
-                        color: accentColor.withOpacity(0.6),
-                        child: const Icon(Icons.radio,
-                            color: Colors.white, size: 24),
+                        color: Theme.of(context).colorScheme.primaryContainer,
+                        child: Icon(Icons.radio_rounded,
+                            color: Theme.of(context).colorScheme.onPrimaryContainer, size: 24),
                       ),
               ),
             ),

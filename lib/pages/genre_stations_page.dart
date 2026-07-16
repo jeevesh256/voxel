@@ -53,7 +53,8 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final audioService = context.read<AudioPlayerService>();
+    final audioService = context.watch<AudioPlayerService>();
+    final activeStations = widget.stations.where((s) => !audioService.isRadioHidden(s.id)).toList();
     final artworkUrl = _genreArtwork[widget.genre] ??
         'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800&h=800&fit=crop';
 
@@ -148,7 +149,7 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          '${widget.stations.length} stations',
+                          '${activeStations.length} stations',
                           style: TextStyle(
                             fontSize: 15,
                             color: Colors.white.withOpacity(0.7),
@@ -171,7 +172,7 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
             sliver: SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
-                  final station = widget.stations[index];
+                  final station = activeStations[index];
                   final hasArt = isValidArtwork(station.artworkUrl);
                   return GestureDetector(
                     onTap: () async {
@@ -202,6 +203,7 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(4),
+                            clipBehavior: Clip.antiAlias,
                             child: SizedBox(
                               width: 48,
                               height: 48,
@@ -212,18 +214,18 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
                                        filterQuality: FilterQuality.high,
                                        errorListener: (_) {},
                                        placeholder: (_, __) => Container(
-                                         color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                                         color: Theme.of(context).colorScheme.primaryContainer,
                                        ),
                                        errorWidget: (_, __, ___) => Container(
-                                         color: Theme.of(context).colorScheme.primary,
-                                         child: const Icon(Icons.radio,
-                                             color: Colors.white, size: 24),
+                                         color: Theme.of(context).colorScheme.primaryContainer,
+                                         child: Icon(Icons.radio_rounded,
+                                             color: Theme.of(context).colorScheme.onPrimaryContainer, size: 24),
                                        ),
                                      )
                                    : Container(
-                                       color: Theme.of(context).colorScheme.primary,
-                                       child: const Icon(Icons.radio,
-                                           color: Colors.white, size: 24),
+                                       color: Theme.of(context).colorScheme.primaryContainer,
+                                       child: Icon(Icons.radio_rounded,
+                                           color: Theme.of(context).colorScheme.onPrimaryContainer, size: 24),
                                      ),
                             ),
                           ),
@@ -272,7 +274,7 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
                     ),
                   );
                 },
-                childCount: widget.stations.length,
+                childCount: activeStations.length,
               ),
             ),
           ),

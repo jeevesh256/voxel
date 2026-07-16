@@ -65,10 +65,11 @@ class _HomePageState extends State<HomePage> {
   // List all radios in the top section, with a "See All" button
   Widget _buildRadioStationRow() {
     final metrics = _homeTileMetrics(context);
+    final audioService = context.watch<AudioPlayerService>();
     final validStations = _stations.where((station) {
       final streamUrl = station.streamUrl;
-      return streamUrl.startsWith('https://') ||
-          streamUrl.startsWith('http://');
+      return (streamUrl.startsWith('https://') || streamUrl.startsWith('http://')) &&
+          !audioService.isRadioHidden(station.id);
     }).toList();
     final topStations = validStations.take(10).toList();
     return Column(
@@ -205,10 +206,11 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildGenreRadioRow() {
     final metrics = _homeTileMetrics(context);
+    final audioService = context.watch<AudioPlayerService>();
     final validStations = _stations.where((station) {
       final streamUrl = station.streamUrl;
-      return streamUrl.startsWith('https://') ||
-          streamUrl.startsWith('http://');
+      return (streamUrl.startsWith('https://') || streamUrl.startsWith('http://')) &&
+          !audioService.isRadioHidden(station.id);
     }).toList();
     // Simplified generic genres with artwork
     final Map<String, String> genreArtwork = {
@@ -627,7 +629,7 @@ class _HomePageState extends State<HomePage> {
                     context,
                     PlaylistPage(
                       playlistId: item.id,
-                      title: item.title,
+                      title: item.id == 'offline' ? 'Offline' : item.title,
                       icon: item.id == 'liked' ? Icons.favorite : Icons.queue_music,
                       allowReorder: true,
                     ),
@@ -774,7 +776,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        item.title,
+                        item.id == 'offline' ? 'Offline' : item.title,
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 16,

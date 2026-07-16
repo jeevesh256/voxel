@@ -133,6 +133,7 @@ class _PersistentOverlayState extends State<PersistentOverlay>
     );
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: scheme.surface,
       body: WillPopScope(
         onWillPop: () async {

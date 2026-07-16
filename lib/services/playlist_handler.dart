@@ -142,4 +142,11 @@ class PlaylistHandler extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<void> clearQueue() async {
+    if (_queueManager != null) {
+      await _queueManager!.clearQueue();
+      notifyListeners();
+    }
+  }
 }

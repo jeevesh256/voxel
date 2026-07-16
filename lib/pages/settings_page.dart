@@ -237,8 +237,10 @@ class SettingsPage extends StatelessWidget {
                   );
                   final settings = context.read<SettingsModel>();
                   final removed = await settings.clearAppCache();
-                  if (context.mounted) {
-                    await context.read<AudioPlayerService>().clearRecentlyPlayed();
+                   if (context.mounted) {
+                    final audio = context.read<AudioPlayerService>();
+                    await audio.clearRecentlyPlayed();
+                    await audio.clearHiddenRadiosAndTracks();
                   }
                   if (!context.mounted) return;
                   VoxelToast.show(
