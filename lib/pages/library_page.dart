@@ -50,11 +50,18 @@ class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
 
   @override
-  State<LibraryPage> createState() => _LibraryPageState();
+  State<LibraryPage> createState() => LibraryPageState();
 }
 
-class _LibraryPageState extends State<LibraryPage>
+class LibraryPageState extends State<LibraryPage>
     with SingleTickerProviderStateMixin {
+  bool handleBack() {
+    if (_tabController.index != 0) {
+      _tabController.animateTo(0);
+      return true;
+    }
+    return false;
+  }
   final StorageService _storageService = StorageService();
   final SongMetadataCache _metadataCache = SongMetadataCache();
   late TabController _tabController;
@@ -417,6 +424,8 @@ class _LibraryPageState extends State<LibraryPage>
   Widget _buildRadioRow(dynamic radio, AudioPlayerService audioService) {
     final hasArt = _isValidArtwork(radio.artworkUrl as String);
     final accentColor = Theme.of(context).colorScheme.primary;
+    final isRadioActive = audioService.isRadioPlaying &&
+        audioService.currentRadioStation?.id == radio.id;
 
     return GestureDetector(
       onTap: () async {
@@ -482,10 +491,10 @@ class _LibraryPageState extends State<LibraryPage>
                 children: [
                   Text(
                     radio.name as String,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w400,
+                    style: TextStyle(
+                      fontWeight: isRadioActive ? FontWeight.w500 : FontWeight.w400,
                       fontSize: 16,
-                      color: Colors.white,
+                      color: isRadioActive ? accentColor : Colors.white,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

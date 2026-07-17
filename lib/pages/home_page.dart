@@ -119,6 +119,8 @@ class _HomePageState extends State<HomePage> {
             itemBuilder: (context, index) {
               final station = topStations[index];
               final hasArt = isValidArtwork(station.artworkUrl);
+              final isStationActive = audioService.isRadioPlaying &&
+                  audioService.currentRadioStation?.id == station.id;
               return GestureDetector(
                 onTap: () async {
                   final blockReason =
@@ -173,9 +175,12 @@ class _HomePageState extends State<HomePage> {
                       const SizedBox(height: 12),
                       Text(
                         station.name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 16,
+                          color: isStationActive
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.white,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

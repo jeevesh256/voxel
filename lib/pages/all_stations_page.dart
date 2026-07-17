@@ -177,6 +177,8 @@ class _AllStationsPageState extends State<AllStationsPage> {
                 (context, index) {
                   final station = activeStations[index];
                   final hasArt = isValidArtwork(station.artworkUrl);
+                  final isRadioActive = audioService.isRadioPlaying &&
+                      audioService.currentRadioStation?.id == station.id;
                   return GestureDetector(
                     onTap: () async {
                       final blockReason = await RadioPlaybackGuard.blockingMessage();
@@ -232,8 +234,10 @@ class _AllStationsPageState extends State<AllStationsPage> {
                               children: [
                                 Text(
                                   station.name,
-                                  style: const TextStyle(
-                                    color: Colors.white,
+                                  style: TextStyle(
+                                    color: isRadioActive 
+                                        ? Theme.of(context).colorScheme.primary 
+                                        : Colors.white,
                                     fontSize: 15,
                                     fontWeight: FontWeight.bold,
                                   ),

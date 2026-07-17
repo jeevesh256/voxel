@@ -22,10 +22,10 @@ class PersistentOverlay extends StatefulWidget {
   });
 
   @override
-  State<PersistentOverlay> createState() => _PersistentOverlayState();
+  State<PersistentOverlay> createState() => PersistentOverlayState();
 }
 
-class _PersistentOverlayState extends State<PersistentOverlay>
+class PersistentOverlayState extends State<PersistentOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _playerController;
   bool _hasNetwork = true;
@@ -60,6 +60,15 @@ class _PersistentOverlayState extends State<PersistentOverlay>
   void dispose() {
     _playerController.dispose();
     super.dispose();
+  }
+
+  bool handleBack() {
+    debugPrint('PersistentOverlay: handleBack called. PlayerController.value: ${_playerController.value}');
+    if (_playerController.value > 0.0) {
+      _playerController.animateTo(0.0, curve: Curves.easeOutCubic);
+      return true;
+    }
+    return false;
   }
 
   double _lerp(double a, double b, double t) => a + (b - a) * t;
@@ -135,17 +144,9 @@ class _PersistentOverlayState extends State<PersistentOverlay>
     return Scaffold(
       resizeToAvoidBottomInset: false,
       backgroundColor: scheme.surface,
-      body: WillPopScope(
-        onWillPop: () async {
-          if (_playerController.value > 0.0) {
-            _playerController.animateTo(0.0, curve: Curves.easeOutCubic);
-            return false;
-          }
-          return true;
-        },
-        child: Stack(
-          children: [
-            // Body Content Area
+      body: Stack(
+        children: [
+          // Body Content Area
             Positioned.fill(
               child: MediaQuery(
                 data: MediaQuery.of(context).copyWith(
@@ -237,7 +238,6 @@ class _PersistentOverlayState extends State<PersistentOverlay>
               ),
           ],
         ),
-      ),
     );
   }
 }

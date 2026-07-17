@@ -1,5 +1,11 @@
 bool isValidArtwork(String url) {
   if (url.isEmpty) return false;
+  
+  // Local file paths or file URIs are always valid
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return true;
+  }
+
   final uri = Uri.tryParse(url);
   if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
     return false;

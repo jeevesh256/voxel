@@ -174,6 +174,8 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
                 (context, index) {
                   final station = activeStations[index];
                   final hasArt = isValidArtwork(station.artworkUrl);
+                  final isRadioActive = audioService.isRadioPlaying &&
+                      audioService.currentRadioStation?.id == station.id;
                   return GestureDetector(
                     onTap: () async {
                       final blockReason = await RadioPlaybackGuard.blockingMessage();
@@ -236,10 +238,12 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
                               children: [
                                 Text(
                                   station.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w400,
+                                  style: TextStyle(
+                                    fontWeight: isRadioActive ? FontWeight.w500 : FontWeight.w400,
                                     fontSize: 16,
-                                    color: Colors.white,
+                                    color: isRadioActive 
+                                        ? Theme.of(context).colorScheme.primary 
+                                        : Colors.white,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,

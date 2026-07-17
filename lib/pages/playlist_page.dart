@@ -1676,7 +1676,12 @@ class _OptimizedSongTileState extends State<_OptimizedSongTile>
       leading: _buildAlbumArt(),
       title: Text(
         _cachedSong.title,
-        style: const TextStyle(color: Colors.white),
+        style: TextStyle(
+          color: _isPlaying 
+              ? Theme.of(context).colorScheme.primary 
+              : Colors.white,
+          fontWeight: _isPlaying ? FontWeight.w500 : FontWeight.normal,
+        ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),

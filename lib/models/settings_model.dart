@@ -37,6 +37,7 @@ class SettingsModel extends ChangeNotifier {
   static const String _kHapticsOnLikesKey = 'haptics_on_likes';
   static const String _kHapticsOnLongPressKey = 'haptics_on_long_press';
   static const String _kHapticsOnSliderScrubbingKey = 'haptics_on_slider_scrubbing';
+  static const String _kCookiePlayPauseEnabledKey = 'cookie_play_pause_enabled';
 
   static const List<Color> accentPresets = [
     Color(0xFF7C5CBF), // Muted Violet
@@ -55,6 +56,7 @@ class SettingsModel extends ChangeNotifier {
   bool _hapticsOnLikes = true;
   bool _hapticsOnLongPress = true;
   bool _hapticsOnSliderScrubbing = true;
+  bool _cookiePlayPauseEnabled = false;
 
   SettingsModel() {
     _loadSettings();
@@ -68,6 +70,7 @@ class SettingsModel extends ChangeNotifier {
   bool get hapticsOnLikes => _hapticsOnLikes;
   bool get hapticsOnLongPress => _hapticsOnLongPress;
   bool get hapticsOnSliderScrubbing => _hapticsOnSliderScrubbing;
+  bool get cookiePlayPauseEnabled => _cookiePlayPauseEnabled;
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -78,6 +81,7 @@ class SettingsModel extends ChangeNotifier {
     _hapticsOnLikes = prefs.getBool(_kHapticsOnLikesKey) ?? true;
     _hapticsOnLongPress = prefs.getBool(_kHapticsOnLongPressKey) ?? true;
     _hapticsOnSliderScrubbing = prefs.getBool(_kHapticsOnSliderScrubbingKey) ?? true;
+    _cookiePlayPauseEnabled = prefs.getBool(_kCookiePlayPauseEnabledKey) ?? false;
     final accentVal = prefs.getInt(_kAccentColorKey);
     if (accentVal != null) {
       _accentColor = Color(accentVal);
@@ -132,6 +136,12 @@ class SettingsModel extends ChangeNotifier {
   void setHapticsOnSliderScrubbing(bool value) {
     _hapticsOnSliderScrubbing = value;
     _saveBool(_kHapticsOnSliderScrubbingKey, value);
+    notifyListeners();
+  }
+
+  void setCookiePlayPauseEnabled(bool value) {
+    _cookiePlayPauseEnabled = value;
+    _saveBool(_kCookiePlayPauseEnabledKey, value);
     notifyListeners();
   }
 

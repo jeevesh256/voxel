@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'services/audio_service.dart';
 import 'models/settings_model.dart';
@@ -16,6 +18,7 @@ import 'pages/search_page.dart';
 import 'pages/library_page.dart';
 import 'pages/settings_page.dart';
 import 'widgets/persistent_overlay.dart';
+import 'widgets/voxel_toast.dart';
 
 void main() async {
   // Ensure Flutter bindings are initialized
@@ -295,6 +298,17 @@ class MyApp extends StatelessWidget {
   }
 }
 
+Future<void> logToFile(String message) async {
+  try {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/debug_log.txt');
+    final time = DateTime.now().toIso8601String();
+    await file.writeAsString('[$time] $message\n', mode: FileMode.append, flush: true);
+  } catch (e) {
+    // ignore
+  }
+}
+
 class MusicApp extends StatefulWidget {
   final int initialIndex;
 
@@ -308,10 +322,14 @@ class MusicApp extends StatefulWidget {
 }
 
 class _MusicAppState extends State<MusicApp> {
+  static const _backChannel = MethodChannel('com.example.voxel/back_navigation');
   late int _selectedIndex;
   final _searchKey = GlobalKey<SearchPageState>();
+  final _libraryKey = GlobalKey<LibraryPageState>();
+  final _overlayKey = GlobalKey<PersistentOverlayState>();
   late final List<Widget> _pages;
   bool _stackRefreshScheduled = false;
+  DateTime? _lastBackTime;
 
   late final List<_OverlayNavigatorObserver> _navigatorObservers;
 
@@ -344,6 +362,7 @@ class _MusicAppState extends State<MusicApp> {
   @override
   void initState() {
     super.initState();
+    _backChannel.setMethodCallHandler(_handleBackChannel);
     _selectedIndex = widget.initialIndex;
     _navigatorObservers = List.generate(
       _navigatorKeys.length,
@@ -352,9 +371,84 @@ class _MusicAppState extends State<MusicApp> {
     _pages = [
       const HomePage(),
       SearchPage(key: _searchKey),
-      const LibraryPage(),
+      LibraryPage(key: _libraryKey),
       SettingsPage(),
     ];
+  }
+
+  Future<dynamic> _handleBackChannel(MethodCall call) async {
+    if (call.method == 'onBackPressed') {
+      return await _handleBackGesture();
+    }
+    return false;
+  }
+
+  Future<bool> _handleBackGesture() async {
+    await logToFile('MethodChannel onBackPressed. SelectedIndex: $_selectedIndex');
+    debugPrint('MusicApp: MethodChannel onBackPressed. SelectedIndex: $_selectedIndex');
+
+    // Close miniplayer if expanded
+    if (_overlayKey.currentState?.handleBack() ?? false) {
+      await logToFile('handleBack handled by PersistentOverlay');
+      debugPrint('MusicApp: handleBack handled by PersistentOverlay');
+      return true;
+    }
+
+    final currentNavigator = _navigatorKeys[_selectedIndex].currentState;
+    await logToFile('currentNavigator.canPop(): ${currentNavigator?.canPop()}');
+    debugPrint('MusicApp: currentNavigator.canPop(): ${currentNavigator?.canPop()}');
+
+    // Pop sub-routes first (e.g. ArtistPage pushed on top of SearchPage)
+    if (currentNavigator?.canPop() ?? false) {
+      currentNavigator?.pop();
+      await logToFile('sub-route popped');
+      debugPrint('MusicApp: sub-route popped');
+      return true;
+    }
+
+    // Let the current page handle back softly (e.g. SearchPage clearing query)
+    if (_selectedIndex == 1 && (_searchKey.currentState?.handleBack() ?? false)) {
+      await logToFile('SearchPage handleBack returned true');
+      debugPrint('MusicApp: SearchPage handleBack returned true');
+      return true;
+    }
+
+    // Let the Library page handle back softly (e.g. switching tabs back to Playlists)
+    if (_selectedIndex == 2 && (_libraryKey.currentState?.handleBack() ?? false)) {
+      await logToFile('LibraryPage handleBack returned true');
+      debugPrint('MusicApp: LibraryPage handleBack returned true');
+      return true;
+    }
+
+    if (_selectedIndex == 0) {
+      final now = DateTime.now();
+      if (_lastBackTime == null ||
+          now.difference(_lastBackTime!) < const Duration(milliseconds: 500) ||
+          now.difference(_lastBackTime!) > const Duration(seconds: 2)) {
+        _lastBackTime = now;
+        if (mounted) {
+          final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
+          VoxelToast.show(
+            context,
+            'Press back again to exit',
+            bottomPadding: bottomPad,
+          );
+        }
+        await logToFile('exit toast shown');
+        debugPrint('MusicApp: exit toast shown');
+        return true;
+      }
+      await logToFile('exiting app via Native onBackPressed');
+      debugPrint('MusicApp: exiting app via Native onBackPressed');
+      return false;
+    } else {
+      await logToFile('switching tab to 0');
+      debugPrint('MusicApp: switching tab to 0');
+      if (mounted) {
+        setState(() => _selectedIndex = 0);
+      }
+      return true;
+    }
   }
 
   final List<GlobalKey<NavigatorState>> _navigatorKeys = [
@@ -364,27 +458,7 @@ class _MusicAppState extends State<MusicApp> {
     GlobalKey<NavigatorState>(),
   ];
 
-  Future<bool> _onWillPop() async {
-    final currentNavigator = _navigatorKeys[_selectedIndex].currentState;
 
-    // Pop sub-routes first (e.g. ArtistPage pushed on top of SearchPage)
-    if (currentNavigator?.canPop() ?? false) {
-      currentNavigator?.pop();
-      return false;
-    }
-
-    // Let the current page handle back softly (e.g. SearchPage clearing query)
-    if (_searchKey.currentState?.handleBack() ?? false) {
-      return false;
-    }
-
-    if (_selectedIndex == 0) {
-      return true; // exit app
-    } else {
-      setState(() => _selectedIndex = 0);
-      return false;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -399,13 +473,12 @@ class _MusicAppState extends State<MusicApp> {
       setState(() => _selectedIndex = index);
     }
 
-    return WillPopScope(
-      onWillPop: _onWillPop,
-      child: Scaffold(
-        resizeToAvoidBottomInset: false,
-        body: PersistentOverlay(
-          currentIndex: _selectedIndex,
-          onTabChanged: handleTabTap,
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      body: PersistentOverlay(
+        key: _overlayKey,
+        currentIndex: _selectedIndex,
+        onTabChanged: handleTabTap,
           hideOfflineIndicator:
               _isOnSubPage || _selectedIndex == 1,
           child: AnimatedSwitcher(
@@ -438,7 +511,6 @@ class _MusicAppState extends State<MusicApp> {
             ),
           ),
         ),
-      ),
     );
   }
 }

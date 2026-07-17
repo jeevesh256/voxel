@@ -2,19 +2,23 @@ import 'dart:math';
 import 'dart:ui' show lerpDouble;
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/physics.dart';
+import 'package:flutter/services.dart';
 import 'package:m3e_buttons/m3e_buttons.dart';
+import 'package:provider/provider.dart';
+import '../models/settings_model.dart';
 
 class VoxelPlayPauseButton extends StatefulWidget {
   final bool isPlaying;
   final VoidCallback onPressed;
+  final bool isCookieEnabled;
   final double size;
 
   const VoxelPlayPauseButton({
     Key? key,
     required this.isPlaying,
     required this.onPressed,
+    required this.isCookieEnabled,
     this.size = 72.0,
   }) : super(key: key);
 
@@ -30,8 +34,14 @@ class _VoxelPlayPauseButtonState extends State<VoxelPlayPauseButton> with Ticker
 
   late final AnimationController _pressController = AnimationController(
     vsync: this,
+    value: widget.isCookieEnabled && widget.isPlaying ? 1.0 : 0.0,
     lowerBound: -0.15,
     upperBound: 1.15,
+  );
+
+  late final AnimationController _rotationController = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 12),
   );
 
   late final Animation<double> _bounceAnimation = TweenSequence<double>([
@@ -52,6 +62,42 @@ class _VoxelPlayPauseButtonState extends State<VoxelPlayPauseButton> with Ticker
   @override
   void initState() {
     super.initState();
+    if (widget.isCookieEnabled && widget.isPlaying) {
+      _rotationController.repeat();
+    }
+  }
+
+  void _updateControllers() {
+    final settings = Provider.of<SettingsModel>(context, listen: false);
+    final isCookieEnabled = settings.cookiePlayPauseEnabled;
+
+    if (isCookieEnabled) {
+      if (widget.isPlaying) {
+        if (_pressController.value < 0.99) {
+          _pressController.animateTo(1.0, duration: const Duration(milliseconds: 300), curve: Curves.easeInOutCubic);
+        }
+        if (!_rotationController.isAnimating) {
+          _rotationController.repeat();
+        }
+      } else {
+        if (_pressController.value > 0.01) {
+          _pressController.animateTo(0.0, duration: const Duration(milliseconds: 300), curve: Curves.easeInOutCubic);
+        }
+        _rotationController.stop();
+      }
+    } else {
+      // Normal behavior: ensure reset to 0.0 (if it was left at 1.0 after disabling setting)
+      if (_pressController.value > 0.01) {
+        _pressController.animateTo(0.0, duration: const Duration(milliseconds: 300), curve: Curves.easeInOutCubic);
+      }
+      _rotationController.stop();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateControllers();
   }
 
   @override
@@ -60,80 +106,134 @@ class _VoxelPlayPauseButtonState extends State<VoxelPlayPauseButton> with Ticker
     if (widget.isPlaying != oldWidget.isPlaying) {
       _bounceController.forward(from: 0.0);
     }
+    if (widget.isPlaying != oldWidget.isPlaying || widget.isCookieEnabled != oldWidget.isCookieEnabled) {
+      _updateControllers();
+    }
   }
 
   Timer? _longPressTimer;
+  bool _showMorph = false;
+
+  double get _defaultProgress => widget.isCookieEnabled && widget.isPlaying ? 1.0 : 0.0;
 
   @override
   void dispose() {
     _longPressTimer?.cancel();
     _bounceController.dispose();
     _pressController.dispose();
+    _rotationController.dispose();
     super.dispose();
   }
 
   void _onPointerDown(PointerDownEvent event) {
     _longPressTimer?.cancel();
+    setState(() {
+      _showMorph = false;
+    });
     
-    // Smoothly scale down first (0.0 -> 0.15 progress)
+    // Scale down by animating _pressController towards the press target
+    final double defaultProg = _defaultProgress;
+    final double pressTarget = defaultProg == 0.0 ? 0.15 : 0.85;
     _pressController.animateTo(
-      0.15,
+      pressTarget,
       duration: const Duration(milliseconds: 150),
       curve: Curves.easeOutCubic,
     );
 
     _longPressTimer = Timer(const Duration(milliseconds: 250), () {
-      // Continue smoothly from 0.15 to 1.0 (morph to cookie shape) with spring
+      if (!mounted) return;
+      setState(() {
+        _showMorph = true;
+      });
+      // Start morphing smoothly to opposite shape
+      final double morphTarget = defaultProg == 0.0 ? 1.0 : 0.0;
       const desc = SpringDescription(mass: 1.0, stiffness: 150.0, damping: 20.0);
-      _pressController.animateWith(SpringSimulation(desc, _pressController.value, 1.0, 0.0));
+      _pressController.animateWith(SpringSimulation(desc, _pressController.value, morphTarget, 0.0));
+
+      final settings = Provider.of<SettingsModel>(context, listen: false);
+      if (settings.hapticsEnabled && settings.hapticsOnLongPress) {
+        HapticFeedback.lightImpact();
+      }
     });
   }
 
   void _onPointerUp(PointerUpEvent event) {
-    _handleRelease();
+    _longPressTimer?.cancel();
+
+    final double defaultProg = _defaultProgress;
+    if (!_showMorph) {
+      widget.onPressed();
+    }
+
+    // Smooth spring animation to the default shape
+    const desc = SpringDescription(mass: 1.0, stiffness: 180.0, damping: 22.0);
+    _pressController.animateWith(SpringSimulation(desc, _pressController.value, defaultProg, 0.0));
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
-    _handleRelease();
-  }
-
-  void _handleRelease() {
     _longPressTimer?.cancel();
-    // Smooth spring back to 0.0 (rest circle and full scale)
+    
+    // Just restore to the default shape
     const desc = SpringDescription(mass: 1.0, stiffness: 180.0, damping: 22.0);
-    _pressController.animateWith(SpringSimulation(desc, _pressController.value, 0.0, 0.0));
+    _pressController.animateWith(SpringSimulation(desc, _pressController.value, _defaultProgress, 0.0));
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final primary = theme.colorScheme.primary;
+    final settings = Provider.of<SettingsModel>(context);
+    final isCookieEnabled = settings.cookiePlayPauseEnabled;
 
     return Listener(
+      behavior: HitTestBehavior.opaque,
       onPointerDown: _onPointerDown,
       onPointerUp: _onPointerUp,
       onPointerCancel: _onPointerCancel,
       child: AnimatedBuilder(
-        animation: Listenable.merge([_pressController, _bounceAnimation]),
+        animation: Listenable.merge([_pressController, _bounceAnimation, _rotationController]),
         builder: (context, child) {
           final double pressVal = _pressController.value.clamp(0.0, 1.0);
-          final double scale = lerpDouble(1.0, 0.94, pressVal)! * _bounceAnimation.value;
+          
+          final double shapeProgress = _showMorph
+              ? pressVal
+              : _defaultProgress;
+
+          double pressFactor = 0.0;
+          if (isCookieEnabled && widget.isPlaying) {
+            pressFactor = (1.0 - pressVal).clamp(0.0, 0.15);
+          } else {
+            pressFactor = pressVal.clamp(0.0, 0.15);
+          }
+          final double scale = lerpDouble(1.0, 0.94, pressFactor / 0.15)! * _bounceAnimation.value;
           
           final clipper = PlayPauseCookieClipper(
-            progress: pressVal,
+            progress: shapeProgress,
             size: widget.size,
           );
 
-          return Transform.scale(
-            scale: scale,
+          Widget iconChild = Icon(
+            widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            color: theme.colorScheme.onPrimary,
+            size: widget.size * 0.45,
+          );
+
+          if (isCookieEnabled) {
+            iconChild = RotationTransition(
+              turns: ReverseAnimation(_rotationController),
+              child: iconChild,
+            );
+          }
+
+          Widget buttonChild = RepaintBoundary(
             child: SizedBox(
               width: widget.size,
               height: widget.size,
               child: ClipPath(
                 clipper: clipper,
-                child: RepaintBoundary(
+                child: IgnorePointer(
                   child: M3EButton(
-                    onPressed: widget.onPressed,
+                    onPressed: () {},
                     style: M3EButtonStyle.filled,
                     shape: M3EButtonShape.round,
                     decoration: M3EButtonDecoration(
@@ -145,15 +245,23 @@ class _VoxelPlayPauseButtonState extends State<VoxelPlayPauseButton> with Ticker
                       pressedRadius: widget.size / 2,
                       motion: M3EMotion.standardSpatialDefault,
                     ),
-                    child: Icon(
-                      widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                      color: theme.colorScheme.onPrimary,
-                      size: widget.size * 0.45,
-                    ),
+                    child: iconChild,
                   ),
                 ),
               ),
             ),
+          );
+
+          if (isCookieEnabled) {
+            buttonChild = RotationTransition(
+              turns: _rotationController,
+              child: buttonChild,
+            );
+          }
+
+          return Transform.scale(
+            scale: scale,
+            child: buttonChild,
           );
         },
       ),
@@ -165,10 +273,18 @@ class PlayPauseCookieClipper extends CustomClipper<Path> {
   final double progress;
   final double size;
 
+  static Path? _cachedPath;
+  static double? _cachedProgress;
+  static double? _cachedSize;
+
   PlayPauseCookieClipper({required this.progress, required this.size});
 
   @override
   Path getClip(Size sizeVal) {
+    if (_cachedPath != null && _cachedProgress == progress && _cachedSize == size) {
+      return _cachedPath!;
+    }
+
     final double w = sizeVal.width;
     final double h = sizeVal.height;
     final double cx = w / 2;
@@ -202,6 +318,9 @@ class PlayPauseCookieClipper extends CustomClipper<Path> {
     }
 
     path.close();
+    _cachedPath = path;
+    _cachedProgress = progress;
+    _cachedSize = size;
     return path;
   }
 

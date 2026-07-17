@@ -48,6 +48,19 @@ class SettingsPage extends StatelessWidget {
                   );
                 },
               ),
+              Builder(
+                builder: (context) {
+                  final settings = Provider.of<SettingsModel>(context);
+                  return SwitchListTile(
+                    title: const Text('Expressive Play Button'),
+                    subtitle: const Text('Morph and spin the button when active'),
+                    value: settings.cookiePlayPauseEnabled,
+                    onChanged: (value) {
+                      settings.setCookiePlayPauseEnabled(value);
+                    },
+                  );
+                },
+              ),
             ],
           ),
           _buildSectionDivider(),

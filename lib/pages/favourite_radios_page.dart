@@ -243,6 +243,8 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                         itemBuilder: (context, index) {
                           final radio = radios[index];
                           final hasArt = isValidArtwork(radio.artworkUrl);
+                          final isRadioActive = audioService.isRadioPlaying &&
+                              audioService.currentRadioStation?.id == radio.id;
                           return ListTile(
                             leading: hasArt
                                 ? ClipRRect(
@@ -273,7 +275,12 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                                   ),
                             title: Text(
                               radio.name,
-                              style: const TextStyle(color: Colors.white),
+                              style: TextStyle(
+                                color: isRadioActive 
+                                    ? Theme.of(context).colorScheme.primary 
+                                    : Colors.white,
+                                fontWeight: isRadioActive ? FontWeight.w500 : FontWeight.normal,
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),

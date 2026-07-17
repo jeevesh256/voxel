@@ -930,12 +930,14 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
 
   Widget _buildPlaybackControls(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
+    final settings = context.watch<SettingsModel>();
     final isRadio = audioService.isRadioPlaying;
 
     return StreamBuilder<PlayerState>(
       stream: audioService.player.playerStateStream,
+      initialData: audioService.player.playerState,
       builder: (context, snapshot) {
-        final playing = snapshot.data?.playing ?? false;
+        final playing = snapshot.data?.playing ?? audioService.player.playing;
         return Column(
           children: [
             Row(
@@ -985,6 +987,7 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                     const SizedBox(width: 16),
                     VoxelPlayPauseButton(
                       isPlaying: playing,
+                      isCookieEnabled: settings.cookiePlayPauseEnabled,
                       size: 72.0,
                       onPressed: () {
                         _triggerHapticPlayPause();
@@ -1875,11 +1878,13 @@ class _PressableArtworkState extends State<_PressableArtwork>
 
   Timer? _longPressTimer;
   bool _isLockedMorphed = false;
+  Offset? _startOffset;
 
   double get _scale => lerpDouble(1.0, 0.96, _ctrl.value.clamp(0.0, 1.0))!;
 
-  void _onPointerDown(PointerDownEvent _) {
+  void _onPointerDown(PointerDownEvent event) {
     if (!widget.enabled) return;
+    _startOffset = event.position;
     _longPressTimer?.cancel();
     
     if (_isLockedMorphed) {
@@ -1909,7 +1914,19 @@ class _PressableArtworkState extends State<_PressableArtwork>
     });
   }
 
+  void _onPointerMove(PointerMoveEvent event) {
+    if (_startOffset == null) return;
+    final difference = (event.position - _startOffset!).distance;
+    if (difference > 12.0) { // If they moved their finger > 12 pixels, cancel the long press
+      _longPressTimer?.cancel();
+      if (!_isLockedMorphed) {
+        _handleRelease();
+      }
+    }
+  }
+
   void _onPointerUp(PointerUpEvent _) {
+    _startOffset = null;
     // Only release if we didn't complete the long press to lock the morph
     if (!_isLockedMorphed) {
       _handleRelease();
@@ -1917,6 +1934,7 @@ class _PressableArtworkState extends State<_PressableArtwork>
   }
 
   void _onPointerCancel(PointerCancelEvent _) {
+    _startOffset = null;
     if (!_isLockedMorphed) {
       _handleRelease();
     }
@@ -1998,6 +2016,7 @@ class _PressableArtworkState extends State<_PressableArtwork>
   Widget build(BuildContext context) {
     return Listener(
       onPointerDown: widget.enabled ? _onPointerDown : null,
+      onPointerMove: widget.enabled ? _onPointerMove : null,
       onPointerUp: widget.enabled ? _onPointerUp : null,
       onPointerCancel: widget.enabled ? _onPointerCancel : null,
       child: RepaintBoundary(
