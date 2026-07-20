@@ -202,6 +202,8 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   }
 
   String? _currentPlaylistId;
+  String? _currentArtistName;
+  String? get currentArtistName => _currentArtistName;
 
   MediaItem? _currentMedia;
 
@@ -213,10 +215,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   bool get isPlaying => _player.playing;
   bool _hasPlayedOnce = false;
   bool get isMiniPlayerVisible {
-    if (!_hasPlayedOnce && (currentMedia ?? currentTrack) != null) {
-      _hasPlayedOnce = true;
-    }
-    return _hasPlayedOnce;
+    return (currentMedia ?? currentTrack) != null || _currentRadioStation != null;
   }
 
   // Add missing getters
@@ -266,16 +265,20 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
         Uri? artUri;
         if (cachedAlbumArt != null && cachedAlbumArt.isNotEmpty) {
-          final artFile = File(cachedAlbumArt);
-          if (artFile.existsSync()) {
-            artUri = Uri.file(cachedAlbumArt);
+          if (cachedAlbumArt.startsWith('http://') || cachedAlbumArt.startsWith('https://')) {
+            artUri = Uri.parse(cachedAlbumArt);
+          } else {
+            final artFile = File(cachedAlbumArt);
+            if (artFile.existsSync()) {
+              artUri = Uri.file(cachedAlbumArt);
+            }
           }
         }
         displayItem = item.copyWith(
           title: cachedTitle ?? item.title,
           artist: cachedArtist ?? item.artist,
           album: (cachedAlbum != null && cachedAlbum.isNotEmpty) ? cachedAlbum : item.album,
-          artUri: artUri,
+          artUri: artUri ?? item.artUri,
         );
       }
 
@@ -501,8 +504,16 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   void _setupPlayerListeners() {
     _player.playbackEventStream.listen((event) {
       if (event.processingState == ProcessingState.completed) {
-        _player.pause();
-        _player.seek(Duration.zero);
+        // Only pause+seek when the entire queue is done (last item).
+        // For network streams, just_audio may briefly fire 'completed' while
+        // buffering the next track — guard against that by checking the index.
+        final index = _player.currentIndex ?? 0;
+        final length = _player.sequence?.length ?? 1;
+        final isLastTrack = (index >= length - 1);
+        if (isLastTrack) {
+          _player.pause();
+          _player.seek(Duration.zero, index: 0);
+        }
       }
     });
 
@@ -510,6 +521,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       if (state?.currentSource?.tag != null) {
         final tag = state!.currentSource!.tag as MediaItem;
         _currentMedia = tag;
+        _currentMediaSubject.add(tag);
 
         // Only clear _currentRadioStation if the album is not 'Radio'
         if (_currentMedia?.album != 'Radio') {
@@ -521,6 +533,14 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     });
   }
 
+  AudioSource _buildAudioSource(String path, MediaItem tag) {
+    final trimmedPath = path.trim();
+    if (trimmedPath.startsWith('http://') || trimmedPath.startsWith('https://')) {
+      return AudioSource.uri(Uri.parse(trimmedPath), tag: tag);
+    }
+    return AudioSource.file(trimmedPath, tag: tag);
+  }
+
   Future<void> playFile(File file) async {
     try {
       // Clear radio station when playing a song
@@ -528,13 +548,14 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       
       final name = file.path.split('/').last;
       final title = name.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$'), '');
+      final isRemote = file.path.startsWith('http://') || file.path.startsWith('https://');
       
-      final audioSource = AudioSource.file(
+      final audioSource = _buildAudioSource(
         file.path,
-        tag: MediaItem(
+        MediaItem(
           id: file.path, // Use file path as ID for consistent like tracking
           title: title,
-          album: 'Local Music',
+          album: isRemote ? 'Network Stream' : 'Local Music',
         ),
       );
 
@@ -585,9 +606,103 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     return _playlists[playlistId] ?? [];
   }
 
+  String _normalizeArtistToken(String raw) {
+    var cleaned = raw.trim();
+    cleaned = cleaned.replaceAll(
+      RegExp(r'\s*[\(\[]\s*(?:official\s+)?(?:lyric\s+|music\s+)?(?:video|audio|visualizer)\s*[\)\]]', caseSensitive: false),
+      '',
+    ).trim();
+    cleaned = cleaned.replaceAll(
+      RegExp(r'\b(?:official\s+)?(?:lyric\s+|music\s+)?(?:video|audio|visualizer)\b', caseSensitive: false),
+      '',
+    ).trim();
+    cleaned = cleaned.replaceAll(
+      RegExp(r'^[\s\(\[\{]+|[\s\)\]\}\.,;:!]+$'),
+      '',
+    );
+    cleaned = cleaned.replaceAll(RegExp(r'[\)\]\}]?\s*\[.*|[\)\]\}]?\s*\(.*'), '');
+    cleaned = cleaned.replaceAll(RegExp(r'\s*\(.*?\) $'), '');
+    cleaned = cleaned.replaceAll(RegExp(r'\s*\[.*?\] $'), '');
+    cleaned = cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (cleaned.isEmpty || cleaned.toLowerCase() == 'unknown artist') {
+      return '';
+    }
+    return cleaned;
+  }
+
+  List<String> _splitCompoundArtists(String rawArtist) {
+    return rawArtist
+        .split(RegExp(r'\s*,\s*|\s*&\s*|\s+(?:feat\.?|ft\.?|x)\s+', caseSensitive: false))
+        .map(_normalizeArtistToken)
+        .where((a) => a.isNotEmpty)
+        .toList();
+  }
+
+  List<String> _extractFeaturedArtistsFromTitle(String title) {
+    final featured = <String>[];
+    final bracketedFeat = RegExp(
+      r'\((?:feat\.?|ft\.?)\s+([^\)]+)\)|\[(?:feat\.?|ft\.?)\s+([^\]]+)\]',
+      caseSensitive: false,
+    );
+    for (final match in bracketedFeat.allMatches(title)) {
+      final names = (match.group(1) ?? match.group(2) ?? '').trim();
+      if (names.isEmpty) continue;
+      featured.addAll(_splitCompoundArtists(names));
+    }
+    final inlineFeat = RegExp(r'\b(?:feat\.?|ft\.?)\s+(.+)$', caseSensitive: false)
+        .firstMatch(title)
+        ?.group(1)
+        ?.trim();
+    if (inlineFeat != null && inlineFeat.isNotEmpty) {
+      featured.addAll(_splitCompoundArtists(inlineFeat));
+    }
+    final unique = <String, String>{};
+    for (final name in featured) {
+      final normalized = _normalizeArtistToken(name);
+      if (normalized.isEmpty) continue;
+      unique.putIfAbsent(normalized.toLowerCase(), () => normalized);
+    }
+    return unique.values.toList();
+  }
+
+  List<File> getSongsByArtist(String artistName) {
+    final audioFiles = getPlaylistSongs('offline');
+    final result = <File>[];
+    final targetTokens = _splitCompoundArtists(artistName).map((s) => s.toLowerCase()).toSet();
+    if (targetTokens.isEmpty) return [];
+
+    for (var file in audioFiles) {
+      final song = _metadataCache.createSongFromFile(file);
+      final rawArtist = song.artist;
+      if (rawArtist == 'Unknown Artist' || rawArtist.isEmpty) continue;
+
+      final songArtists = [
+        ..._splitCompoundArtists(rawArtist),
+        ..._extractFeaturedArtistsFromTitle(song.title),
+      ].map((s) => s.toLowerCase()).toSet();
+
+      if (songArtists.intersection(targetTokens).isNotEmpty) {
+        result.add(file);
+      }
+    }
+    return result;
+  }
+
+  String? getArtistArtwork(String artistName) {
+    final songs = getSongsByArtist(artistName);
+    for (var file in songs) {
+      final song = _metadataCache.createSongFromFile(file);
+      if (song.albumArt.isNotEmpty && !song.albumArt.startsWith('http') && File(song.albumArt).existsSync()) {
+        return song.albumArt;
+      }
+    }
+    return null;
+  }
+
   Future<void> playPlaylist(String playlistId) async {
     // Clear radio station when playing a playlist
     _currentRadioStation = null;
+    _currentArtistName = null;
     _currentPlaylistId = playlistId;
     final songs = _playlists[playlistId];
     if (songs == null || songs.isEmpty) return;
@@ -597,19 +712,22 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       _playlistHandler.updateQueue(songsList, playlistContext: playlistId);
 
       _playlist = ConcatenatingAudioSource(
-        children: songsList.map((song) => 
-          AudioSource.file(
+        children: songsList.map((song) {
+          final isRemote = song.filePath.startsWith('http://') || song.filePath.startsWith('https://');
+          return _buildAudioSource(
             song.filePath,
-            tag: MediaItem(
+            MediaItem(
               id: song.id,
               title: song.title,
               artist: song.artist,
               album: playlistId,
-              artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+              artUri: song.albumArt.isNotEmpty
+                  ? (song.albumArt.startsWith('http') ? Uri.parse(song.albumArt) : Uri.file(song.albumArt))
+                  : null,
               duration: song.duration,
             ),
-          ),
-        ).toList(),
+          );
+        }).toList(),
       );
 
       // Ensure shuffle is disabled when playing playlist in order
@@ -634,19 +752,22 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       _playlistHandler.updateQueue(songsList, playlistContext: playlistId);
       
       _playlist = ConcatenatingAudioSource(
-        children: songsList.map((song) => 
-          AudioSource.file(
+        children: songsList.map((song) {
+          final isRemote = song.filePath.startsWith('http://') || song.filePath.startsWith('https://');
+          return _buildAudioSource(
             song.filePath,
-            tag: MediaItem(
+            MediaItem(
               id: song.id,
               title: song.title,
               artist: song.artist,
               album: playlistId,
-              artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+              artUri: song.albumArt.isNotEmpty
+                  ? (song.albumArt.startsWith('http') ? Uri.parse(song.albumArt) : Uri.file(song.albumArt))
+                  : null,
               duration: song.duration,
             ),
-          ),
-        ).toList(),
+          );
+        }).toList(),
       );
 
       // Ensure shuffle is disabled when playing playlist in order
@@ -660,29 +781,34 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     }
   }
 
-  Future<void> playFiles(List<File> files) async {
+  Future<void> playFiles(List<File> files, {String? artistName}) async {
     if (files.isEmpty) return;
     try {
       // Clear radio station when playing files
       _currentRadioStation = null;
+      _currentArtistName = artistName;
+      _currentPlaylistId = artistName != null ? null : 'offline';
 
       final songsList = files.map((f) => _metadataCache.createSongFromFile(f)).toList();
-      _playlistHandler.updateQueue(songsList, playlistContext: 'offline');
+      _playlistHandler.updateQueue(songsList, playlistContext: _currentPlaylistId);
 
       final playlist = ConcatenatingAudioSource(
-        children: songsList.map((song) =>
-          AudioSource.file(
+        children: songsList.map((song) {
+          final isRemote = song.filePath.startsWith('http://') || song.filePath.startsWith('https://');
+          return _buildAudioSource(
             song.filePath,
-            tag: MediaItem(
+            MediaItem(
               id: song.id,
               title: song.title,
               artist: song.artist,
               album: song.album,
-              artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+              artUri: song.albumArt.isNotEmpty
+                  ? (song.albumArt.startsWith('http') ? Uri.parse(song.albumArt) : Uri.file(song.albumArt))
+                  : null,
               duration: song.duration,
             ),
-          ),
-        ).toList(),
+          );
+        }).toList(),
       );
 
       await _player.setAudioSource(playlist, initialPosition: Duration.zero);
@@ -726,7 +852,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     }
   }
 
-  Future<void> playFileInContext(File file, List<File> playlistFiles) async {
+  Future<void> playFileInContext(File file, List<File> playlistFiles, {String? artistName}) async {
     if (playlistFiles.isEmpty) return;
     
     // If the clicked song is already the active track, just seek to beginning and play
@@ -746,39 +872,47 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
 
       // Clear radio station when playing songs
       _currentRadioStation = null;
+      _currentArtistName = artistName;
       
-      // Set current playlist by comparing contents exactly
-      for (var entry in _playlists.entries) {
-        if (listEquals(entry.value, playlistFiles)) {
-          _currentPlaylistId = entry.key;
-          addRecentlyPlayedPlaylist(_currentPlaylistId!);
-          break;
+      if (artistName != null) {
+        _currentPlaylistId = null;
+      } else {
+        _currentPlaylistId = null;
+        // Set current playlist by comparing contents exactly
+        for (var entry in _playlists.entries) {
+          if (listEquals(entry.value, playlistFiles)) {
+            _currentPlaylistId = entry.key;
+            addRecentlyPlayedPlaylist(_currentPlaylistId!);
+            break;
+          }
         }
+        // If playlist not found, assume it's the offline playlist
+        _currentPlaylistId ??= 'offline';
       }
-
-      // If playlist not found, assume it's the offline playlist
-      _currentPlaylistId ??= 'offline';
 
       final songsList = playlistFiles.map((f) => _metadataCache.createSongFromFile(f)).toList();
       _playlistHandler.updateQueue(songsList, playlistContext: _currentPlaylistId);
       
       _playlist = ConcatenatingAudioSource(
-        children: songsList.map((song) => 
-          AudioSource.file(
+        children: songsList.map((song) {
+          final isRemote = song.filePath.startsWith('http://') || song.filePath.startsWith('https://');
+          return _buildAudioSource(
             song.filePath,
-            tag: MediaItem(
+            MediaItem(
               id: song.id,
               title: song.title,
               artist: song.artist,
-              album: _currentPlaylistId, // Use the identified playlist ID
-              artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+              album: isRemote ? 'Network Stream' : _currentPlaylistId,
+              artUri: song.albumArt.isNotEmpty
+                  ? (song.albumArt.startsWith('http://') || song.albumArt.startsWith('https://') ? Uri.parse(song.albumArt) : Uri.file(song.albumArt))
+                  : null,
               duration: song.duration,
             ),
-          ),
-        ).toList(),
+          );
+        }).toList(),
       );
 
-      final selectedIndex = playlistFiles.indexOf(file);
+      final selectedIndex = playlistFiles.indexWhere((f) => f.path == file.path);
       // Ensure shuffle is disabled when playing from playlist
       await _player.setShuffleModeEnabled(false);
       if (_playSessionId != currentSessionId) return;
@@ -824,22 +958,25 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       _playlistHandler.updateQueue(songsList, playlistContext: _currentPlaylistId);
       
       _playlist = ConcatenatingAudioSource(
-        children: songsList.map((song) => 
-          AudioSource.file(
+        children: songsList.map((song) {
+          final isRemote = song.filePath.startsWith('http://') || song.filePath.startsWith('https://');
+          return _buildAudioSource(
             song.filePath,
-            tag: MediaItem(
+            MediaItem(
               id: song.id,
               title: song.title,
               artist: song.artist,
               album: _currentPlaylistId,
-              artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+              artUri: song.albumArt.isNotEmpty
+                  ? (song.albumArt.startsWith('http://') || song.albumArt.startsWith('https://') ? Uri.parse(song.albumArt) : Uri.file(song.albumArt))
+                  : null,
               duration: song.duration,
             ),
-          ),
-        ).toList(),
+          );
+        }).toList(),
       );
 
-      final selectedIndex = playlistFiles.indexOf(file);
+      final selectedIndex = playlistFiles.indexWhere((f) => f.path == file.path);
       // Ensure shuffle is disabled when playing from playlist
       await _player.setShuffleModeEnabled(false);
       if (_playSessionId != currentSessionId) return;
@@ -882,14 +1019,16 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   @override
   Future<void> addToQueue(Song song) async {
     try {
-      final audioSource = AudioSource.file(
+      final audioSource = _buildAudioSource(
         song.filePath,
-        tag: MediaItem(
+        MediaItem(
           id: song.id,
           title: song.title,
           artist: song.artist,
           album: 'Next Up', // Special marker for manually added songs
-          artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+          artUri: song.albumArt.isNotEmpty
+              ? (song.albumArt.startsWith('http') ? Uri.parse(song.albumArt) : Uri.file(song.albumArt))
+              : null,
           duration: song.duration,
         ),
       );
@@ -915,9 +1054,14 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       // Get current index to insert after current song
       final currentIndex = _player.currentIndex ?? 0;
       final insertIndex = currentIndex + 1;
+      final clampedInsertIndex = insertIndex.clamp(0, _playlist.length);
 
       // Insert the song right after the current song in the audio player
-      await _playlist.insert(insertIndex, audioSource);
+      await _playlist.insert(clampedInsertIndex, audioSource);
+      
+      if (_player.audioSource == null) {
+        await _player.setAudioSource(_playlist);
+      }
       
       notifyListeners();
     } catch (e) {
@@ -928,14 +1072,16 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   @override
   Future<void> insertAtQueue(Song song, int index) async {
     try {
-      final audioSource = AudioSource.file(
+      final audioSource = _buildAudioSource(
         song.filePath,
-        tag: MediaItem(
+        MediaItem(
           id: song.id,
           title: song.title,
           artist: song.artist,
           album: 'Next Up', // Special marker for manually added songs
-          artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+          artUri: song.albumArt.isNotEmpty
+              ? (song.albumArt.startsWith('http') ? Uri.parse(song.albumArt) : Uri.file(song.albumArt))
+              : null,
           duration: song.duration,
         ),
       );
@@ -962,14 +1108,16 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
       // Add to next up queue
       _nextUpQueue.insert(relativeNextUpIndex, song);
 
-      await _playlist.insert(clampedInsertIndex, AudioSource.file(
+      await _playlist.insert(clampedInsertIndex, _buildAudioSource(
         song.filePath,
-        tag: MediaItem(
+        MediaItem(
           id: song.id,
           title: song.title,
           artist: song.artist,
           album: 'Next Up', // Special marker for manually added songs
-          artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+          artUri: song.albumArt.isNotEmpty
+              ? (song.albumArt.startsWith('http') ? Uri.parse(song.albumArt) : Uri.file(song.albumArt))
+              : null,
           duration: song.duration,
         ),
       ));
@@ -983,14 +1131,16 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   Future<void> updateQueue(List<Song> songs) async {
     try {
       final sources = songs.map((song) => 
-        AudioSource.file(
+        _buildAudioSource(
           song.filePath,
-          tag: MediaItem(
+          MediaItem(
             id: song.id,
             title: song.title,
             artist: song.artist,
             album: _currentPlaylistId, // Preserve playlist context
-            artUri: song.albumArt.isNotEmpty ? Uri.file(song.albumArt) : null,
+            artUri: song.albumArt.isNotEmpty
+                ? (song.albumArt.startsWith('http') ? Uri.parse(song.albumArt) : Uri.file(song.albumArt))
+                : null,
             duration: song.duration,
           ),
         ),
@@ -1073,6 +1223,7 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   }
 
   String? get currentPlaylistName {
+    if (_currentArtistName != null) return _currentArtistName;
     if (_currentPlaylistId == null) return null;
     
     // Map playlist IDs to display names
@@ -1227,12 +1378,30 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   Future<void> updateCustomPlaylist(String playlistId, {String? name, String? artworkPath, int? artworkColor}) async {
     final playlist = _customPlaylists[playlistId];
     if (playlist != null) {
-      _customPlaylists[playlistId] = playlist.copyWith(
+      final updatedPlaylist = playlist.copyWith(
         name: name,
         artworkPath: artworkPath,
         artworkColor: artworkColor,
         modifiedAt: DateTime.now(),
       );
+      _customPlaylists[playlistId] = updatedPlaylist;
+
+      // Update matching RecentlyPlayedItem if it exists in history
+      final recentIndex = _recentlyPlayedItems.indexWhere((i) => i.type == 'playlist' && i.id == playlistId);
+      if (recentIndex != -1) {
+        final currentItem = _recentlyPlayedItems[recentIndex];
+        _recentlyPlayedItems[recentIndex] = RecentlyPlayedItem(
+          type: 'playlist',
+          id: playlistId,
+          title: name ?? currentItem.title,
+          subtitle: '${getPlaylistSongs(playlistId).length} songs',
+          artwork: artworkPath ?? currentItem.artwork,
+          timestamp: currentItem.timestamp,
+          radioStation: currentItem.radioStation,
+        );
+        await _saveRecentlyPlayed();
+      }
+
       await _saveCustomPlaylists();
       notifyListeners();
     }

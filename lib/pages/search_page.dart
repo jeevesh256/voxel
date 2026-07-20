@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/audio_service.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import '../services/radio_browser_service.dart';
 import '../services/itunes_service.dart';
 import '../services/song_metadata_cache.dart';
@@ -17,7 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import '../widgets/voxel_toast.dart';
 import '../widgets/song_menu_sheet.dart';
-import '../widgets/voxel_like_button.dart';
+import '../widgets/radio_menu_sheet.dart';
 import '../services/artwork_validator.dart';
 // _isValidArtwork has been replaced by global isValidArtwork from services/artwork_validator.dart
 
@@ -83,7 +84,6 @@ class SearchPageState extends State<SearchPage>
       Color(0xCCA855F7); // deepPurple400 @ 0.8
   static const Color _searchBorderIdle = Color(0x12FFFFFF); // white @ 0.07
   static const Color _searchShadow = Color(0x664C1D95); // deepPurple900 @ 0.4
-  static const Color _glowShadow = Color(0x66A855F7); // deepPurple400 @ 0.4
   static const Color _categoryIconColor = Color(0x24FFFFFF); // white @ 0.14
   String _query = '';
   late TabController _tabController;
@@ -549,7 +549,7 @@ class SearchPageState extends State<SearchPage>
               ),
         bottom: PreferredSize(
           preferredSize: Size.fromHeight(
-              (_searchFocus.hasFocus || _query.isNotEmpty) ? 132 : 120),
+              (_searchFocus.hasFocus || _query.isNotEmpty) ? 136 : 124),
           child: Container(
             color: Theme.of(context).colorScheme.surface,
             child: Column(
@@ -1348,6 +1348,9 @@ class SearchPageState extends State<SearchPage>
     final song = result.song;
     final libraryFiles = _libraryFiles(audioService);
 
+    final currentMedia = audioService.player.sequenceState?.currentSource?.tag as MediaItem?;
+    final isPlaying = currentMedia?.id == result.file.path;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1390,9 +1393,11 @@ class SearchPageState extends State<SearchPage>
                         Expanded(
                           child: Text(
                             song.title,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
+                            style: TextStyle(
+                              color: isPlaying 
+                                  ? Theme.of(context).colorScheme.primary 
+                                  : Colors.white,
+                              fontWeight: isPlaying ? FontWeight.bold : FontWeight.w600,
                               fontSize: 14,
                             ),
                             maxLines: 1,
@@ -1522,7 +1527,7 @@ class SearchPageState extends State<SearchPage>
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      height: 52,
+      height: 56,
       decoration: BoxDecoration(
         color: const Color(0xFF1C1C1E),
         borderRadius: BorderRadius.circular(14),
@@ -1568,8 +1573,7 @@ class SearchPageState extends State<SearchPage>
                   fontWeight: FontWeight.w400,
                 ),
                 border: InputBorder.none,
-                isDense: true,
-                contentPadding: EdgeInsets.zero,
+                contentPadding: const EdgeInsets.symmetric(vertical: 14),
               ),
               onChanged: _onSearchChanged,
               textInputAction: TextInputAction.search,
@@ -1649,6 +1653,11 @@ class SearchPageState extends State<SearchPage>
 
   Widget _buildSongRow(ITunesTrack track, AudioPlayerService audioService) {
     final hasArt = track.artworkUrl.isNotEmpty;
+    final currentMedia = audioService.player.sequenceState?.currentSource?.tag as MediaItem?;
+    final isPlaying = currentMedia != null && 
+        currentMedia.title.toLowerCase() == track.trackName.toLowerCase() &&
+        currentMedia.artist?.toLowerCase() == track.artistName.toLowerCase();
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1696,8 +1705,10 @@ class SearchPageState extends State<SearchPage>
                     Text(
                       track.trackName,
                       style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurface,
-                        fontWeight: FontWeight.w600,
+                        color: isPlaying
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurface,
+                        fontWeight: isPlaying ? FontWeight.bold : FontWeight.w600,
                         fontSize: 14,
                       ),
                       maxLines: 1,
@@ -1783,7 +1794,6 @@ class SearchPageState extends State<SearchPage>
   Widget _buildStationRow(
       RadioStation station, AudioPlayerService audioService) {
     final isPlaying = audioService.currentRadioStation?.id == station.id;
-    final isLiked = audioService.isRadioLiked(station);
     final hasArt = isValidArtwork(station.artworkUrl);
 
     return Material(
@@ -1804,63 +1814,24 @@ class SearchPageState extends State<SearchPage>
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
           child: Row(
             children: [
-              // Artwork with playing glow
-              Stack(
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    width: 52,
-                    height: 52,
-                    clipBehavior: Clip.antiAlias,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      border: isPlaying
-                          ? Border.all(
-                              color: Colors.deepPurple.shade400, width: 2)
-                          : null,
-                      boxShadow: isPlaying
-                          ? [
-                              BoxShadow(
-                                color: _glowShadow,
-                                blurRadius: 10,
-                                spreadRadius: 0,
-                              )
-                            ]
-                          : null,
-                    ),
-                    child: hasArt
-                        ? CachedNetworkImage(
-                            imageUrl: station.artworkUrl,
-                            fit: BoxFit.cover,
-                            memCacheWidth: 104,
-                            memCacheHeight: 104,
-                            placeholder: (_, __) =>
-                                _artPlaceholder(isRadio: true),
-                            errorWidget: (_, __, ___) =>
-                                _artPlaceholder(isRadio: true),
-                          )
-                        : _artPlaceholder(isRadio: true),
-                  ),
-                  if (isPlaying)
-                    Positioned(
-                      bottom: 1,
-                      right: 1,
-                      child: Container(
-                        width: 18,
-                        height: 18,
-                        decoration: BoxDecoration(
-                          color: Colors.deepPurple.shade700,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.black, width: 1.5),
-                        ),
-                        child: const Icon(
-                          Icons.graphic_eq_rounded,
-                          color: Colors.white,
-                          size: 11,
-                        ),
-                      ),
-                    ),
-                ],
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: 52,
+                  height: 52,
+                  child: hasArt
+                      ? CachedNetworkImage(
+                          imageUrl: station.artworkUrl,
+                          fit: BoxFit.cover,
+                          memCacheWidth: 104,
+                          memCacheHeight: 104,
+                          placeholder: (_, __) =>
+                              _artPlaceholder(isRadio: true),
+                          errorWidget: (_, __, ___) =>
+                              _artPlaceholder(isRadio: true),
+                        )
+                      : _artPlaceholder(isRadio: true),
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -1871,7 +1842,7 @@ class SearchPageState extends State<SearchPage>
                       station.name,
                       style: TextStyle(
                         color: isPlaying
-                            ? Colors.deepPurple.shade300
+                            ? Theme.of(context).colorScheme.primary
                             : Colors.white,
                         fontWeight: FontWeight.w600,
                         fontSize: 14.5,
@@ -1896,29 +1867,30 @@ class SearchPageState extends State<SearchPage>
                   ],
                 ),
               ),
-              // Heart
-              VoxelLikeButton(
-                isLiked: isLiked,
-                iconSize: 20.0,
-                activeColor: Colors.deepPurple.shade400,
-                color: Colors.grey[700],
-                onPressed: () {
-                  final settings = Provider.of<SettingsModel>(context, listen: false);
-                  if (settings.hapticsEnabled && settings.hapticsOnLikes) {
-                    HapticFeedback.lightImpact();
-                  }
-                  if (isLiked) {
-                    audioService.removeRadioFromPlaylist(
-                        'favourite_radios', station);
-                  } else {
-                    audioService.addRadioToPlaylist(
-                        'favourite_radios', station);
-                  }
-                },
+              // More options
+              IconButton(
+                onPressed: () => _showRadioOptions(context, station, audioService),
+                icon: Icon(Icons.more_vert, color: Colors.grey[400], size: 22),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showRadioOptions(BuildContext context, RadioStation station, AudioPlayerService audioService) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      builder: (ctx) => RadioMenuSheet(
+        radio: station,
+        accentColor: Theme.of(context).colorScheme.primary,
+        audioService: audioService,
       ),
     );
   }

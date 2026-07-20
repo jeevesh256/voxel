@@ -9,6 +9,7 @@ import '../widgets/voxel_toast.dart';
 import '../widgets/radio_menu_sheet.dart';
 import 'package:provider/provider.dart';
 import '../services/artwork_validator.dart';
+import '../services/radio_browser_service.dart';
 
 // _isValidArtwork has been replaced by global isValidArtwork from services/artwork_validator.dart
 
@@ -22,6 +23,34 @@ class AllStationsPage extends StatefulWidget {
 
 class _AllStationsPageState extends State<AllStationsPage> {
   final ScrollController _scrollController = ScrollController();
+  List<RadioStation> _stations = [];
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _stations = widget.stations;
+    if (_stations.isEmpty) {
+      _loadStations();
+    }
+  }
+
+  Future<void> _loadStations() async {
+    setState(() => _isLoading = true);
+    try {
+      final stations = await RadioBrowserService().fetchTopStations(limit: 200);
+      if (mounted) {
+        setState(() {
+          _stations = stations;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -118,7 +147,7 @@ class _AllStationsPageState extends State<AllStationsPage> {
   @override
   Widget build(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
-    final activeStations = widget.stations.where((s) => !audioService.isRadioHidden(s.id)).toList();
+    final activeStations = _stations.where((s) => !audioService.isRadioHidden(s.id)).toList();
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -168,11 +197,22 @@ class _AllStationsPageState extends State<AllStationsPage> {
               child: _buildHeroHeader(activeStations.length),
             ),
           ),
-          SliverPadding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).padding.bottom + 16.0,
-            ),
-            sliver: SliverList(
+          if (_isLoading)
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.all(48.0),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).padding.bottom + 16.0,
+              ),
+              sliver: SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final station = activeStations[index];

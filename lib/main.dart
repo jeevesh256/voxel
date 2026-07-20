@@ -17,6 +17,9 @@ import 'pages/home_page.dart';
 import 'pages/search_page.dart';
 import 'pages/library_page.dart';
 import 'pages/settings_page.dart';
+import 'pages/playlist_page.dart';
+import 'pages/artist_page.dart';
+import 'pages/all_stations_page.dart';
 import 'widgets/persistent_overlay.dart';
 import 'widgets/voxel_toast.dart';
 
@@ -394,17 +397,31 @@ class _MusicAppState extends State<MusicApp> {
       return true;
     }
 
+    // 1. Check if the root navigator has any active modal sheets or overlays (e.g. SongMenuSheet, EditMetadataSheet)
+    final rootNav = Navigator.of(context, rootNavigator: true);
+    if (rootNav.canPop()) {
+      final handled = await rootNav.maybePop();
+      if (handled) {
+        await logToFile('rootNavigator maybePop handled the event softly');
+        debugPrint('MusicApp: rootNavigator maybePop handled the event softly');
+        return true;
+      }
+    }
+
     final currentNavigator = _navigatorKeys[_selectedIndex].currentState;
     await logToFile('currentNavigator.canPop(): ${currentNavigator?.canPop()}');
     debugPrint('MusicApp: currentNavigator.canPop(): ${currentNavigator?.canPop()}');
 
-    // Pop sub-routes first (e.g. ArtistPage pushed on top of SearchPage)
+    // Pop sub-routes first (handling PopScopes softly first, e.g. NetworkBrowserPage subfolders)
     if (currentNavigator?.canPop() ?? false) {
-      currentNavigator?.pop();
-      await logToFile('sub-route popped');
-      debugPrint('MusicApp: sub-route popped');
-      return true;
+      final handled = await currentNavigator!.maybePop();
+      if (handled) {
+        await logToFile('sub-route maybePop handled the event softly');
+        debugPrint('MusicApp: sub-route maybePop handled the event softly');
+        return true;
+      }
     }
+
 
     // Let the current page handle back softly (e.g. SearchPage clearing query)
     if (_selectedIndex == 1 && (_searchKey.currentState?.handleBack() ?? false)) {
@@ -479,8 +496,108 @@ class _MusicAppState extends State<MusicApp> {
         key: _overlayKey,
         currentIndex: _selectedIndex,
         onTabChanged: handleTabTap,
-          hideOfflineIndicator:
-              _isOnSubPage || _selectedIndex == 1,
+        onPlayingFromTap: (playlistId, isRadio, artistName) {
+          // Close player sheet
+          _overlayKey.currentState?.handleBack();
+
+          if (isRadio) {
+            // Switch to Home tab (index 0)
+            setState(() => _selectedIndex = 0);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final nav = _navigatorKeys[0].currentState;
+              if (nav != null) {
+                // Pop any sub-routes currently on top of the Home tab navigator
+                nav.popUntil((route) => route.isFirst);
+                
+                final audioService = Provider.of<AudioPlayerService>(context, listen: false);
+                nav.push(
+                  MaterialPageRoute(
+                    builder: (context) => AllStationsPage(stations: audioService.allRadios),
+                  ),
+                );
+              }
+            });
+          } else if (artistName != null) {
+            // Switch to Library tab (index 2)
+            setState(() => _selectedIndex = 2);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              // Switch tab inside Library tab to Artists (index 1)
+              _libraryKey.currentState?.switchTab(1);
+              final nav = _navigatorKeys[2].currentState;
+              if (nav != null) {
+                nav.popUntil((route) => route.isFirst);
+                
+                final audioService = Provider.of<AudioPlayerService>(context, listen: false);
+                final songs = audioService.getSongsByArtist(artistName);
+                final artwork = audioService.getArtistArtwork(artistName);
+                
+                nav.push(
+                  MaterialPageRoute(
+                    builder: (context) => ArtistPage(
+                      artistName: artistName,
+                      songs: songs,
+                      artistArtwork: artwork,
+                    ),
+                  ),
+                );
+              }
+            });
+          } else if (playlistId != null) {
+            // Switch to Library tab (index 2)
+            setState(() => _selectedIndex = 2);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              // Switch tab inside Library tab to Playlists (index 0)
+              _libraryKey.currentState?.switchTab(0);
+              
+              final nav = _navigatorKeys[2].currentState;
+              if (nav != null) {
+                // Pop any sub-routes on top of Library first
+                nav.popUntil((route) => route.isFirst);
+
+                if (playlistId == 'offline') {
+                  nav.push(
+                    MaterialPageRoute(
+                      builder: (context) => const PlaylistPage(
+                        playlistId: 'offline',
+                        title: 'Offline',
+                        icon: Icons.offline_pin,
+                      ),
+                    ),
+                  );
+                } else if (playlistId == 'liked') {
+                  nav.push(
+                    MaterialPageRoute(
+                      builder: (context) => const PlaylistPage(
+                        playlistId: 'liked',
+                        title: 'Liked Songs',
+                        icon: Icons.favorite,
+                        allowReorder: true,
+                      ),
+                    ),
+                  );
+                } else {
+                  final audioService = Provider.of<AudioPlayerService>(context, listen: false);
+                  final playlistName = audioService.currentPlaylistName ?? 'Playlist';
+                  nav.push(
+                    MaterialPageRoute(
+                      builder: (context) => PlaylistPage(
+                        playlistId: playlistId,
+                        title: playlistName,
+                        icon: Icons.playlist_play_rounded,
+                        allowReorder: true,
+                      ),
+                    ),
+                  );
+                }
+              }
+            });
+          } else {
+            // Default to Library tab
+            setState(() => _selectedIndex = 2);
+          }
+        },
+        hideOfflineIndicator:
+            _isOnSubPage || _selectedIndex == 1,
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 180),
             switchInCurve: Curves.fastOutSlowIn,
@@ -498,15 +615,19 @@ class _MusicAppState extends State<MusicApp> {
               child: Navigator(
                 key: _navigatorKeys[_selectedIndex],
                 observers: [_navigatorObservers[_selectedIndex]],
-                onGenerateRoute: (settings) => PageRouteBuilder(
-                  pageBuilder: (context, animation, secondaryAnimation) =>
-                      _pages[_selectedIndex],
-                  transitionDuration: Duration.zero,
-                  transitionsBuilder:
-                      (context, animation, secondaryAnimation, child) {
-                    return child;
-                  },
-                ),
+                onGenerateInitialRoutes: (navigator, initialRoute) {
+                  return [
+                    PageRouteBuilder(
+                      pageBuilder: (context, animation, secondaryAnimation) =>
+                          _pages[_selectedIndex],
+                      settings: RouteSettings(name: '/root_$_selectedIndex'),
+                      transitionDuration: Duration.zero,
+                      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                        return child;
+                      },
+                    ),
+                  ];
+                },
               ),
             ),
           ),

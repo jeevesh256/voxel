@@ -54,98 +54,101 @@ class _ApplyableMetadataItemState extends State<ApplyableMetadataItem> {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.only(right: 8),
-      leading: SizedBox(
-        width: 56,
-        height: 56,
-        child: FutureBuilder<Uint8List?>(
-          future: widget.getPreviewFuture(widget.result.coverArtUrl),
-          builder: (context, artSnap) {
-            if (artSnap.connectionState == ConnectionState.waiting) {
-              return Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey[850],
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Center(
-                  child: SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+    return Material(
+      type: MaterialType.transparency,
+      child: ListTile(
+        contentPadding: const EdgeInsets.only(right: 8),
+        leading: SizedBox(
+          width: 56,
+          height: 56,
+          child: FutureBuilder<Uint8List?>(
+            future: widget.getPreviewFuture(widget.result.coverArtUrl),
+            builder: (context, artSnap) {
+              if (artSnap.connectionState == ConnectionState.waiting) {
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[850],
+                    borderRadius: BorderRadius.circular(6),
                   ),
-                ),
-              );
-            }
-            if (artSnap.data != null) {
+                  child: const Center(
+                    child: SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                );
+              }
+              if (artSnap.data != null) {
+                return Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(6),
+                    boxShadow: const [
+                      BoxShadow(
+                          color: Colors.black26,
+                          blurRadius: 4,
+                          offset: Offset(0, 2))
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Image.memory(artSnap.data!, fit: BoxFit.cover),
+                  ),
+                );
+              }
               return Container(
                 decoration: BoxDecoration(
+                  color: Colors.grey[800],
                   borderRadius: BorderRadius.circular(6),
-                  boxShadow: const [
-                    BoxShadow(
-                        color: Colors.black26,
-                        blurRadius: 4,
-                        offset: Offset(0, 2))
-                  ],
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: Image.memory(artSnap.data!, fit: BoxFit.cover),
-                ),
+                child: const Icon(Icons.album, color: Colors.white54),
               );
-            }
-            return Container(
-              decoration: BoxDecoration(
-                color: Colors.grey[800],
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Icon(Icons.album, color: Colors.white54),
-            );
-          },
-        ),
-      ),
-      title: Text(widget.result.title,
-          style: const TextStyle(color: Colors.white)),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            [widget.result.artist, widget.result.album]
-                .where((e) => e.isNotEmpty)
-                .join(' • '),
-            style: TextStyle(color: Colors.grey[400]),
+            },
           ),
-          const SizedBox(height: 4),
-          Row(children: [
-            Icon(Icons.public,
-                size: 16,
-                color: widget.isITunes
-                    ? Colors.red.shade300
-                    : Colors.green.shade300),
-          ]),
-        ],
-      ),
-      trailing: SizedBox(
-        width: 40,
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: _isApplying
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : IconButton(
-                  icon:
-                      Icon(Icons.check_circle_outline, color: Colors.grey[400]),
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 28, minHeight: 28),
-                  onPressed: _applyMetadata,
-                ),
         ),
+        title: Text(widget.result.title,
+            style: const TextStyle(color: Colors.white)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              [widget.result.artist, widget.result.album]
+                  .where((e) => e.isNotEmpty)
+                  .join(' • '),
+              style: TextStyle(color: Colors.grey[400]),
+            ),
+            const SizedBox(height: 4),
+            Row(children: [
+              Icon(Icons.public,
+                  size: 16,
+                  color: widget.isITunes
+                      ? Colors.red.shade300
+                      : Colors.green.shade300),
+            ]),
+          ],
+        ),
+        trailing: SizedBox(
+          width: 40,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _isApplying
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : IconButton(
+                    icon:
+                        Icon(Icons.check_circle_outline, color: Colors.grey[400]),
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                    onPressed: _applyMetadata,
+                  ),
+          ),
+        ),
+        onTap: _applyMetadata,
       ),
-      onTap: _applyMetadata,
     );
   }
 }

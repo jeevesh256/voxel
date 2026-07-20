@@ -29,7 +29,7 @@ class _PlayerThemeWrapperState extends State<PlayerThemeWrapper> {
   Color? _extractedColor;
   String? _lastArtPath;
 
-  bool _initialized = false;
+
 
   @override
   void initState() {
@@ -40,30 +40,14 @@ class _PlayerThemeWrapperState extends State<PlayerThemeWrapper> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_initialized) {
-      _initialized = true;
-      final art = widget.artPath;
-      final fallbackPrimary = widget.fallbackColor ?? Theme.of(context).colorScheme.primary;
-
-      if (art != null && art.isNotEmpty && isValidArtwork(art) && _cache.containsKey(art)) {
-        final entry = _cache[art]!;
-        _currentScheme = entry.scheme;
-        _extractedColor = entry.color;
-      } else {
-        _currentScheme = ColorScheme.fromSeed(
-          seedColor: fallbackPrimary,
-          brightness: Brightness.dark,
-        );
-        _extractedColor = fallbackPrimary;
-      }
-      _updateTheme();
-    }
+    _updateTheme();
   }
 
   @override
   void didUpdateWidget(covariant PlayerThemeWrapper oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.artPath != oldWidget.artPath) {
+    if (widget.artPath != oldWidget.artPath ||
+        widget.fallbackColor != oldWidget.fallbackColor) {
       final art = widget.artPath;
       if (art != null && art.isNotEmpty && isValidArtwork(art) && _cache.containsKey(art)) {
         final entry = _cache[art]!;
@@ -126,23 +110,38 @@ class _PlayerThemeWrapperState extends State<PlayerThemeWrapper> {
       }
 
       final palette = await PaletteGenerator.fromImageProvider(
-        ResizeImage(provider, width: 12, height: 12),
-        maximumColorCount: 8,
+        ResizeImage(provider, width: 128, height: 128),
+        maximumColorCount: 24,
       ).timeout(const Duration(seconds: 4));
 
       Color? extractedColor;
       final List<PaletteColor> candidates = List.from(palette.paletteColors);
+      
+      // Sort candidates using a scoring algorithm that prioritizes saturation and population 
+      // while filtering out muted, extreme light, or extreme dark colors.
       candidates.sort((a, b) {
         final hslA = HSLColor.fromColor(a.color);
         final hslB = HSLColor.fromColor(b.color);
-        final scoreA = hslA.saturation * a.population;
-        final scoreB = hslB.saturation * b.population;
+        
+        // Saturation factor (0.0 to 1.0)
+        final satA = hslA.saturation;
+        final satB = hslB.saturation;
+        
+        // Favor colors with a standard pleasant lightness (between 0.25 and 0.70)
+        final distToIdealLightA = (hslA.lightness - 0.45).abs();
+        final distToIdealLightB = (hslB.lightness - 0.45).abs();
+        final lightScoreA = (1.0 - distToIdealLightA).clamp(0.0, 1.0);
+        final lightScoreB = (1.0 - distToIdealLightB).clamp(0.0, 1.0);
+
+        final scoreA = satA * satA * lightScoreA * a.population;
+        final scoreB = satB * satB * lightScoreB * b.population;
         return scoreB.compareTo(scoreA);
       });
 
       for (final candidate in candidates) {
         final hsl = HSLColor.fromColor(candidate.color);
-        if (hsl.saturation >= 0.15 && hsl.lightness >= 0.1 && hsl.lightness <= 0.85) {
+        // Exclude extreme dark (lightness < 0.15), extreme bright (lightness > 0.82), and very greyish tones (saturation < 0.20)
+        if (hsl.saturation >= 0.20 && hsl.lightness >= 0.15 && hsl.lightness <= 0.82) {
           extractedColor = candidate.color;
           break;
         }
@@ -150,6 +149,8 @@ class _PlayerThemeWrapperState extends State<PlayerThemeWrapper> {
 
       final Color seedColor = extractedColor ??
           palette.vibrantColor?.color ??
+          palette.lightVibrantColor?.color ??
+          palette.darkVibrantColor?.color ??
           palette.dominantColor?.color ??
           fallbackPrimary;
 
@@ -174,15 +175,22 @@ class _PlayerThemeWrapperState extends State<PlayerThemeWrapper> {
 
   void _applyFallback() {
     if (mounted) {
-      final fallbackPrimary = widget.fallbackColor ?? Theme.of(context).colorScheme.primary;
-      final scheme = ColorScheme.fromSeed(
-        seedColor: fallbackPrimary,
-        brightness: Brightness.dark,
-      );
-      setState(() {
-        _currentScheme = scheme;
-        _extractedColor = fallbackPrimary;
-      });
+      final fb = widget.fallbackColor;
+      if (fb != null) {
+        final scheme = ColorScheme.fromSeed(
+          seedColor: fb,
+          brightness: Brightness.dark,
+        );
+        setState(() {
+          _currentScheme = scheme;
+          _extractedColor = fb;
+        });
+      } else {
+        setState(() {
+          _currentScheme = null;
+          _extractedColor = null;
+        });
+      }
     }
   }
 

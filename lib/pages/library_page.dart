@@ -1,4 +1,4 @@
- import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
@@ -19,6 +19,11 @@ import 'package:path_provider/path_provider.dart';
 import 'playlist_page.dart';
 import 'favourite_radios_page.dart';
 import 'artist_page.dart';
+import '../services/upnp_service.dart';
+import '../services/webdav_service.dart';
+import '../services/jellyfin_service.dart';
+import 'network_browser_page.dart';
+import 'library_search_page.dart';
 
 enum LibrarySortOption { name, songCount }
 
@@ -62,14 +67,21 @@ class LibraryPageState extends State<LibraryPage>
     }
     return false;
   }
+
+  void switchTab(int index) {
+    if (mounted && index >= 0 && index < _tabController.length) {
+      _tabController.animateTo(index);
+    }
+  }
   final StorageService _storageService = StorageService();
   final SongMetadataCache _metadataCache = SongMetadataCache();
   late TabController _tabController;
   String? _appDocumentsPath;
 
-  String _searchQuery = '';
-  bool _isSearching = false;
-  final TextEditingController _searchController = TextEditingController();
+  // Per-tab filters are no longer driven by an inline search bar;
+  // search lives in LibrarySearchPage. Keep this field as '' so the
+  // existing per-tab filter expressions compile without modification.
+  final String _searchQuery = '';
   LibrarySortOption _sortOption = LibrarySortOption.name;
   bool _isAscending = true;
   bool _isScrollingVertically = false;
@@ -95,7 +107,6 @@ class LibraryPageState extends State<LibraryPage>
   @override
   void dispose() {
     _tabController.dispose();
-    _searchController.dispose();
     super.dispose();
   }
 
@@ -121,7 +132,10 @@ class LibraryPageState extends State<LibraryPage>
 
   Future<void> _loadAudioFiles() async {
     try {
-      final entities = await _storageService.getAudioFiles();
+      final settings = context.read<SettingsModel>();
+      final entities = await _storageService.getAudioFiles(
+        paths: settings.sourcePaths.toList(),
+      );
       final files = entities.whereType<File>().toList();
       if (mounted) {
         context.read<AudioPlayerService>().loadOfflineFiles(files);
@@ -155,109 +169,62 @@ class LibraryPageState extends State<LibraryPage>
           ),
         ),
         bottom: PreferredSize(
-          preferredSize: Size.fromHeight(_isSearching ? 112 : 52),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TabBar(
-                        controller: _tabController,
-                        tabs: const [
-                          Tab(text: 'Playlists'),
-                          Tab(text: 'Artists'),
-                          Tab(text: 'Radios'),
-                        ],
-                        isScrollable: true,
-                        tabAlignment: TabAlignment.start,
-                        labelPadding: const EdgeInsets.symmetric(
-                            horizontal: 18, vertical: 0),
-                        indicator: BoxDecoration(
-                          borderRadius: BorderRadius.circular(22),
-                          color: Theme.of(context).colorScheme.primaryContainer,
-                        ),
-                        indicatorSize: TabBarIndicatorSize.tab,
-                        dividerColor: Colors.transparent,
-                        labelColor: Theme.of(context).colorScheme.onPrimaryContainer,
-                        unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.7),
-                        labelStyle: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                        ),
-                        unselectedLabelStyle: const TextStyle(
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14,
-                        ),
-                      ),
+          preferredSize: const Size.fromHeight(56),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TabBar(
+                    controller: _tabController,
+                    tabs: const [
+                      Tab(text: 'Playlists'),
+                      Tab(text: 'Artists'),
+                      Tab(text: 'Radios'),
+                    ],
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
+                    labelPadding:
+                        const EdgeInsets.symmetric(horizontal: 18, vertical: 0),
+                    indicator: BoxDecoration(
+                      borderRadius: BorderRadius.circular(22),
+                      color: Theme.of(context).colorScheme.primaryContainer,
                     ),
-                    if (!_isSearching) ...[
-                      SizedBox(
-                        width: 36,
-                        height: 36,
-                        child: IconButton(
-                          padding: EdgeInsets.zero,
-                          icon: Icon(Icons.search,
-                              color: Colors.grey[400], size: 20),
-                          onPressed: () => setState(() => _isSearching = true),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 36,
-                        height: 36,
-                        child: IconButton(
-                          padding: EdgeInsets.zero,
-                          icon: Icon(Icons.sort,
-                              color: Colors.grey[400], size: 20),
-                          onPressed: _showLibrarySortSheet,
-                        ),
-                      ),
-                    ] else
-                      SizedBox(
-                        width: 36,
-                        height: 36,
-                        child: IconButton(
-                          padding: EdgeInsets.zero,
-                          icon: Icon(Icons.close,
-                              color: Colors.grey[400], size: 20),
-                          onPressed: () => setState(() {
-                            _isSearching = false;
-                            _searchQuery = '';
-                            _searchController.clear();
-                          }),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              if (_isSearching)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  child: Container(
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: TextField(
-                      controller: _searchController,
-                      autofocus: true,
-                      style: const TextStyle(fontSize: 15),
-                      decoration: InputDecoration(
-                        hintText: 'Search...',
-                        border: InputBorder.none,
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                        prefixIcon:
-                            Icon(Icons.search, color: Theme.of(context).colorScheme.onSurfaceVariant, size: 18),
-                      ),
-                      onChanged: (v) => setState(() => _searchQuery = v),
-                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    dividerColor: Colors.transparent,
+                    labelColor:
+                        Theme.of(context).colorScheme.onPrimaryContainer,
+                    unselectedLabelColor: Theme.of(context)
+                        .colorScheme
+                        .onSurfaceVariant
+                        .withOpacity(0.7),
+                    labelStyle: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 14),
+                    unselectedLabelStyle: const TextStyle(
+                        fontWeight: FontWeight.w500, fontSize: 14),
                   ),
                 ),
-            ],
+                SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: Icon(Icons.search, color: Colors.grey[400], size: 20),
+                    onPressed: () => pushMaterialPage(
+                        context, const LibrarySearchPage()),
+                  ),
+                ),
+                SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: Icon(Icons.sort, color: Colors.grey[400], size: 20),
+                    onPressed: _showLibrarySortSheet,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -267,7 +234,6 @@ class LibraryPageState extends State<LibraryPage>
           final vx = details.primaryVelocity ?? 0;
           final current = _tabController.index;
           final int next;
-          // Set a high velocity threshold so only fast/aggressive swipes switch tabs
           const thresholdVelocity = 650.0;
           if (vx < -thresholdVelocity && current < 2) {
             next = current + 1;
@@ -291,7 +257,9 @@ class LibraryPageState extends State<LibraryPage>
     );
   }
 
+
   // ─── RADIOS ──────────────────────────────────────────────────────────────────
+
 
   Widget _buildFavouriteRadiosView(double bottomPad) {
     return Consumer<AudioPlayerService>(
@@ -547,8 +515,8 @@ class LibraryPageState extends State<LibraryPage>
   // ─── PLAYLISTS ───────────────────────────────────────────────────────────────
 
   Widget _buildPlaylistsView(double bottomPad) {
-    return Consumer<AudioPlayerService>(
-      builder: (context, audioService, _) {
+    return Consumer2<AudioPlayerService, SettingsModel>(
+      builder: (context, audioService, settings, _) {
         final playlists = audioService.allPlaylists;
         final customPlaylists = audioService.customPlaylists;
 
@@ -656,52 +624,141 @@ class LibraryPageState extends State<LibraryPage>
               ),
             ),
 
-            // ── Custom playlists ──
-            if (customPlaylists.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 24, bottom: 16),
-                child: _buildEmptyState(
-                  icon: Icons.library_music_rounded,
-                  title: 'No playlists yet',
-                  subtitle: 'Tap + to create your first playlist',
-                ),
-              )
-            else if (filteredCustom.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 24, bottom: 16),
-                child: _buildEmptyState(
-                  icon: Icons.search_off_rounded,
-                  title: 'No matches',
-                  subtitle: 'Try a different search term',
-                ),
-              )
-            else
-              ...filteredCustom.map(
-                (playlist) => _buildPlaylistRow(
-                  thumbnail: _playlistThumbnail(playlist, audioService),
-                  title: playlist.name,
-                  subtitle: () {
-                    final n = audioService.getPlaylistSongs(playlist.id).length;
-                    return '$n ${n == 1 ? 'song' : 'songs'}';
-                  }(),
-                  onTap: () => pushMaterialPage(
-                    context,
-                    PlaylistPage(
-                      playlistId: playlist.id,
+            // ── Playlists & Pinned Folders ──
+            () {
+              final filteredPinned = _searchQuery.isEmpty
+                  ? settings.pinnedFolders
+                  : settings.pinnedFolders
+                      .where((f) => f.name.toLowerCase().contains(_searchQuery.toLowerCase()))
+                      .toList();
+
+              if (customPlaylists.isEmpty && settings.pinnedFolders.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 24, bottom: 16),
+                  child: _buildEmptyState(
+                    icon: Icons.library_music_rounded,
+                    title: 'No playlists yet',
+                    subtitle: 'Tap + to create your first playlist',
+                  ),
+                );
+              }
+
+              if (filteredCustom.isEmpty && filteredPinned.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 24, bottom: 16),
+                  child: _buildEmptyState(
+                    icon: Icons.search_off_rounded,
+                    title: 'No matches',
+                    subtitle: 'Try a different search term',
+                  ),
+                );
+              }
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ...filteredCustom.map(
+                    (playlist) => _buildPlaylistRow(
+                      thumbnail: _playlistThumbnail(playlist, audioService),
                       title: playlist.name,
-                      icon: Icons.queue_music,
-                      allowReorder: true,
+                      subtitle: () {
+                        final n = audioService.getPlaylistSongs(playlist.id).length;
+                        return '$n ${n == 1 ? 'song' : 'songs'}';
+                      }(),
+                      onTap: () => pushMaterialPage(
+                        context,
+                        PlaylistPage(
+                          playlistId: playlist.id,
+                          title: playlist.name,
+                          icon: Icons.queue_music,
+                          allowReorder: true,
+                        ),
+                      ),
+                      trailing: IconButton(
+                        onPressed: () => _showPlaylistOptionsSheet(playlist),
+                        icon: Icon(Icons.more_vert, color: Colors.grey[400]),
+                        padding: EdgeInsets.zero,
+                        constraints:
+                            const BoxConstraints(minWidth: 40, minHeight: 40),
+                      ),
                     ),
                   ),
-                  trailing: IconButton(
-                    onPressed: () => _showPlaylistOptionsSheet(playlist),
-                    icon: Icon(Icons.more_vert, color: Colors.grey[400]),
-                    padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 40, minHeight: 40),
-                  ),
-                ),
-              ),
+                  ...filteredPinned.map((folder) {
+                    final webdavConfig = folder.type == 'webdav'
+                        ? settings.webdavServers.firstWhere(
+                            (s) => s.id == folder.serverId || s.url == folder.serverId,
+                            orElse: () => WebdavServerConfig(
+                              id: folder.serverId,
+                              name: folder.serverName,
+                              url: folder.serverId,
+                            ),
+                          )
+                        : null;
+
+                    final jellyfinConfig = folder.type == 'jellyfin'
+                        ? settings.jellyfinServers.firstWhere(
+                            (s) => s.id == folder.serverId,
+                            orElse: () => JellyfinServerConfig(
+                              id: folder.serverId,
+                              name: folder.serverName,
+                              url: '',
+                              userId: folder.serverId,
+                              token: '',
+                            ),
+                          )
+                        : null;
+
+                    return _buildPlaylistRow(
+                      thumbnail: _pinnedFolderThumbnail(folder),
+                      title: folder.name,
+                      subtitle: '${folder.serverName} • Network Folder',
+                      trailing: IconButton(
+                        icon: Icon(Icons.more_vert, color: Colors.grey[400]),
+                        tooltip: 'Folder Options',
+                        onPressed: () => _showPinnedFolderOptionsSheet(folder, settings),
+                      ),
+                      onTap: () {
+                        if (folder.type == 'upnp') {
+                          pushMaterialPage(
+                            context,
+                            NetworkBrowserPage(
+                              upnpDevice: UpnpDevice(
+                                location: folder.serverId,
+                                friendlyName: folder.serverName,
+                                controlUrl: folder.controlUrl ?? '',
+                              ),
+                              initialObjectId: folder.path,
+                              initialFolderName: folder.name,
+                              pinnedFolder: folder,
+                            ),
+                          );
+                        } else if (folder.type == 'webdav') {
+                          pushMaterialPage(
+                            context,
+                            NetworkBrowserPage(
+                              webdavConfig: webdavConfig,
+                              initialUrl: folder.path,
+                              initialFolderName: folder.name,
+                              pinnedFolder: folder,
+                            ),
+                          );
+                        } else if (folder.type == 'jellyfin') {
+                          pushMaterialPage(
+                            context,
+                            NetworkBrowserPage(
+                              jellyfinConfig: jellyfinConfig,
+                              initialObjectId: folder.path,
+                              initialFolderName: folder.name,
+                              pinnedFolder: folder,
+                            ),
+                          );
+                        }
+                      },
+                    );
+                  }),
+                ],
+              );
+            }(),
           ],
         );
       },
@@ -812,6 +869,41 @@ class LibraryPageState extends State<LibraryPage>
           Icons.queue_music_rounded,
           color: color.computeLuminance() > 0.5 ? Colors.black : Colors.white,
           size: 32,
+        ),
+      ),
+    );
+  }
+
+  Widget _pinnedFolderThumbnail(PinnedNetworkFolder folder) {
+    final accentColor = folder.artworkColor != null
+        ? Color(folder.artworkColor!)
+        : Theme.of(context).colorScheme.primaryContainer;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 56,
+        height: 56,
+        child: folder.artworkPath != null && folder.artworkPath!.isNotEmpty
+            ? Image.file(
+                File(folder.artworkPath!),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                    _coloredPinnedFolderThumb(accentColor, folder.type),
+              )
+            : _coloredPinnedFolderThumb(accentColor, folder.type),
+      ),
+    );
+  }
+
+  Widget _coloredPinnedFolderThumb(Color color, String type) {
+    return Container(
+      color: color,
+      child: Center(
+        child: Icon(
+          type == 'upnp' ? Icons.dns_rounded : Icons.cloud_rounded,
+          color: color.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+          size: 28,
         ),
       ),
     );
@@ -1078,124 +1170,92 @@ class LibraryPageState extends State<LibraryPage>
           value: LibrarySortOption.songCount,
         ),
     ];
-    bool dismissed = false;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
-        void dismiss(BuildContext c) {
-          if (dismissed) return;
-          dismissed = true;
-          Navigator.of(c, rootNavigator: true).pop();
-        }
-
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                dragStartBehavior: DragStartBehavior.down,
-                onTap: () => dismiss(ctx),
-                onVerticalDragUpdate: (details) {
-                  if (details.primaryDelta != null &&
-                      details.primaryDelta! > 8) {
-                    dismiss(ctx);
-                  }
-                },
-                onVerticalDragEnd: (details) {
-                  if (details.velocity.pixelsPerSecond.dy > 450) dismiss(ctx);
-                },
+        final scheme = Theme.of(ctx).colorScheme;
+        return Container(
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHigh,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          padding: EdgeInsets.only(
+            top: 12,
+            bottom: MediaQuery.of(ctx).padding.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Drag Handle
+              Container(
+                width: 38,
+                height: 4.5,
+                decoration: BoxDecoration(
+                  color: scheme.onSurfaceVariant.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(2.25),
+                ),
               ),
-            ),
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: DraggableScrollableSheet(
-                initialChildSize: 0.3,
-                minChildSize: 0.25,
-                maxChildSize: 0.5,
-                snap: true,
-                snapSizes: const [0.3],
-                expand: false,
-                builder: (context, scrollController) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: Colors.grey[900],
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        topRight: Radius.circular(20),
+              const SizedBox(height: 16),
+              Text(
+                'Sort Library',
+                style: TextStyle(
+                  color: scheme.onSurface,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ...options.map((opt) {
+                final isSelected = _sortOption == opt.value;
+                return Material(
+                  color: Colors.transparent,
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 2),
+                    leading: Icon(opt.icon,
+                        color: isSelected
+                            ? scheme.primary
+                            : scheme.onSurfaceVariant.withOpacity(0.7)),
+                    title: Text(
+                      opt.label,
+                      style: TextStyle(
+                        color: isSelected
+                            ? scheme.primary
+                            : scheme.onSurface,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                        fontSize: 15,
                       ),
                     ),
-                    child: CustomScrollView(
-                      controller: scrollController,
-                      slivers: [
-                        SliverToBoxAdapter(
-                          child: Center(
-                            child: Container(
-                              margin: const EdgeInsets.symmetric(vertical: 12),
-                              width: 40,
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[700],
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                          ),
-                        ),
-                        SliverList(
-                          delegate: SliverChildListDelegate(
-                            options.map((opt) {
-                              final isSelected = _sortOption == opt.value;
-                              return ListTile(
-                                leading: Icon(opt.icon,
-                                    color: isSelected
-                                        ? Colors.white
-                                        : Colors.grey),
-                                title: Text(
-                                  opt.label,
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: isSelected
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                  ),
-                                ),
-                                trailing: isSelected
-                                    ? Icon(
-                                        _isAscending
-                                            ? Icons.arrow_upward
-                                            : Icons.arrow_downward,
-                                        color: Colors.white,
-                                      )
-                                    : null,
-                                onTap: () {
-                                  dismiss(ctx);
-                                  setState(() {
-                                    if (_sortOption == opt.value) {
-                                      _isAscending = !_isAscending;
-                                    } else {
-                                      _sortOption = opt.value;
-                                      _isAscending = true;
-                                    }
-                                  });
-                                },
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                        SliverToBoxAdapter(
-                          child: SizedBox(
-                              height:
-                                  MediaQuery.of(context).padding.bottom + 16),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
+                    trailing: isSelected
+                        ? Icon(
+                            _isAscending
+                                ? Icons.arrow_upward_rounded
+                                : Icons.arrow_downward_rounded,
+                            color: scheme.primary,
+                            size: 20,
+                          )
+                        : null,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      setState(() {
+                        if (_sortOption == opt.value) {
+                          _isAscending = !_isAscending;
+                        } else {
+                          _sortOption = opt.value;
+                          _isAscending = true;
+                        }
+                      });
+                    },
+                  ),
+                );
+              }),
+            ],
+          ),
         );
       },
     );
@@ -1235,50 +1295,12 @@ class LibraryPageState extends State<LibraryPage>
   // ─── DIALOGS ────────────────────────────────────────────────────────────────
 
   Future<void> _showCreatePlaylistDialog() async {
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      isScrollControlled: true,
-      useRootNavigator: true,
-      builder: (ctx) {
-        bool dismissed = false;
-        void dismiss() {
-          if (dismissed) return;
-          dismissed = true;
-          Navigator.of(ctx, rootNavigator: true).pop();
-        }
-
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: dismiss,
-              ),
-            ),
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Builder(
-                builder: (context) {
-                  final viewInsets = MediaQuery.of(context).viewInsets.bottom;
-                  final isKeyboardVisible = viewInsets > 0;
-                  final targetSize = isKeyboardVisible ? 0.85 : 0.55;
-
-                  return DraggableScrollableSheet(
-                    initialChildSize: targetSize,
-                    minChildSize: targetSize,
-                    maxChildSize: targetSize,
-                    expand: false,
-                    builder: (context, scrollController) {
-                      return CreatePlaylistDialog(
-                        useBottomSheetStyle: true,
-                        sheetScrollController: scrollController,
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
+      builder: (context) {
+        return const CreatePlaylistDialog(
+          titleText: 'Create Playlist',
+          actionText: 'Create',
         );
       },
     );
@@ -1339,56 +1361,290 @@ class LibraryPageState extends State<LibraryPage>
     );
   }
 
-  Future<void> _showEditPlaylistDialog(dynamic playlist) async {
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
+  Future<void> _playPinnedFolder(PinnedNetworkFolder folder, WebdavServerConfig? webdavConfig, JellyfinServerConfig? jellyfinConfig) async {
+    VoxelToast.show(context, 'Loading network tracks...',
+        bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+    try {
+      final List<Song> songList = [];
+      if (folder.type == 'upnp') {
+        final rawItems = await UpnpService.browse(folder.controlUrl ?? '', folder.path);
+        final tracks = rawItems.where((i) => !i.isContainer && i.streamUrl != null).toList();
+        for (var t in tracks) {
+          songList.add(Song(
+            id: t.streamUrl!,
+            filePath: t.streamUrl!,
+            title: t.title.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$', caseSensitive: false), ''),
+            artist: t.artist ?? folder.serverName,
+            album: t.album ?? folder.name,
+          ));
+        }
+      } else if (folder.type == 'webdav' && webdavConfig != null) {
+        final rawItems = await WebdavService.list(webdavConfig, folder.path);
+        final tracks = rawItems.where((i) => !i.isDirectory && i.streamUrl != null).toList();
+        for (var t in tracks) {
+          songList.add(Song(
+            id: t.streamUrl!,
+            filePath: t.streamUrl!,
+            title: t.name.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$', caseSensitive: false), ''),
+            artist: folder.serverName,
+            album: folder.name,
+          ));
+        }
+      } else if (folder.type == 'jellyfin' && jellyfinConfig != null) {
+        final rawItems = await JellyfinService.listItems(jellyfinConfig, folder.path);
+        final tracks = rawItems.where((i) => !i.isDirectory && i.streamUrl.isNotEmpty).toList();
+        for (var t in tracks) {
+          songList.add(Song(
+            id: t.streamUrl,
+            filePath: t.streamUrl,
+            title: t.name.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$', caseSensitive: false), ''),
+            artist: t.artist ?? folder.serverName,
+            album: t.album ?? folder.name,
+            albumArt: t.artworkUrl ?? '',
+          ));
+        }
+      }
+
+      if (songList.isEmpty) {
+        if (mounted) {
+          VoxelToast.show(context, 'No audio files found in folder',
+              bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+        }
+        return;
+      }
+
+      final metadataCache = SongMetadataCache();
+      await metadataCache.initialize();
+      for (var song in songList) {
+        await metadataCache.saveMetadata(song);
+      }
+
+      final audioService = context.read<AudioPlayerService>();
+      final files = songList.map((s) => File(s.filePath)).toList();
+      await audioService.playFileInContext(files.first, files);
+    } catch (e) {
+      if (mounted) {
+        VoxelToast.show(context, 'Failed to load tracks: $e',
+            bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+      }
+    }
+  }
+
+  void _showPinnedFolderOptionsSheet(PinnedNetworkFolder folder, SettingsModel settings) {
+    final accentColor = folder.artworkColor != null
+        ? Color(folder.artworkColor!)
+        : Theme.of(context).colorScheme.primary;
+    final folderSong = Song(
+      id: folder.id,
+      filePath: folder.artworkPath ?? '',
+      title: folder.name,
+      artist: folder.serverName,
+      album: 'Network Folder',
+      albumArt: folder.artworkPath ?? '',
+    );
+
+    // Retrieve matching WebDAV config if needed
+    final webdavConfig = folder.type == 'webdav'
+        ? settings.webdavServers.firstWhere(
+            (s) => s.id == folder.serverId || s.url == folder.serverId,
+            orElse: () => WebdavServerConfig(
+              id: folder.serverId,
+              name: folder.serverName,
+              url: folder.serverId,
+            ),
+          )
+        : null;
+
+    // Retrieve matching Jellyfin config if needed
+    final jellyfinConfig = folder.type == 'jellyfin'
+        ? settings.jellyfinServers.firstWhere(
+            (s) => s.id == folder.serverId,
+            orElse: () => JellyfinServerConfig(
+              id: folder.serverId,
+              name: folder.serverName,
+              url: '',
+              userId: folder.serverId,
+              token: '',
+            ),
+          )
+        : null;
+
+    showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      isDismissible: true,
+      enableDrag: true,
+      barrierColor: Colors.black54,
       useRootNavigator: true,
-      builder: (ctx) {
-        bool dismissed = false;
-        void dismiss() {
-          if (dismissed) return;
-          dismissed = true;
-          Navigator.of(ctx, rootNavigator: true).pop();
-        }
+      builder: (ctx) => SongMenuSheet(
+        song: folderSong,
+        accentColor: accentColor,
+        rightButtonIcon: Icons.turned_in_rounded,
+        rightButtonColor: Colors.red.shade400,
+        onPlayTap: () {
+          Navigator.pop(ctx);
+          _playPinnedFolder(folder, webdavConfig, jellyfinConfig);
+        },
+        onRightButtonTap: () async {
+          Navigator.pop(ctx);
+          await settings.unpinNetworkFolder(folder.id);
+          if (mounted) {
+            VoxelToast.show(
+              context,
+              'Folder bookmark removed',
+              bottomPadding: MediaQuery.of(context).padding.bottom + 85.0,
+            );
+          }
+        },
+        options: [
+          SongMenuOption(
+            icon: Icons.play_arrow_rounded,
+            title: 'Play folder',
+            onTap: () {
+              _playPinnedFolder(folder, webdavConfig, jellyfinConfig);
+            },
+          ),
+          SongMenuOption(
+            icon: Icons.queue_music_rounded,
+            title: 'Add folder to queue',
+            onTap: () async {
+              VoxelToast.show(context, 'Loading network tracks...',
+                  bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+              try {
+                final List<Song> songList = [];
+                if (folder.type == 'upnp') {
+                  final rawItems = await UpnpService.browse(folder.controlUrl ?? '', folder.path);
+                  final tracks = rawItems.where((i) => !i.isContainer && i.streamUrl != null).toList();
+                  for (var t in tracks) {
+                    songList.add(Song(
+                      id: t.streamUrl!,
+                      filePath: t.streamUrl!,
+                      title: t.title.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$', caseSensitive: false), ''),
+                      artist: t.artist ?? folder.serverName,
+                      album: t.album ?? folder.name,
+                    ));
+                  }
+                } else if (folder.type == 'webdav' && webdavConfig != null) {
+                  final rawItems = await WebdavService.list(webdavConfig, folder.path);
+                  final tracks = rawItems.where((i) => !i.isDirectory && i.streamUrl != null).toList();
+                  for (var t in tracks) {
+                    songList.add(Song(
+                      id: t.streamUrl!,
+                      filePath: t.streamUrl!,
+                      title: t.name.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$', caseSensitive: false), ''),
+                      artist: folder.serverName,
+                      album: folder.name,
+                    ));
+                  }
+                } else if (folder.type == 'jellyfin' && jellyfinConfig != null) {
+                  final rawItems = await JellyfinService.listItems(jellyfinConfig, folder.path);
+                  final tracks = rawItems.where((i) => !i.isDirectory && i.streamUrl.isNotEmpty).toList();
+                  for (var t in tracks) {
+                    songList.add(Song(
+                      id: t.streamUrl,
+                      filePath: t.streamUrl,
+                      title: t.name.replaceAll(RegExp(r'\.(mp3|m4a|wav|aac|flac)$', caseSensitive: false), ''),
+                      artist: t.artist ?? folder.serverName,
+                      album: t.album ?? folder.name,
+                      albumArt: t.artworkUrl ?? '',
+                    ));
+                  }
+                }
 
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: dismiss,
-              ),
-            ),
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Builder(
-                builder: (context) {
-                  final viewInsets = MediaQuery.of(context).viewInsets.bottom;
-                  final isKeyboardVisible = viewInsets > 0;
-                  final targetSize = isKeyboardVisible ? 0.85 : 0.55;
+                if (songList.isEmpty) {
+                  if (context.mounted) {
+                    VoxelToast.show(context, 'No audio files found in folder',
+                        bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+                  }
+                  return;
+                }
 
-                  return DraggableScrollableSheet(
-                    initialChildSize: targetSize,
-                    minChildSize: targetSize,
-                    maxChildSize: targetSize,
-                    expand: false,
-                    builder: (context, scrollController) {
-                      return CreatePlaylistDialog(
-                        initialName: playlist.name,
-                        initialArtworkPath: playlist.artworkPath,
-                        initialColor: playlist.artworkColor,
-                        titleText: 'Edit Playlist',
-                        actionText: 'Save',
-                        useBottomSheetStyle: true,
-                        sheetScrollController: scrollController,
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
+                final metadataCache = SongMetadataCache();
+                await metadataCache.initialize();
+                for (var song in songList) {
+                  await metadataCache.saveMetadata(song);
+                }
+
+                final audioService = context.read<AudioPlayerService>();
+                for (var song in songList) {
+                  await audioService.addToQueue(song);
+                }
+                if (context.mounted) {
+                  VoxelToast.show(context, 'Added ${songList.length} tracks to queue',
+                      bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  VoxelToast.show(context, 'Failed to load tracks: $e',
+                      bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+                }
+              }
+
+
+            },
+          ),
+          SongMenuOption(
+            icon: Icons.edit_rounded,
+            title: 'Edit folder bookmark',
+            color: accentColor,
+            onTap: () {
+              _showEditPinnedFolderDialog(folder, settings);
+            },
+          ),
+          SongMenuOption(
+            icon: Icons.turned_in_rounded,
+            title: 'Remove bookmark',
+            color: Colors.red.shade400,
+            onTap: () async {
+              await settings.unpinNetworkFolder(folder.id);
+              if (mounted) {
+                VoxelToast.show(
+                  context,
+                  'Folder bookmark removed',
+                  bottomPadding: MediaQuery.of(context).padding.bottom + 85.0,
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showEditPinnedFolderDialog(PinnedNetworkFolder folder, SettingsModel settings) async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) {
+        return CreatePlaylistDialog(
+          initialName: folder.name,
+          initialArtworkPath: folder.artworkPath,
+          initialColor: folder.artworkColor,
+          titleText: 'Edit Pinned Folder',
+          actionText: 'Save',
+        );
+      },
+    );
+
+    if (result != null) {
+      await settings.updatePinnedNetworkFolder(
+        folder.id,
+        name: result['name'] as String?,
+        artworkPath: result['artworkPath'] as String?,
+        artworkColor: result['color'] as int?,
+      );
+    }
+  }
+
+  Future<void> _showEditPlaylistDialog(dynamic playlist) async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) {
+        return CreatePlaylistDialog(
+          initialName: playlist.name,
+          initialArtworkPath: playlist.artworkPath,
+          initialColor: playlist.artworkColor,
+          titleText: 'Edit Playlist',
+          actionText: 'Save',
         );
       },
     );
@@ -1415,9 +1671,10 @@ class LibraryPageState extends State<LibraryPage>
         maxChildSize: 0.5,
         expand: false,
         builder: (context, scrollController) {
+          final scheme = Theme.of(context).colorScheme;
           return Container(
             decoration: BoxDecoration(
-              color: Colors.grey[900],
+              color: scheme.surfaceContainerHigh,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(20),
                 topRight: Radius.circular(20),
@@ -1433,22 +1690,22 @@ class LibraryPageState extends State<LibraryPage>
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.grey[700],
+                      color: scheme.onSurfaceVariant.withOpacity(0.3),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                 ),
-                const Text(
+                Text(
                   'Delete Playlist?',
                   style: TextStyle(
-                      color: Colors.white,
+                      color: scheme.onSurface,
                       fontSize: 18,
                       fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 12),
                 Text(
                   'Are you sure you want to delete "${playlist.name}"? This action cannot be undone.',
-                  style: TextStyle(color: Colors.grey[300]),
+                  style: TextStyle(color: scheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 20),
                 Row(
@@ -1457,7 +1714,7 @@ class LibraryPageState extends State<LibraryPage>
                     TextButton(
                       onPressed: () => Navigator.of(context).pop(false),
                       child: Text('Cancel',
-                          style: TextStyle(color: Colors.grey[400])),
+                          style: TextStyle(color: scheme.onSurfaceVariant)),
                     ),
                     const SizedBox(width: 8),
                     ElevatedButton(

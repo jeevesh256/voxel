@@ -4,6 +4,7 @@ import '../models/settings_model.dart';
 import '../services/audio_service.dart';
 import '../widgets/voxel_toast.dart';
 import '../services/services.dart';
+import 'music_sources_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -223,6 +224,29 @@ class SettingsPage extends StatelessWidget {
                     },
                   );
                 },
+              ),
+            ],
+          ),
+          _buildSectionDivider(),
+          _buildSection(
+            context,
+            'Music Sources',
+            [
+              ListTile(
+                title: const Text('Manage Source Folders'),
+                subtitle: Builder(
+                  builder: (context) {
+                    final settings = Provider.of<SettingsModel>(context);
+                    final n = settings.sourcePaths.length;
+                    return Text('$n folder${n == 1 ? '' : 's'} configured');
+                  },
+                ),
+                trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const MusicSourcesPage(),
+                  ),
+                ),
               ),
             ],
           ),

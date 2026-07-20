@@ -3,16 +3,17 @@ import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
 
 class StorageService {
-  Future<List<FileSystemEntity>> getAudioFiles() async {
+  Future<List<FileSystemEntity>> getAudioFiles({List<String>? paths}) async {
     if (!await _requestPermissions()) {
       throw Exception('Storage permission denied');
     }
 
     final List<FileSystemEntity> files = [];
-    final List<String> musicDirs = [
-      '/storage/emulated/0/Music',
-      '/storage/emulated/0/Download',
-    ];
+    final List<String> musicDirs = paths ??
+        [
+          '/storage/emulated/0/Music',
+          '/storage/emulated/0/Download',
+        ];
 
     for (String dir in musicDirs) {
       final directory = Directory(dir);

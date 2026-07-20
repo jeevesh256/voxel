@@ -62,8 +62,9 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
     _selectedImagePath = widget.initialArtworkPath;
     if (widget.initialColor != null) {
       _selectedColor = Color(widget.initialColor!);
-    } else if (widget.initialArtworkPath == null || widget.initialArtworkPath!.isEmpty) {
-      // Auto-assign a random color from the curated pool
+    } else if ((widget.initialArtworkPath == null || widget.initialArtworkPath!.isEmpty) &&
+               (widget.initialName == null || widget.initialName!.isEmpty)) {
+      // Auto-assign a random color from the curated pool ONLY for new creations
       _selectedColor = kPlaylistColors[math.Random().nextInt(kPlaylistColors.length)];
     }
   }
@@ -76,57 +77,52 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
 
   Future<void> _pickImage() async {
     try {
-      // Show options for image source or color selection
-      final result = await showDialog<Map<String, dynamic>>(
+      final scheme = Theme.of(context).colorScheme;
+      final source = await showDialog<ImageSource>(
         context: context,
         builder: (context) => AlertDialog(
-          backgroundColor: Colors.grey[900],
-          title: const Text('Choose Artwork', style: TextStyle(color: Colors.white)),
+          backgroundColor: scheme.surfaceContainerHigh,
+          title: Text('Choose Artwork Source', style: TextStyle(color: scheme.onSurface)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                leading: const Icon(Icons.photo_library, color: Colors.deepPurple),
-                title: const Text('From Gallery', style: TextStyle(color: Colors.white)),
-                onTap: () => Navigator.of(context).pop({'type': 'gallery'}),
+              Material(
+                color: Colors.transparent,
+                child: ListTile(
+                  leading: Icon(Icons.photo_library, color: _selectedColor ?? scheme.primary),
+                  title: Text('From Gallery', style: TextStyle(color: scheme.onSurface)),
+                  onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+                ),
               ),
-              ListTile(
-                leading: const Icon(Icons.camera_alt, color: Colors.deepPurple),
-                title: const Text('Take Photo', style: TextStyle(color: Colors.white)),
-                onTap: () => Navigator.of(context).pop({'type': 'camera'}),
-              ),
-              ListTile(
-                leading: const Icon(Icons.palette, color: Colors.deepPurple),
-                title: const Text('Choose Color', style: TextStyle(color: Colors.white)),
-                onTap: () => Navigator.of(context).pop({'type': 'color'}),
+              Material(
+                color: Colors.transparent,
+                child: ListTile(
+                  leading: Icon(Icons.camera_alt, color: _selectedColor ?? scheme.primary),
+                  title: Text('Take Photo', style: TextStyle(color: scheme.onSurface)),
+                  onTap: () => Navigator.of(context).pop(ImageSource.camera),
+                ),
               ),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
+              child: Text('Cancel', style: TextStyle(color: scheme.onSurfaceVariant)),
             ),
           ],
         ),
       );
       
-      if (result == null) return;
-      
-      if (result['type'] == 'color') {
-        _showColorPicker();
-      } else {
-        final source = result['type'] == 'gallery' ? ImageSource.gallery : ImageSource.camera;
+      if (source != null) {
         await _pickImageFromSource(source);
       }
     } catch (e) {
       if (mounted) {
         VoxelToast.show(
           context,
-          'Error opening picker. Using color instead.',
+          'Error opening camera/gallery.',
           icon: Icons.error_outline_rounded,
         );
-        _showColorPicker();
       }
     }
   }
@@ -143,192 +139,320 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
       if (image != null && mounted) {
         setState(() {
           _selectedImagePath = image.path;
-          _selectedColor = null; // Clear color if image is selected
         });
       }
     } catch (e) {
       if (mounted) {
         VoxelToast.show(
           context,
-          'Error selecting image. Using color instead.',
+          'Error selecting image.',
           icon: Icons.error_outline_rounded,
         );
-        _showColorPicker();
       }
     }
-  }
-  
-  void _showColorPicker() {
-    if (!mounted) return;
-
-    final colors = kPlaylistColors;
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text('Choose Color', style: TextStyle(color: Colors.white)),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: colors.map((color) {
-              return GestureDetector(
-                onTap: () {
-                  if (mounted) {
-                    setState(() {
-                      _selectedColor = color;
-                      _selectedImagePath = null; // Clear image if color is selected
-                    });
-                  }
-                  Navigator.of(context).pop();
-                },
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(8),
-                    border: _selectedColor == color
-                        ? Border.all(color: Colors.white, width: 3)
-                        : null,
-                  ),
-                  child: _selectedColor == color
-                      ? const Icon(Icons.check, color: Colors.white, size: 20)
-                      : null,
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     if (widget.useBottomSheetStyle) {
       return _buildBottomSheetContent(context);
     }
 
-    return AlertDialog(
-      backgroundColor: Colors.grey[900],
-      title: Text(
-        widget.titleText,
-        style: const TextStyle(color: Colors.white),
+    final accentColor = _selectedColor ?? scheme.primary;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 320,
+        decoration: BoxDecoration(
+          color: Color.lerp(accentColor, scheme.surfaceContainerHigh, 0.88),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: accentColor.withOpacity(0.24),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.35),
+              blurRadius: 24,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(24),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Title
+              Row(
+                children: [
+                  Icon(
+                    widget.titleText.contains('Folder')
+                        ? Icons.folder_rounded
+                        : Icons.queue_music_rounded,
+                    color: accentColor,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.titleText,
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // Form
+              _buildFormContent(),
+              const SizedBox(height: 24),
+
+              // Actions
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(
+                      'Cancel',
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant.withOpacity(0.8),
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accentColor,
+                      foregroundColor: accentColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () {
+                      Navigator.of(context).pop({
+                        'name': _nameController.text.trim(),
+                        'artworkPath': _selectedImagePath,
+                        'color': _selectedColor?.value,
+                      });
+                    },
+                    child: Text(
+                      widget.actionText,
+                      style: const TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
-      content: _buildFormContent(),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
-        ),
-        TextButton(
-          onPressed: () {
-            Navigator.of(context).pop({
-              'name': _nameController.text.trim(),
-              'artworkPath': _selectedImagePath,
-              'color': _selectedColor?.value,
-            });
-          },
-          child: Text(widget.actionText, style: TextStyle(color: Colors.deepPurple.shade400)),
-        ),
-      ],
     );
   }
 
   Widget _buildFormContent() {
+    final scheme = Theme.of(context).colorScheme;
+    final accentColor = _selectedColor ?? scheme.primary;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        InkWell(
-          onTap: _pickImage,
-          borderRadius: BorderRadius.circular(12),
+        // Artwork block
+        Center(
           child: Container(
-            width: 160,
-            height: 160,
+            width: 130,
+            height: 130,
             decoration: BoxDecoration(
-              color: Colors.grey[800],
-              borderRadius: BorderRadius.circular(12),
+              color: Colors.white.withOpacity(0.02),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: Colors.deepPurple.shade400,
-                width: 2,
+                color: accentColor.withOpacity(0.4),
+                width: 2.5,
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: accentColor.withOpacity(0.12),
+                  blurRadius: 16,
+                  spreadRadius: 2,
+                ),
+              ],
             ),
-            child: _selectedImagePath != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.file(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(17),
+              child: _selectedImagePath != null
+                  ? Image.file(
                       File(_selectedImagePath!),
                       fit: BoxFit.cover,
-                      width: 156,
-                      height: 156,
-                    ),
-                  )
-                : _selectedColor != null
-                    ? Container(
-                        width: 156,
-                        height: 156,
-                        decoration: BoxDecoration(
-                          color: _selectedColor,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(
-                          Icons.queue_music,
-                          color: Colors.white,
-                          size: 64,
-                        ),
-                      )
-                    : Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Icon(
-                            Icons.image,
-                            color: Colors.white70,
-                            size: 40,
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            'Add Artwork',
-                            style: TextStyle(color: Colors.white70),
-                          ),
-                        ],
+                      width: double.infinity,
+                      height: double.infinity,
+                    )
+                  : Container(
+                      color: accentColor,
+                      alignment: Alignment.center,
+                      child: Icon(
+                        widget.titleText.contains('Folder')
+                            ? Icons.folder_open_rounded
+                            : Icons.queue_music_rounded,
+                        color: accentColor.computeLuminance() > 0.5 ? Colors.black87 : Colors.white,
+                        size: 48,
                       ),
+                    ),
+            ),
           ),
         ),
         const SizedBox(height: 16),
+
+        // Image pick buttons
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: scheme.outlineVariant.withOpacity(0.5)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+              onPressed: _pickImage,
+              icon: Icon(Icons.add_photo_alternate_rounded, size: 16, color: accentColor),
+              label: Text('Artwork', style: TextStyle(color: scheme.onSurface, fontSize: 12)),
+            ),
+            if (_selectedImagePath != null) ...[
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: scheme.error.withOpacity(0.5)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+                onPressed: () => setState(() {
+                  _selectedImagePath = null;
+                  _selectedColor = kPlaylistColors[0];
+                }),
+                icon: Icon(Icons.delete_outline_rounded, size: 16, color: scheme.error),
+                label: Text('Remove', style: TextStyle(color: scheme.error, fontSize: 12)),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 20),
+
+        // Text Field
         TextField(
           controller: _nameController,
-          style: const TextStyle(color: Colors.white),
+          style: const TextStyle(color: Colors.white, fontSize: 14.5),
+          cursorColor: accentColor,
           decoration: InputDecoration(
-            labelText: 'Playlist Name',
-            labelStyle: TextStyle(color: Colors.deepPurple.shade200),
+            labelText: widget.titleText.contains('Folder') ? 'Bookmark Name' : 'Playlist Name',
+            labelStyle: TextStyle(color: scheme.onSurfaceVariant.withOpacity(0.7), fontSize: 13),
+            floatingLabelStyle: TextStyle(color: accentColor, fontSize: 12, fontWeight: FontWeight.w600),
+            filled: true,
+            fillColor: Colors.white.withOpacity(0.03),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             enabledBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: Colors.grey.shade700),
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: scheme.outlineVariant.withOpacity(0.4)),
             ),
             focusedBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: Colors.deepPurple.shade400),
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: accentColor, width: 1.5),
             ),
           ),
         ),
+        const SizedBox(height: 20),
+
+        // Quick Inline Color presets selector
+        if (_selectedImagePath == null) ...[
+          Text(
+            'THEME ACCENT',
+            style: TextStyle(
+              color: scheme.onSurfaceVariant.withOpacity(0.5),
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.6,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 38,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: kPlaylistColors.length,
+              itemBuilder: (context, index) {
+                final color = kPlaylistColors[index];
+                final isSelected = _selectedColor?.value == color.value;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedColor = color;
+                    });
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: isSelected
+                          ? Border.all(color: Colors.white, width: 2.5)
+                          : Border.all(color: Colors.white.withOpacity(0.1), width: 1),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                color: color.withOpacity(0.4),
+                                blurRadius: 6,
+                                spreadRadius: 1.5,
+                              )
+                            ]
+                          : null,
+                    ),
+                    child: isSelected
+                        ? Icon(
+                            Icons.check,
+                            color: color.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                            size: 14,
+                          )
+                        : null,
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ],
     );
   }
 
   Widget _buildBottomSheetContent(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.grey[900],
+            color: scheme.surfaceContainerHigh,
             borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(20),
               topRight: Radius.circular(20),
@@ -343,7 +467,7 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
               children: [
                 Text(
                   widget.titleText,
-                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                  style: TextStyle(color: scheme.onSurface, fontSize: 18, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 16),
                 _buildFormContent(),
@@ -353,13 +477,13 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
                   children: [
                     TextButton(
                       onPressed: () => Navigator.of(context).pop(),
-                      child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
+                      child: Text('Cancel', style: TextStyle(color: scheme.onSurfaceVariant)),
                     ),
                     const SizedBox(width: 8),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.deepPurple.shade400,
-                        foregroundColor: Colors.white,
+                        backgroundColor: scheme.primary,
+                        foregroundColor: scheme.onPrimary,
                       ),
                       onPressed: () {
                         Navigator.of(context).pop({

@@ -18,6 +18,7 @@ import '../widgets/voxel_toast.dart';
 import '../widgets/applyable_metadata_item.dart';
 import '../widgets/song_menu_sheet.dart';
 import '../widgets/edit_metadata_sheet.dart';
+import '../widgets/player_theme_wrapper.dart';
 import 'dart:typed_data';
 import 'dart:io';
 
@@ -132,8 +133,15 @@ class _ArtistPageState extends State<ArtistPage> {
   Widget build(BuildContext context) {
     final audioService = context.watch<AudioPlayerService>();
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+    return PlayerThemeWrapper(
+      artPath: widget.artistArtwork,
+      builder: (context, colorScheme, extractedColor) {
+        return Theme(
+          data: Theme.of(context).copyWith(colorScheme: colorScheme),
+          child: Builder(
+            builder: (context) {
+              return Scaffold(
+                backgroundColor: colorScheme.surface,
       extendBodyBehindAppBar: true,
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight + 12),
@@ -295,13 +303,6 @@ class _ArtistPageState extends State<ArtistPage> {
                       decoration: BoxDecoration(
                         color: Theme.of(context).colorScheme.primary,
                         shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
                       ),
                       child: IconButton(
                         icon: const Icon(
@@ -310,7 +311,7 @@ class _ArtistPageState extends State<ArtistPage> {
                           color: Colors.white,
                         ),
                         onPressed: () {
-                          audioService.playFiles(widget.songs);
+                          audioService.playFiles(widget.songs, artistName: widget.artistName);
                         },
                       ),
                     ),
@@ -333,7 +334,7 @@ class _ArtistPageState extends State<ArtistPage> {
                         onPressed: () {
                           final shuffledSongs = List<File>.from(widget.songs)
                             ..shuffle();
-                          audioService.playFiles(shuffledSongs);
+                          audioService.playFiles(shuffledSongs, artistName: widget.artistName);
                         },
                       ),
                     ),
@@ -362,10 +363,12 @@ class _ArtistPageState extends State<ArtistPage> {
               itemBuilder: (context, index) {
                 final file = widget.songs[index];
                 final song = _metadataCache.createSongFromFile(file);
+                final isCurrentPlaying = !audioService.isRadioPlaying &&
+                    audioService.currentTrack?.id == file.path;
 
                 return InkWell(
                   onTap: () {
-                    audioService.playFileInContext(file, widget.songs);
+                    audioService.playFileInContext(file, widget.songs, artistName: widget.artistName);
                   },
                   onLongPress: () {
                     final settings = Provider.of<SettingsModel>(context, listen: false);
@@ -376,23 +379,9 @@ class _ArtistPageState extends State<ArtistPage> {
                   },
                   child: Padding(
                     padding: const EdgeInsets.only(
-                        left: 16, right: 0, top: 6, bottom: 6),
+                        left: 24, right: 0, top: 6, bottom: 6),
                     child: Row(
                       children: [
-                        // Track number
-                        SizedBox(
-                          width: 32,
-                          child: Text(
-                            '${index + 1}',
-                            style: TextStyle(
-                              color: Colors.grey[500],
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
                         // Album art
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
@@ -415,8 +404,10 @@ class _ArtistPageState extends State<ArtistPage> {
                             children: [
                               Text(
                                 song.title,
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: isCurrentPlaying
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Colors.white,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w400,
                                 ),
@@ -603,10 +594,12 @@ class _ArtistPageState extends State<ArtistPage> {
               itemBuilder: (context, index) {
                 final file = widget.songs[index];
                 final song = _metadataCache.createSongFromFile(file);
+                final isCurrentPlaying = !audioService.isRadioPlaying &&
+                    audioService.currentTrack?.id == file.path;
 
                 return InkWell(
                   onTap: () {
-                    audioService.playFileInContext(file, widget.songs);
+                    audioService.playFileInContext(file, widget.songs, artistName: widget.artistName);
                   },
                   onLongPress: () {
                     final settings = Provider.of<SettingsModel>(context, listen: false);
@@ -640,8 +633,10 @@ class _ArtistPageState extends State<ArtistPage> {
                             children: [
                               Text(
                                 song.title,
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: isCurrentPlaying
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Colors.white,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w400,
                                 ),
@@ -691,6 +686,10 @@ class _ArtistPageState extends State<ArtistPage> {
           ),
         ],
       ),
+    );
+  }),
+        );
+      },
     );
   }
 
@@ -778,7 +777,7 @@ class _ArtistPageState extends State<ArtistPage> {
             title: 'Edit metadata',
             color: Colors.orange.shade400,
             onTap: () async {
-              await _showManualEditDialog(
+              return await _showManualEditDialog(
                   file, cachedSong, Colors.deepPurple.shade400);
             },
           ),
@@ -905,55 +904,12 @@ class _ArtistPageState extends State<ArtistPage> {
   }
 
   Future<void> _createPlaylistWithSong(File song) async {
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      isScrollControlled: true,
-      useRootNavigator: true,
-      builder: (ctx) {
-        bool dismissed = false;
-        void dismiss() {
-          if (dismissed) return;
-          dismissed = true;
-          Navigator.of(ctx, rootNavigator: true).pop();
-        }
-
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: dismiss,
-              ),
-            ),
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Builder(
-                builder: (context) {
-                  final viewInsets = MediaQuery.of(context).viewInsets.bottom;
-                  final isKeyboardVisible = viewInsets > 0;
-                  final targetSize = isKeyboardVisible ? 0.85 : 0.55;
-
-                  return DraggableScrollableSheet(
-                    initialChildSize: targetSize,
-                    minChildSize: targetSize,
-                    maxChildSize: targetSize,
-                    expand: false,
-                    builder: (context, scrollController) {
-                      return CreatePlaylistDialog(
-                        initialName: '',
-                        initialArtworkPath: '',
-                        initialColor: null,
-                        titleText: 'Create Playlist',
-                        actionText: 'Create',
-                        useBottomSheetStyle: true,
-                        sheetScrollController: scrollController,
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
+      builder: (context) {
+        return const CreatePlaylistDialog(
+          titleText: 'Create Playlist',
+          actionText: 'Create',
         );
       },
     );
@@ -1095,7 +1051,7 @@ class _ArtistPageState extends State<ArtistPage> {
     }
   }
 
-  Future<void> _showManualEditDialog(
+  Future<Song?> _showManualEditDialog(
       File file, Song song, Color accentColor) async {
     final result = await EditMetadataSheet.show(
       context,
@@ -1138,7 +1094,9 @@ class _ArtistPageState extends State<ArtistPage> {
         final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
         VoxelToast.show(context, 'Metadata updated', bottomPadding: bottomPad);
       }
+      return editedSong;
     }
+    return null;
   }
 
   Future<void> _showMetadataSearchSheet({

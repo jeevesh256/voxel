@@ -12,6 +12,7 @@ import 'dart:math';
 import 'dart:io';
 import 'dart:async';
 import '../services/audio_service.dart';
+import '../services/song_metadata_cache.dart';
 import '../models/settings_model.dart';
 import '../models/radio_station.dart';
 import '../models/song.dart';
@@ -38,10 +39,12 @@ class MiniPlayer extends StatelessWidget {
 
 class SlidingPlayer extends StatefulWidget {
   final AnimationController controller;
+  final void Function(String? playlistId, bool isRadio, String? artistName)? onPlayingFromTap;
 
   const SlidingPlayer({
     super.key,
     required this.controller,
+    this.onPlayingFromTap,
   });
 
   @override
@@ -49,8 +52,7 @@ class SlidingPlayer extends StatefulWidget {
 }
 
 class _SlidingPlayerState extends State<SlidingPlayer> {
-  double? _dragValue; // Scrubber drag value
-  DateTime? _lastSeekTime;
+
 
   void _handleDragUpdate(DragUpdateDetails details) {
     final delta = details.delta.dy;
@@ -147,8 +149,28 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                     ? metadata!.artUri!.toString()
                     : null);
 
+        // Retrieve fallback color from playlist custom artwork theme or pinned folder theme
+        Color? playlistFallbackColor;
+        if (!isRadio && metadata?.album != null) {
+          final customPlaylist = audioService.getCustomPlaylist(metadata!.album!);
+          if (customPlaylist?.artworkColor != null) {
+            playlistFallbackColor = Color(customPlaylist!.artworkColor!);
+          } else {
+            // Check pinned folders from SettingsModel
+            final settings = Provider.of<SettingsModel>(context, listen: false);
+            final pinned = settings.pinnedFolders.firstWhere(
+              (f) => f.name == metadata!.album || f.id == metadata!.album,
+              orElse: () => PinnedNetworkFolder(id: '', name: '', type: '', serverId: '', serverName: '', path: ''),
+            );
+            if (pinned.artworkColor != null) {
+              playlistFallbackColor = Color(pinned.artworkColor!);
+            }
+          }
+        }
+
         return PlayerThemeWrapper(
           artPath: artPath,
+          fallbackColor: playlistFallbackColor,
           builder: (context, dynamicScheme, extractedColor) {
             return Theme(
               data: Theme.of(context).copyWith(
@@ -214,7 +236,7 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
                           child: RepaintBoundary(
                             child: DynamicBackground(
                               metadata: metadata,
-                              fallbackColor: Theme.of(context).colorScheme.primary,
+                              fallbackColor: extractedColor,
                               child: const SizedBox.expand(),
                             ),
                           ),
@@ -425,6 +447,40 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
   }) {
     Widget getFallbackIcon(bool isRadioItem) {
       final scheme = Theme.of(context).colorScheme;
+      
+      // If playing a song in a custom playlist or pinned folder, use its custom color theme
+      Color? playlistColor;
+      if (!isRadioItem && metadata?.album != null) {
+        final audioService = Provider.of<AudioPlayerService>(context, listen: false);
+        final customPlaylist = audioService.getCustomPlaylist(metadata!.album!);
+        if (customPlaylist?.artworkColor != null) {
+          playlistColor = Color(customPlaylist!.artworkColor!);
+        } else {
+          // Check pinned folders from SettingsModel
+          final settings = Provider.of<SettingsModel>(context, listen: false);
+          final pinned = settings.pinnedFolders.firstWhere(
+            (f) => f.name == metadata!.album || f.id == metadata!.album,
+            orElse: () => PinnedNetworkFolder(id: '', name: '', type: '', serverId: '', serverName: '', path: ''),
+          );
+          if (pinned.artworkColor != null) {
+            playlistColor = Color(pinned.artworkColor!);
+          }
+        }
+      }
+
+      if (playlistColor != null) {
+        return Container(
+          color: playlistColor.withOpacity(0.12),
+          child: Center(
+            child: Icon(
+              Icons.music_note_rounded,
+              size: 80,
+              color: playlistColor,
+            ),
+          ),
+        );
+      }
+
       return Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -524,27 +580,40 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
               ),
               Expanded(
                 child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        isRadio ? 'Tuned into' : 'Playing from',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
-                          fontSize: 12,
-                        ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      widget.onPlayingFromTap?.call(
+                        audioService.currentPlaylistId,
+                        isRadio,
+                        audioService.currentArtistName,
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            isRadio ? 'Tuned into' : 'Playing from',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.7),
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            isRadio ? 'Radio' : (playlistName ?? 'Library'),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.9),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        isRadio ? 'Radio' : (playlistName ?? 'Library'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -659,12 +728,25 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
               title: 'Edit metadata',
               color: Colors.orange.shade400,
               onTap: () async {
-                await EditMetadataSheet.show(
+                final result = await EditMetadataSheet.show(
                   context,
                   song,
                   File(song.filePath),
                   accentColor,
                 );
+                if (result != null) {
+                  final editedSong = song.copyWith(
+                    title: result['title'] as String,
+                    artist: result['artist'] as String,
+                    album: result['album'] as String,
+                    albumArt: result['albumArt'] as String,
+                  );
+                  final cache = SongMetadataCache();
+                  await cache.saveMetadata(editedSong);
+                  await audioService.refreshCurrentMetadata();
+                  return editedSong;
+                }
+                return null;
               },
             ),
           ],
@@ -768,339 +850,11 @@ class _SlidingPlayerState extends State<SlidingPlayer> {
             },
           ),
           const SizedBox(height: 20),
-          _buildProgressBar(context),
+          const _PlayerProgressBar(),
           const SizedBox(height: 20),
-          _buildPlaybackControls(context),
+          const _PlayerPlaybackControls(),
         ],
       ),
-    );
-  }
-
-  Widget _buildProgressBar(BuildContext context) {
-    final audioService = context.watch<AudioPlayerService>();
-    final isRadio = audioService.isRadioPlaying;
-
-    return StreamBuilder<(Duration, Duration)>(
-      stream: Rx.combineLatest2(
-        audioService.player.positionStream,
-        audioService.stableDurationStream,
-        (position, duration) => (position, duration),
-      ).asBroadcastStream(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox(height: 48);
-
-        final position = snapshot.data!.$1;
-        final duration = snapshot.data!.$2;
-
-        if (isRadio || duration == Duration.zero) {
-          final theme = Theme.of(context);
-          final trackColor = theme.colorScheme.onSurfaceVariant.withOpacity(0.35);
-          final isPlaying = audioService.player.playing;
-          return Container(
-            height: 48,
-            alignment: Alignment.center,
-            child: Row(
-              children: [
-                Expanded(
-                  child: _LivePlayingLine(
-                    color: trackColor,
-                    isPlaying: isPlaying,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    'LIVE',
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurface.withOpacity(0.8),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: _LivePlayingLine(
-                    color: trackColor,
-                    isPlaying: isPlaying,
-                    reverse: true,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        final double value = min<double>(
-          (_dragValue ?? position.inMilliseconds.toDouble()),
-          duration.inMilliseconds.toDouble(),
-        );
-
-        final percent = duration.inMilliseconds > 0 ? value / duration.inMilliseconds : 0.0;
-        final isPlaying = audioService.player.playing;
-
-        return Column(
-          children: [
-            M3ESlider(
-              value: value.clamp(0.0, duration.inMilliseconds.toDouble()),
-              min: 0.0,
-              max: duration.inMilliseconds.toDouble(),
-              onChanged: duration.inMilliseconds > 0
-                  ? (val) {
-                      final maxVal = duration.inMilliseconds.toDouble();
-                      final threshold = (maxVal * 0.025).clamp(1000.0, 3000.0);
-                      double adjustedVal = val;
-                      if (val <= threshold) {
-                        adjustedVal = 0.0;
-                      } else if (maxVal - val <= threshold) {
-                        adjustedVal = maxVal;
-                      }
-
-                      final prevVal = _dragValue ?? position.inMilliseconds.toDouble();
-                      final step = (duration.inMilliseconds / 10).clamp(5000.0, 30000.0);
-                      final prevStepIndex = (prevVal / step).floor();
-                      final currentStepIndex = (adjustedVal / step).floor();
-                      if (currentStepIndex != prevStepIndex) {
-                        _triggerHapticScrub();
-                      }
-                      setState(() => _dragValue = adjustedVal);
-                    }
-                  : null,
-              onChangeEnd: duration.inMilliseconds > 0
-                  ? (value) {
-                      final targetVal = _dragValue ?? value;
-                      final maxVal = duration.inMilliseconds.toDouble();
-                      final threshold = (maxVal * 0.025).clamp(1000.0, 3000.0);
-                      double adjustedVal = targetVal;
-                      if (targetVal <= threshold) {
-                        adjustedVal = 0.0;
-                      } else if (maxVal - targetVal <= threshold) {
-                        adjustedVal = maxVal;
-                      }
-
-                      audioService.player.seek(Duration(milliseconds: adjustedVal.round()));
-                      setState(() {
-                        _dragValue = null;
-                        _lastSeekTime = null;
-                      });
-                    }
-                  : null,
-              decoration: M3ESliderDecoration(
-                trackHeight: 12.0,
-                thumbWidth: 4.0,
-                thumbHeight: 24.0,
-                haptic: M3EHapticFeedback.light,
-                colors: M3ESliderDefaults.colors(context).copyWith(
-                  activeTrackColor: Theme.of(context).colorScheme.primary,
-                  inactiveTrackColor: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
-                  thumbColor: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  _formatDuration(position),
-                  style: TextStyle(color: Colors.grey.shade400),
-                ),
-                Text(
-                  _formatDuration(duration),
-                  style: TextStyle(color: Colors.grey.shade400),
-                ),
-              ],
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    final seconds = duration.inSeconds.remainder(60);
-
-    if (hours > 0) {
-      return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
-    }
-    return '$minutes:${twoDigits(seconds)}';
-  }
-
-  Widget _buildPlaybackControls(BuildContext context) {
-    final audioService = context.watch<AudioPlayerService>();
-    final settings = context.watch<SettingsModel>();
-    final isRadio = audioService.isRadioPlaying;
-
-    return StreamBuilder<PlayerState>(
-      stream: audioService.player.playerStateStream,
-      initialData: audioService.player.playerState,
-      builder: (context, snapshot) {
-        final playing = snapshot.data?.playing ?? audioService.player.playing;
-        return Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                VoxelPlayerControlButton(
-                  isActive: !isRadio && audioService.isShuffling,
-                  onPressed: isRadio
-                      ? null
-                      : () {
-                          _triggerHapticTap();
-                          audioService.toggleShuffle();
-                        },
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 4.0),
-                    child: Icon(
-                      Icons.shuffle,
-                      color: isRadio
-                          ? Colors.grey.shade600
-                          : audioService.isShuffling
-                              ? Theme.of(context).colorScheme.primary
-                              : Colors.grey.shade400,
-                      size: 28,
-                    ),
-                  ),
-                ),
-                // Central grouped controls
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    VoxelPlayerControlButton(
-                      onPressed: isRadio
-                          ? null
-                          : () {
-                              _triggerHapticTap();
-                              audioService.player.seekToPrevious();
-                            },
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
-                        child: Icon(
-                          Icons.skip_previous,
-                          color: Colors.white,
-                          size: 36,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    VoxelPlayPauseButton(
-                      isPlaying: playing,
-                      isCookieEnabled: settings.cookiePlayPauseEnabled,
-                      size: 72.0,
-                      onPressed: () {
-                        _triggerHapticPlayPause();
-                        audioService.playPause();
-                      },
-                    ),
-                    const SizedBox(width: 16),
-                    VoxelPlayerControlButton(
-                      onPressed: isRadio
-                          ? null
-                          : () {
-                              _triggerHapticTap();
-                              audioService.player.seekToNext();
-                            },
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
-                        child: Icon(
-                          Icons.skip_next,
-                          color: Colors.white,
-                          size: 36,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                VoxelPlayerControlButton(
-                  isActive: !isRadio && audioService.loopMode != LoopMode.off,
-                  onPressed: isRadio
-                      ? null
-                      : () {
-                          _triggerHapticTap();
-                          audioService.cycleRepeatMode();
-                        },
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 4.0),
-                    child: Icon(
-                      audioService.loopMode == LoopMode.one
-                          ? Icons.repeat_one
-                          : Icons.repeat,
-                      color: isRadio
-                          ? Colors.grey.shade600
-                          : audioService.loopMode != LoopMode.off
-                              ? Theme.of(context).colorScheme.primary
-                              : Colors.grey.shade400,
-                      size: 28,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 28),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                VoxelActionButton(
-                  icon: Icons.music_note,
-                  label: 'Lyrics',
-                  onPressed: () {
-                    _triggerHapticTap();
-                    Navigator.push(
-                      context,
-                      PageRouteBuilder(
-                        opaque: false,
-                        barrierColor: Colors.black54,
-                        barrierDismissible: true,
-                        transitionDuration: const Duration(milliseconds: 300),
-                        reverseTransitionDuration:
-                            const Duration(milliseconds: 250),
-                        pageBuilder: (context, animation, secondaryAnimation) {
-                          return const FullScreenLyricsView();
-                        },
-                        transitionsBuilder:
-                            (context, animation, secondaryAnimation, child) {
-                          return SlideTransition(
-                            position: Tween<Offset>(
-                              begin: const Offset(0, 1),
-                              end: Offset.zero,
-                            ).animate(CurvedAnimation(
-                              parent: animation,
-                              curve: Curves.easeOutCubic,
-                              reverseCurve: Curves.easeInCubic,
-                            )),
-                            child: child,
-                          );
-                        },
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(width: 16),
-                VoxelActionButton(
-                  icon: Icons.queue_music,
-                  label: 'Queue',
-                  onPressed: () {
-                    _triggerHapticTap();
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      useRootNavigator: true,
-                      backgroundColor: Colors.transparent,
-                      elevation: 0,
-                      builder: (ctx) => Theme(
-                        data: Theme.of(context),
-                        child: const DraggableQueueSheet(),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ],
-        );
-      },
     );
   }
 
@@ -1502,7 +1256,7 @@ class DynamicBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final primaryColor = scheme.primary;
+    final primaryColor = fallbackColor;
 
     return Container(
       decoration: BoxDecoration(
@@ -2048,18 +1802,19 @@ class _PressableArtworkState extends State<_PressableArtwork>
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            Positioned.fill(
-                              child: Transform.scale(
-                                scale: 2.5,
-                                child: ImageFiltered(
-                                  imageFilter: ImageFilter.blur(sigmaX: 30.0, sigmaY: 30.0),
-                                  child: Opacity(
-                                    opacity: 0.65,
-                                    child: child!,
+                            if (progress > 0.0)
+                              Positioned.fill(
+                                child: Transform.scale(
+                                  scale: 2.5,
+                                  child: ImageFiltered(
+                                    imageFilter: ImageFilter.blur(sigmaX: 30.0, sigmaY: 30.0),
+                                    child: Opacity(
+                                      opacity: 0.65,
+                                      child: child!,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
                             child!,
                           ],
                         ),
@@ -2113,5 +1868,372 @@ class _SharedPathClipper extends CustomClipper<Path> {
   @override
   bool shouldReclip(covariant _SharedPathClipper oldClipper) {
     return oldClipper.path != path;
+  }
+}
+
+class _PlayerProgressBar extends StatefulWidget {
+  const _PlayerProgressBar();
+
+  @override
+  State<_PlayerProgressBar> createState() => _PlayerProgressBarState();
+}
+
+class _PlayerProgressBarState extends State<_PlayerProgressBar> {
+  double? _dragValue;
+  DateTime? _lastSeekTime;
+
+  void _triggerHapticScrub() {
+    final settings = Provider.of<SettingsModel>(context, listen: false);
+    if (settings.hapticsEnabled && settings.hapticsOnSliderScrubbing) {
+      HapticFeedback.selectionClick();
+    }
+  }
+
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final seconds = duration.inSeconds.remainder(60);
+
+    if (hours > 0) {
+      return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
+    }
+    return '$minutes:${twoDigits(seconds)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final audioService = context.watch<AudioPlayerService>();
+    final isRadio = audioService.isRadioPlaying;
+
+    return StreamBuilder<(Duration, Duration)>(
+      stream: Rx.combineLatest2(
+        audioService.player.positionStream,
+        audioService.stableDurationStream,
+        (position, duration) => (position, duration),
+      ).asBroadcastStream(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox(height: 48);
+
+        final position = snapshot.data!.$1;
+        final duration = snapshot.data!.$2;
+
+        if (isRadio || duration == Duration.zero) {
+          final theme = Theme.of(context);
+          final trackColor = theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.35);
+          final isPlaying = audioService.player.playing;
+          return Container(
+            height: 48,
+            alignment: Alignment.center,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _LivePlayingLine(
+                    color: trackColor,
+                    isPlaying: isPlaying,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'LIVE',
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.8),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _LivePlayingLine(
+                    color: trackColor,
+                    isPlaying: isPlaying,
+                    reverse: true,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final double value = min<double>(
+          (_dragValue ?? position.inMilliseconds.toDouble()),
+          duration.inMilliseconds.toDouble(),
+        );
+
+        final percent = duration.inMilliseconds > 0 ? value / duration.inMilliseconds : 0.0;
+        final isPlaying = audioService.player.playing;
+
+        return Column(
+          children: [
+            M3ESlider(
+              value: value.clamp(0.0, duration.inMilliseconds.toDouble()),
+              min: 0.0,
+              max: duration.inMilliseconds.toDouble(),
+              onChanged: duration.inMilliseconds > 0
+                  ? (val) {
+                      final maxVal = duration.inMilliseconds.toDouble();
+                      final threshold = (maxVal * 0.025).clamp(1000.0, 3000.0);
+                      double adjustedVal = val;
+                      if (val <= threshold) {
+                        adjustedVal = 0.0;
+                      } else if (maxVal - val <= threshold) {
+                        adjustedVal = maxVal;
+                      }
+
+                      final prevVal = _dragValue ?? position.inMilliseconds.toDouble();
+                      final step = (duration.inMilliseconds / 10).clamp(5000.0, 30000.0);
+                      final prevStepIndex = (prevVal / step).floor();
+                      final currentStepIndex = (adjustedVal / step).floor();
+                      if (currentStepIndex != prevStepIndex) {
+                        _triggerHapticScrub();
+                      }
+                      setState(() => _dragValue = adjustedVal);
+                    }
+                  : null,
+              onChangeEnd: duration.inMilliseconds > 0
+                  ? (value) {
+                      final targetVal = _dragValue ?? value;
+                      final maxVal = duration.inMilliseconds.toDouble();
+                      final threshold = (maxVal * 0.025).clamp(1000.0, 3000.0);
+                      double adjustedVal = targetVal;
+                      if (targetVal <= threshold) {
+                        adjustedVal = 0.0;
+                      } else if (maxVal - targetVal <= threshold) {
+                        adjustedVal = maxVal;
+                      }
+
+                      audioService.player.seek(Duration(milliseconds: adjustedVal.round()));
+                      setState(() {
+                        _dragValue = null;
+                        _lastSeekTime = null;
+                      });
+                    }
+                  : null,
+              decoration: M3ESliderDecoration(
+                trackHeight: 12.0,
+                thumbWidth: 4.0,
+                thumbHeight: 24.0,
+                haptic: M3EHapticFeedback.light,
+                colors: M3ESliderDefaults.colors(context).copyWith(
+                  activeTrackColor: Theme.of(context).colorScheme.primary,
+                  inactiveTrackColor: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                  thumbColor: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _formatDuration(position),
+                  style: TextStyle(color: Colors.grey.shade400),
+                ),
+                Text(
+                  _formatDuration(duration),
+                  style: TextStyle(color: Colors.grey.shade400),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _PlayerPlaybackControls extends StatelessWidget {
+  const _PlayerPlaybackControls();
+
+  void _triggerHapticTap(BuildContext context) {
+    final settings = Provider.of<SettingsModel>(context, listen: false);
+    if (settings.hapticsEnabled && settings.hapticsOnButtonTaps) {
+      HapticFeedback.lightImpact();
+    }
+  }
+
+  void _triggerHapticPlayPause(BuildContext context) {
+    final settings = Provider.of<SettingsModel>(context, listen: false);
+    if (settings.hapticsEnabled && settings.hapticsOnButtonTaps) {
+      HapticFeedback.mediumImpact();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final audioService = context.watch<AudioPlayerService>();
+    final settings = context.watch<SettingsModel>();
+    final isRadio = audioService.isRadioPlaying;
+
+    return StreamBuilder<PlayerState>(
+      stream: audioService.player.playerStateStream,
+      initialData: audioService.player.playerState,
+      builder: (context, snapshot) {
+        final playing = snapshot.data?.playing ?? audioService.player.playing;
+        return Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                VoxelPlayerControlButton(
+                  isActive: !isRadio && audioService.isShuffling,
+                  onPressed: isRadio
+                      ? null
+                      : () {
+                          _triggerHapticTap(context);
+                          audioService.toggleShuffle();
+                        },
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 4.0),
+                    child: Icon(
+                      Icons.shuffle,
+                      color: isRadio
+                          ? Colors.grey.shade600
+                          : audioService.isShuffling
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.grey.shade400,
+                      size: 28,
+                    ),
+                  ),
+                ),
+                // Central grouped controls
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    VoxelPlayerControlButton(
+                      onPressed: isRadio
+                          ? null
+                          : () {
+                              _triggerHapticTap(context);
+                              audioService.player.seekToPrevious();
+                            },
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
+                        child: Icon(
+                          Icons.skip_previous,
+                          color: Colors.white,
+                          size: 36,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    VoxelPlayPauseButton(
+                      isPlaying: playing,
+                      isCookieEnabled: settings.cookiePlayPauseEnabled,
+                      size: 72.0,
+                      onPressed: () {
+                        _triggerHapticPlayPause(context);
+                        audioService.playPause();
+                      },
+                    ),
+                    const SizedBox(width: 16),
+                    VoxelPlayerControlButton(
+                      onPressed: isRadio
+                          ? null
+                          : () {
+                              _triggerHapticTap(context);
+                              audioService.player.seekToNext();
+                            },
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
+                        child: Icon(
+                          Icons.skip_next,
+                          color: Colors.white,
+                          size: 36,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                VoxelPlayerControlButton(
+                  isActive: !isRadio && audioService.loopMode != LoopMode.off,
+                  onPressed: isRadio
+                      ? null
+                      : () {
+                          _triggerHapticTap(context);
+                          audioService.cycleRepeatMode();
+                        },
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 4.0),
+                    child: Icon(
+                      audioService.loopMode == LoopMode.one
+                          ? Icons.repeat_one
+                          : Icons.repeat,
+                      color: isRadio
+                          ? Colors.grey.shade600
+                          : audioService.loopMode != LoopMode.off
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.grey.shade400,
+                      size: 28,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 28),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                VoxelActionButton(
+                  icon: Icons.music_note,
+                  label: 'Lyrics',
+                  onPressed: () {
+                    _triggerHapticTap(context);
+                    Navigator.push(
+                      context,
+                      PageRouteBuilder(
+                        opaque: false,
+                        barrierColor: Colors.black54,
+                        barrierDismissible: true,
+                        transitionDuration: const Duration(milliseconds: 300),
+                        reverseTransitionDuration:
+                            const Duration(milliseconds: 250),
+                        pageBuilder: (context, animation, secondaryAnimation) {
+                          return const FullScreenLyricsView();
+                        },
+                        transitionsBuilder:
+                            (context, animation, secondaryAnimation, child) {
+                          return SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(0, 1),
+                              end: Offset.zero,
+                            ).animate(CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeOutCubic,
+                              reverseCurve: Curves.easeInCubic,
+                            )),
+                            child: child,
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 16),
+                VoxelActionButton(
+                  icon: Icons.queue_music,
+                  label: 'Queue',
+                  onPressed: () {
+                    _triggerHapticTap(context);
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      useRootNavigator: true,
+                      backgroundColor: Colors.transparent,
+                      elevation: 0,
+                      builder: (ctx) => Theme(
+                        data: Theme.of(context),
+                        child: const DraggableQueueSheet(),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
   }
 }

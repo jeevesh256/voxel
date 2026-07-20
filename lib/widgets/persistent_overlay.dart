@@ -12,6 +12,7 @@ class PersistentOverlay extends StatefulWidget {
   final int currentIndex;
   final Function(int) onTabChanged;
   final bool hideOfflineIndicator;
+  final void Function(String? playlistId, bool isRadio, String? artistName)? onPlayingFromTap;
 
   const PersistentOverlay({
     super.key,
@@ -19,6 +20,7 @@ class PersistentOverlay extends StatefulWidget {
     required this.currentIndex,
     required this.onTabChanged,
     this.hideOfflineIndicator = false,
+    this.onPlayingFromTap,
   });
 
   @override
@@ -82,6 +84,7 @@ class PersistentOverlayState extends State<PersistentOverlay>
     final bottomInset = MediaQuery.of(context).padding.bottom;
     final audioService = context.watch<AudioPlayerService>();
     final isPlayerVisible = audioService.isMiniPlayerVisible;
+    final isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
     // Custom Bottom Navigation Bar to avoid standard M3 NavigationBar height stretching
     final destinations = [
@@ -151,9 +154,11 @@ class PersistentOverlayState extends State<PersistentOverlay>
               child: MediaQuery(
                 data: MediaQuery.of(context).copyWith(
                   padding: MediaQuery.of(context).padding.copyWith(
-                    bottom: bottomInset +
-                        metrics.navBarHeight +
-                        (isPlayerVisible ? metrics.miniPlayerHeight + 4.0 : 0.0),
+                    bottom: isKeyboardOpen
+                        ? MediaQuery.of(context).viewInsets.bottom
+                        : bottomInset +
+                            metrics.navBarHeight +
+                            (isPlayerVisible ? metrics.miniPlayerHeight : 0.0),
                   ),
                 ),
                 child: widget.child,
@@ -197,20 +202,22 @@ class PersistentOverlayState extends State<PersistentOverlay>
               ),
 
             // Bottom Navigation Bar Layer
-            AnimatedBuilder(
-              animation: _playerController,
-              builder: (context, child) {
-                final t = _playerController.value;
-                // Move nav bar fully out of screen boundary on player expand
-                final offset = _lerp(0.0, metrics.navBarHeight + bottomInset, t);
-                return Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: -offset,
-                  child: customNavBar,
-                );
-              },
-            ),
+            if (!isKeyboardOpen)
+              AnimatedBuilder(
+                animation: _playerController,
+                builder: (context, child) {
+                  final t = _playerController.value;
+
+                  // Move nav bar fully out of screen boundary on player expand
+                  final offset = _lerp(0.0, metrics.navBarHeight + bottomInset, t);
+                  return Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: -offset,
+                    child: customNavBar,
+                  );
+                },
+              ),
 
             // Mini Player / Full Screen Sliding Player Sheet overlay
             if (isPlayerVisible)
@@ -232,6 +239,7 @@ class PersistentOverlayState extends State<PersistentOverlay>
                     height: playerHeight,
                     child: SlidingPlayer(
                       controller: _playerController,
+                      onPlayingFromTap: widget.onPlayingFromTap,
                     ),
                   );
                 },

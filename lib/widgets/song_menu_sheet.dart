@@ -1,4 +1,5 @@
 import 'dart:ui' show lerpDouble;
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
@@ -15,7 +16,7 @@ class SongMenuOption {
   final IconData icon;
   final String title;
   final Color? color;
-  final VoidCallback onTap;
+  final FutureOr<dynamic> Function() onTap;
 
   const SongMenuOption({
     required this.icon,
@@ -29,12 +30,20 @@ class SongMenuSheet extends StatefulWidget {
   final Song song;
   final Color accentColor;
   final List<SongMenuOption> options;
+  final IconData? rightButtonIcon;
+  final Color? rightButtonColor;
+  final VoidCallback? onRightButtonTap;
+  final VoidCallback? onPlayTap;
 
   const SongMenuSheet({
     super.key,
     required this.song,
     required this.accentColor,
     required this.options,
+    this.rightButtonIcon,
+    this.rightButtonColor,
+    this.onRightButtonTap,
+    this.onPlayTap,
   });
 
   @override
@@ -44,6 +53,23 @@ class SongMenuSheet extends StatefulWidget {
 class _SongMenuSheetState extends State<SongMenuSheet> {
   int _activeTab = 0; // 0 = OPTIONS, 1 = INFO
   final PageController _pageController = PageController(initialPage: 0);
+  late Song _song;
+
+  @override
+  void initState() {
+    super.initState();
+    _song = widget.song;
+  }
+
+  @override
+  void didUpdateWidget(SongMenuSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.song != widget.song) {
+      setState(() {
+        _song = widget.song;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -138,7 +164,7 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
     SongMenuOption? deleteOpt;
     for (final opt in widget.options) {
       final title = opt.title.toLowerCase();
-      if (title.contains('remove') && !title.contains('delete')) {
+      if (title.contains('remove') || title.contains('delete')) {
         deleteOpt = opt;
         break;
       }
@@ -186,14 +212,14 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
     SongMenuOption? deleteOpt;
     for (final opt in widget.options) {
       final title = opt.title.toLowerCase();
-      if (title.contains('remove') && !title.contains('delete')) {
+      if (title.contains('remove') || title.contains('delete')) {
         deleteOpt = opt;
         break;
       }
     }
 
     return PlayerThemeWrapper(
-      artPath: widget.song.albumArt,
+      artPath: _song.albumArt,
       fallbackColor: widget.accentColor,
       builder: (context, dynamicScheme, extractedColor) {
         return AnimatedTheme(
@@ -240,14 +266,14 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          if (widget.song.albumArt.isNotEmpty && File(widget.song.albumArt).existsSync())
+                          if (_song.albumArt.isNotEmpty && File(_song.albumArt).existsSync())
                             ClipRRect(
                               borderRadius: BorderRadius.circular(12),
                               clipBehavior: Clip.antiAlias,
                               child: Container(
                                 color: const Color(0xFF121212),
                                 child: Image.file(
-                                  File(widget.song.albumArt),
+                                  File(_song.albumArt),
                                   width: 54,
                                   height: 54,
                                   fit: BoxFit.cover,
@@ -276,7 +302,7 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  widget.song.title,
+                                  _song.title,
                                   style: TextStyle(
                                     color: scheme.onSurface,
                                     fontSize: 18,
@@ -288,7 +314,7 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  widget.song.artist,
+                                  _song.artist,
                                   style: TextStyle(
                                     color: scheme.onSurfaceVariant.withOpacity(0.7),
                                     fontSize: 14,
@@ -444,7 +470,7 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
   }) {
     return StatefulBuilder(
       builder: (context, stateSetter) {
-        final isLiked = audioService.isFileLiked(widget.song.filePath);
+        final isLiked = audioService.isFileLiked(_song.filePath);
 
         return SingleChildScrollView(
           physics: const ClampingScrollPhysics(),
@@ -462,31 +488,49 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
                   backgroundColor: scheme.primary,
                   foregroundColor: scheme.onPrimary,
                   onTap: () {
-                    _showToast('Playing song');
-                    audioService.playFileInContext(
-                        File(widget.song.filePath),
-                        [File(widget.song.filePath)]);
-                  },
-                ),
-                right: SquishyButtonParams(
-                  icon: Icon(isLiked
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded),
-                  backgroundColor: scheme.surfaceContainerHighest,
-                  foregroundColor: isLiked ? scheme.primary : scheme.onSurface,
-                  onTap: () {
-                    _showToast(isLiked
-                        ? 'Removed from Library'
-                        : 'Added to Library');
-                    if (likeOpt != null) {
-                      likeOpt.onTap();
+                    if (widget.onPlayTap != null) {
+                      widget.onPlayTap!();
                     } else {
-                      audioService.toggleLikeFile(widget.song.filePath);
+                      _showToast('Playing song');
+                      audioService.playFileInContext(
+                          File(_song.filePath),
+                          [File(_song.filePath)]);
                     }
-                    stateSetter(() {});
-                    setState(() {});
                   },
                 ),
+                right: widget.rightButtonIcon != null
+                    ? SquishyButtonParams(
+                        icon: Icon(widget.rightButtonIcon),
+                        label: const SizedBox.shrink(),
+                        backgroundColor: scheme.surfaceContainerHighest,
+                        foregroundColor: widget.rightButtonColor ?? scheme.onSurface,
+                        onTap: () {
+                          if (widget.onRightButtonTap != null) {
+                            widget.onRightButtonTap!();
+                            stateSetter(() {});
+                            setState(() {});
+                          }
+                        },
+                      )
+                    : SquishyButtonParams(
+                        icon: Icon(isLiked
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded),
+                        backgroundColor: scheme.surfaceContainerHighest,
+                        foregroundColor: isLiked ? scheme.primary : scheme.onSurface,
+                        onTap: () {
+                          _showToast(isLiked
+                              ? 'Removed from Library'
+                              : 'Added to Library');
+                          if (likeOpt != null) {
+                            likeOpt.onTap();
+                          } else {
+                            audioService.toggleLikeFile(_song.filePath);
+                          }
+                          stateSetter(() {});
+                          setState(() {});
+                        },
+                      ),
               ),
               const SizedBox(height: 8),
 
@@ -549,7 +593,10 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
                       label: const Text('Edit Info'),
                       backgroundColor: scheme.surfaceContainerHighest,
                       foregroundColor: scheme.onSurface,
-                      onTap: () => editOpt.onTap(),
+                      onTap: () async {
+                        Navigator.of(context).pop(); // Dismiss menu sheet first
+                        await editOpt.onTap();
+                      },
                     ),
                   )
                 else if (playlistOpt != null)
@@ -566,7 +613,10 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
                     label: const Text('Edit Info'),
                     backgroundColor: scheme.surfaceContainerHighest,
                     foregroundColor: scheme.onSurface,
-                    onTap: () => editOpt!.onTap(),
+                    onTap: () async {
+                      Navigator.of(context).pop(); // Dismiss menu sheet first
+                      await editOpt!.onTap();
+                    },
                   ),
                 const SizedBox(height: 8),
               ],
@@ -615,14 +665,14 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
             scheme: scheme,
             icon: Icons.timer_outlined,
             label: 'DURATION',
-            value: _formatDuration(widget.song.duration),
+            value: _formatDuration(_song.duration),
           ),
           const SizedBox(height: 12),
           _buildInfoCard(
             scheme: scheme,
             icon: Icons.album_outlined,
             label: 'ALBUM',
-            value: widget.song.album.isNotEmpty ? widget.song.album : 'Unknown Album',
+            value: _song.album.isNotEmpty ? _song.album : 'Unknown Album',
           ),
           const SizedBox(height: 12),
           _buildInfoCard(
@@ -636,11 +686,11 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
             scheme: scheme,
             icon: Icons.folder_open_outlined,
             label: 'FILE PATH',
-            value: widget.song.filePath,
+            value: _song.filePath,
             trailing: IconButton(
               icon: Icon(Icons.copy_rounded, color: scheme.onSurfaceVariant.withOpacity(0.7), size: 20),
               onPressed: () {
-                Clipboard.setData(ClipboardData(text: widget.song.filePath));
+                Clipboard.setData(ClipboardData(text: _song.filePath));
                 VoxelToast.show(
                   context,
                   'Path copied to clipboard',

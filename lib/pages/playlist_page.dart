@@ -15,6 +15,7 @@ import '../widgets/edit_metadata_sheet.dart';
 import '../models/custom_playlist.dart';
 import '../models/song.dart';
 import '../widgets/voxel_toast.dart';
+import '../widgets/player_theme_wrapper.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
@@ -420,55 +421,12 @@ class _PlaylistPageState extends State<PlaylistPage> {
   }
 
   Future<void> _createPlaylistWithSong(File song) async {
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      isScrollControlled: true,
-      useRootNavigator: true,
-      builder: (ctx) {
-        bool dismissed = false;
-        void dismiss() {
-          if (dismissed) return;
-          dismissed = true;
-          Navigator.of(ctx, rootNavigator: true).pop();
-        }
-
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: dismiss,
-              ),
-            ),
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Builder(
-                builder: (context) {
-                  final viewInsets = MediaQuery.of(context).viewInsets.bottom;
-                  final isKeyboardVisible = viewInsets > 0;
-                  final targetSize = isKeyboardVisible ? 0.85 : 0.55;
-
-                  return DraggableScrollableSheet(
-                    initialChildSize: targetSize,
-                    minChildSize: targetSize,
-                    maxChildSize: targetSize,
-                    expand: false,
-                    builder: (context, scrollController) {
-                      return CreatePlaylistDialog(
-                        initialName: '',
-                        initialArtworkPath: '',
-                        initialColor: null,
-                        titleText: 'Create Playlist',
-                        actionText: 'Create',
-                        useBottomSheetStyle: true,
-                        sheetScrollController: scrollController,
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
+      builder: (context) {
+        return const CreatePlaylistDialog(
+          titleText: 'Create Playlist',
+          actionText: 'Create',
         );
       },
     );
@@ -492,7 +450,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
     }
   }
 
-  Future<void> _showManualEditDialog(
+  Future<Song?> _showManualEditDialog(
       File file, Song song, Color accentColor) async {
     final result = await EditMetadataSheet.show(
       context,
@@ -551,7 +509,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
           icon: Icons.check_circle_outline_rounded,
         );
       }
+      return editedSong;
     }
+    return null;
   }
 
   Future<void> _showMetadataSearchSheet({
@@ -906,7 +866,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
             title: 'Edit metadata',
             color: Colors.orange.shade400,
             onTap: () async {
-              await _showManualEditDialog(file, cachedSong, _playlistColor);
+              return await _showManualEditDialog(file, cachedSong, _playlistColor);
             },
           ),
           SongMenuOption(
@@ -964,137 +924,88 @@ class _PlaylistPageState extends State<PlaylistPage> {
           context: context,
           isScrollControlled: true,
           useRootNavigator: true,
+          backgroundColor: Colors.transparent,
           builder: (ctx) {
-            bool dismissed = false;
-            void dismiss(BuildContext c) {
-              if (dismissed) return;
-              dismissed = true;
-              Navigator.of(c, rootNavigator: true).pop();
-            }
-
-            return Stack(
-              children: [
-                Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    dragStartBehavior: DragStartBehavior.down,
-                    onTap: () => dismiss(ctx),
-                    onVerticalDragUpdate: (details) {
-                      if (details.primaryDelta != null &&
-                          details.primaryDelta! > 8) {
-                        dismiss(ctx);
-                      }
-                    },
-                    onVerticalDragEnd: (details) {
-                      if (details.velocity.pixelsPerSecond.dy > 450) {
-                        dismiss(ctx);
-                      }
-                    },
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.bottomCenter,
-                  child: NotificationListener<DraggableScrollableNotification>(
-                    onNotification: (notification) {
-                      // Dismiss after the sheet settles near min extent (release)
-                      if (!notification.extent.isNaN &&
-                          notification.extent <=
-                              notification.minExtent + 0.02) {
-                        dismiss(ctx);
-                      }
-                      return false;
-                    },
-                    child: DraggableScrollableSheet(
-                      initialChildSize: 0.35,
-                      minChildSize: 0.25,
-                      maxChildSize: 0.6,
-                      snap: true,
-                      snapSizes: const [0.35, 0.6],
-                      expand: false,
-                      builder: (context, scrollController) {
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: Colors.grey[900],
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(20),
-                              topRight: Radius.circular(20),
-                            ),
-                          ),
-                          child: CustomScrollView(
-                            controller: scrollController,
-                            slivers: [
-                              SliverToBoxAdapter(
-                                child: Column(
-                                  children: [
-                                    Container(
-                                      margin: const EdgeInsets.symmetric(
-                                          vertical: 12),
-                                      width: 40,
-                                      height: 4,
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey[700],
-                                        borderRadius: BorderRadius.circular(2),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              SliverList(
-                                delegate: SliverChildListDelegate(
-                                  options.map((opt) {
-                                    final isSelected = _sortOption == opt.value;
-                                    return ListTile(
-                                      leading: Icon(opt.icon,
-                                          color: isSelected
-                                              ? Colors.white
-                                              : Colors.grey),
-                                      title: Text(
-                                        opt.label,
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: isSelected
-                                              ? FontWeight.w600
-                                              : FontWeight.normal,
-                                        ),
-                                      ),
-                                      trailing: isSelected
-                                          ? Icon(
-                                              _isAscending
-                                                  ? Icons.arrow_upward
-                                                  : Icons.arrow_downward,
-                                              color: Colors.white,
-                                            )
-                                          : null,
-                                      onTap: () {
-                                        dismiss(ctx);
-                                        setState(() {
-                                          if (_sortOption == opt.value) {
-                                            _isAscending = !_isAscending;
-                                          } else {
-                                            _sortOption = opt.value;
-                                            _isAscending = false;
-                                          }
-                                        });
-                                        _clearSongCache();
-                                      },
-                                    );
-                                  }).toList(),
-                                ),
-                              ),
-                              SliverToBoxAdapter(
-                                child: SizedBox(
-                                    height:
-                                        MediaQuery.of(context).padding.bottom +
-                                            16),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
+            final scheme = Theme.of(ctx).colorScheme;
+            return Container(
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHigh,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              padding: EdgeInsets.only(
+                top: 12,
+                bottom: MediaQuery.of(ctx).padding.bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Drag Handle
+                  Container(
+                    width: 38,
+                    height: 4.5,
+                    decoration: BoxDecoration(
+                      color: scheme.onSurfaceVariant.withOpacity(0.4),
+                      borderRadius: BorderRadius.circular(2.25),
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  Text(
+                    'Sort Playlist',
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...options.map((opt) {
+                    final isSelected = _sortOption == opt.value;
+                    return Material(
+                      color: Colors.transparent,
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 2),
+                        leading: Icon(opt.icon,
+                            color: isSelected
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant.withOpacity(0.7)),
+                        title: Text(
+                          opt.label,
+                          style: TextStyle(
+                            color: isSelected
+                                ? scheme.primary
+                                : scheme.onSurface,
+                            fontWeight: isSelected
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                            fontSize: 15,
+                          ),
+                        ),
+                        trailing: isSelected
+                            ? Icon(
+                                _isAscending
+                                    ? Icons.arrow_upward_rounded
+                                    : Icons.arrow_downward_rounded,
+                                color: scheme.primary,
+                                size: 20,
+                              )
+                            : null,
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          setState(() {
+                            if (_sortOption == opt.value) {
+                              _isAscending = !_isAscending;
+                            } else {
+                              _sortOption = opt.value;
+                              _isAscending = false;
+                            }
+                          });
+                          _clearSongCache();
+                        },
+                      ),
+                    );
+                  }),
+                ],
+              ),
             );
           },
         );
@@ -1111,8 +1022,27 @@ class _PlaylistPageState extends State<PlaylistPage> {
         audioService.getCustomPlaylist(widget.playlistId) != null;
     final customPlaylist = audioService.getCustomPlaylist(widget.playlistId);
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+    String? artworkPath;
+    if (isCustomPlaylist && customPlaylist?.artworkPath != null && customPlaylist!.artworkPath!.isNotEmpty) {
+      artworkPath = customPlaylist.artworkPath;
+    }
+
+    return PlayerThemeWrapper(
+      artPath: artworkPath,
+      fallbackColor: customPlaylist?.artworkColor != null
+          ? Color(customPlaylist!.artworkColor!)
+          : null,
+      builder: (context, colorScheme, extractedColor) {
+        return Theme(
+          data: Theme.of(context).copyWith(colorScheme: colorScheme),
+          child: Builder(
+            builder: (context) {
+              _playlistColor = extractedColor;
+              _playlistColorSubtle = _playlistColor.withOpacity(0.7);
+              _playlistColorFaint = _playlistColor.withOpacity(0.15);
+
+              return Scaffold(
+                backgroundColor: colorScheme.surface,
       extendBodyBehindAppBar: true,
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight + 12),
@@ -1359,13 +1289,6 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.primary,
                       shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
                     ),
                     child: IconButton(
                       icon: const Icon(
@@ -1421,11 +1344,11 @@ class _PlaylistPageState extends State<PlaylistPage> {
                   file: file,
                   audioService: audioService,
                   metadataCache: _metadataCache,
-                  playlistColor: _playlistColorSubtle,
+                  playlistColor: _playlistColor,
                   onTap: () => audioService.playFileInContextWithPlaylistId(
                       file, songs, widget.playlistId),
                   onMoreTap: () =>
-                      _showSongOptionsSheet(file, _playlistColorSubtle),
+                      _showSongOptionsSheet(file, _playlistColor),
                 ),
               );
             },
@@ -1439,6 +1362,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
           ),
         ],
       ),
+    );
+  }),
+        );
+      },
     );
   }
 
@@ -1486,57 +1413,15 @@ class _PlaylistPageState extends State<PlaylistPage> {
   }
 
   Future<void> _showEditPlaylistDialog(CustomPlaylist playlist) async {
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      isScrollControlled: true,
-      useRootNavigator: true,
-      builder: (ctx) {
-        bool dismissed = false;
-        void dismiss() {
-          if (dismissed) return;
-          dismissed = true;
-          Navigator.of(ctx, rootNavigator: true).pop();
-        }
-
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: dismiss,
-              ),
-            ),
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Builder(
-                builder: (context) {
-                  final viewInsets = MediaQuery.of(context).viewInsets.bottom;
-                  final isKeyboardVisible = viewInsets > 0;
-                  final targetSize = isKeyboardVisible ? 0.85 : 0.55;
-
-                  return DraggableScrollableSheet(
-                    initialChildSize: targetSize,
-                    minChildSize: targetSize,
-                    maxChildSize: targetSize,
-                    expand: false,
-                    builder: (context, scrollController) {
-                      return CreatePlaylistDialog(
-                        initialName: playlist.name,
-                        initialArtworkPath: playlist.artworkPath,
-                        initialColor: playlist.artworkColor is int
-                            ? playlist.artworkColor
-                            : null,
-                        titleText: 'Edit Playlist',
-                        actionText: 'Save',
-                        useBottomSheetStyle: true,
-                        sheetScrollController: scrollController,
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
+      builder: (context) {
+        return CreatePlaylistDialog(
+          initialName: playlist.name,
+          initialArtworkPath: playlist.artworkPath,
+          initialColor: playlist.artworkColor is int ? playlist.artworkColor : null,
+          titleText: 'Edit Playlist',
+          actionText: 'Save',
         );
       },
     );
@@ -1743,16 +1628,21 @@ class _OptimizedSongTileState extends State<_OptimizedSongTile>
   }
 
   Widget _buildFallbackIcon() {
+    final Color baseColor = widget.playlistColor ?? Colors.deepPurple.shade400;
     return Container(
       height: 50,
       width: 50,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(5),
-        color: widget.playlistColor ?? Colors.deepPurple.shade400,
+        color: baseColor.withOpacity(0.2),
       ),
-      child: _isPlaying
-          ? const Icon(Icons.play_circle, color: Colors.white)
-          : const Icon(Icons.music_note),
+      child: Center(
+        child: Icon(
+          _isPlaying ? Icons.play_arrow_rounded : Icons.music_note_rounded,
+          color: baseColor,
+          size: 24,
+        ),
+      ),
     );
   }
 }

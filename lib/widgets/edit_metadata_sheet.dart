@@ -173,16 +173,17 @@ class _EditMetadataSheetState extends State<EditMetadataSheet> {
     }
   }
 
+  bool _shouldClearCache = false;
+
   Future<void> _revertMetadata() async {
-    final cache = SongMetadataCache();
-    await cache.removeMetadata(widget.song.filePath);
     final revertedSong = Song.fromFile(widget.file);
     setState(() {
+      _shouldClearCache = true;
       _titleController.text = revertedSong.title;
       _artistController.text = revertedSong.artist;
       _albumController.text =
           revertedSong.album.isNotEmpty ? revertedSong.album : 'Unknown';
-      _selectedAlbumArt = revertedSong.albumArt.isNotEmpty ? revertedSong.albumArt : null;
+      _selectedAlbumArt = ''; // Clear selected artwork instantly
     });
     if (mounted) {
       final audioService = context.read<AudioPlayerService>();
@@ -192,7 +193,7 @@ class _EditMetadataSheetState extends State<EditMetadataSheet> {
           8.0;
       VoxelToast.show(
         context,
-        'Reverted to original metadata',
+        'Original metadata loaded. Tap Save Changes to apply.',
         bottomPadding: bottomMargin,
       );
     }
@@ -406,13 +407,19 @@ class _EditMetadataSheetState extends State<EditMetadataSheet> {
                       label: const Text('Save Changes'),
                       backgroundColor: widget.accentColor,
                       foregroundColor: Colors.white,
-                      onTap: () {
-                        Navigator.of(context).pop({
-                          'title': _titleController.text.trim(),
-                          'artist': _artistController.text.trim(),
-                          'album': _albumController.text.trim(),
-                          'albumArt': _selectedAlbumArt ?? widget.song.albumArt,
-                        });
+                      onTap: () async {
+                        if (_shouldClearCache) {
+                          final cache = SongMetadataCache();
+                          await cache.removeMetadata(widget.song.filePath);
+                        }
+                        if (context.mounted) {
+                          Navigator.of(context).pop({
+                            'title': _titleController.text.trim(),
+                            'artist': _artistController.text.trim(),
+                            'album': _albumController.text.trim(),
+                            'albumArt': _selectedAlbumArt ?? '',
+                          });
+                        }
                       },
                     ),
                   ),

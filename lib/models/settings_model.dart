@@ -1,6 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/song_metadata_cache.dart';
+import '../services/webdav_service.dart';
+import '../services/jellyfin_service.dart';
 
 class SettingsModel extends ChangeNotifier {
   /// Clear all app caches: station, genre, and song metadata
@@ -38,6 +41,15 @@ class SettingsModel extends ChangeNotifier {
   static const String _kHapticsOnLongPressKey = 'haptics_on_long_press';
   static const String _kHapticsOnSliderScrubbingKey = 'haptics_on_slider_scrubbing';
   static const String _kCookiePlayPauseEnabledKey = 'cookie_play_pause_enabled';
+  static const String _kSourcePathsKey = 'source_paths';
+  static const String _kWebdavServersKey = 'webdav_servers';
+  static const String _kJellyfinServersKey = 'jellyfin_servers';
+  static const String _kPinnedFoldersKey = 'pinned_network_folders';
+
+  static const List<String> defaultSourcePaths = [
+    '/storage/emulated/0/Music',
+    '/storage/emulated/0/Download',
+  ];
 
   static const List<Color> accentPresets = [
     Color(0xFF7C5CBF), // Muted Violet
@@ -57,6 +69,10 @@ class SettingsModel extends ChangeNotifier {
   bool _hapticsOnLongPress = true;
   bool _hapticsOnSliderScrubbing = true;
   bool _cookiePlayPauseEnabled = false;
+  List<String> _sourcePaths = List.from(defaultSourcePaths);
+  List<WebdavServerConfig> _webdavServers = [];
+  List<JellyfinServerConfig> _jellyfinServers = [];
+  List<PinnedNetworkFolder> _pinnedFolders = [];
 
   SettingsModel() {
     _loadSettings();
@@ -71,6 +87,10 @@ class SettingsModel extends ChangeNotifier {
   bool get hapticsOnLongPress => _hapticsOnLongPress;
   bool get hapticsOnSliderScrubbing => _hapticsOnSliderScrubbing;
   bool get cookiePlayPauseEnabled => _cookiePlayPauseEnabled;
+  List<String> get sourcePaths => List.unmodifiable(_sourcePaths);
+  List<WebdavServerConfig> get webdavServers => List.unmodifiable(_webdavServers);
+  List<JellyfinServerConfig> get jellyfinServers => List.unmodifiable(_jellyfinServers);
+  List<PinnedNetworkFolder> get pinnedFolders => List.unmodifiable(_pinnedFolders);
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -87,6 +107,40 @@ class SettingsModel extends ChangeNotifier {
       _accentColor = Color(accentVal);
     } else {
       _accentColor = const Color(0xFF7C5CBF);
+    }
+    final savedPaths = prefs.getStringList(_kSourcePathsKey);
+    if (savedPaths != null && savedPaths.isNotEmpty) {
+      _sourcePaths = savedPaths;
+    }
+    final savedWebdav = prefs.getStringList(_kWebdavServersKey);
+    if (savedWebdav != null) {
+      try {
+        _webdavServers = savedWebdav
+            .map((s) => WebdavServerConfig.fromJson(jsonDecode(s) as Map<String, dynamic>))
+            .toList();
+      } catch (e) {
+        debugPrint('Error decoding webdav servers: $e');
+      }
+    }
+    final savedJellyfin = prefs.getStringList(_kJellyfinServersKey);
+    if (savedJellyfin != null) {
+      try {
+        _jellyfinServers = savedJellyfin
+            .map((s) => JellyfinServerConfig.fromJson(jsonDecode(s) as Map<String, dynamic>))
+            .toList();
+      } catch (e) {
+        debugPrint('Error decoding jellyfin servers: $e');
+      }
+    }
+    final savedPinned = prefs.getStringList(_kPinnedFoldersKey);
+    if (savedPinned != null) {
+      try {
+        _pinnedFolders = savedPinned
+            .map((s) => PinnedNetworkFolder.fromJson(jsonDecode(s) as Map<String, dynamic>))
+            .toList();
+      } catch (e) {
+        debugPrint('Error decoding pinned folders: $e');
+      }
     }
     notifyListeners();
   }
@@ -145,6 +199,71 @@ class SettingsModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> addSourcePath(String path) async {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty || _sourcePaths.contains(trimmed)) return;
+    _sourcePaths = [..._sourcePaths, trimmed];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_kSourcePathsKey, _sourcePaths);
+    notifyListeners();
+  }
+
+  Future<void> removeSourcePath(String path) async {
+    _sourcePaths = _sourcePaths.where((p) => p != path).toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_kSourcePathsKey, _sourcePaths);
+    notifyListeners();
+  }
+
+  Future<void> resetSourcePaths() async {
+    _sourcePaths = List.from(defaultSourcePaths);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_kSourcePathsKey, _sourcePaths);
+    notifyListeners();
+  }
+
+  Future<void> addWebdavServer(WebdavServerConfig server) async {
+    if (_webdavServers.any((s) => s.url == server.url)) return;
+    _webdavServers = [..._webdavServers, server];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _kWebdavServersKey,
+      _webdavServers.map((s) => jsonEncode(s.toJson())).toList(),
+    );
+    notifyListeners();
+  }
+
+  Future<void> removeWebdavServer(String id) async {
+    _webdavServers = _webdavServers.where((s) => s.id != id).toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _kWebdavServersKey,
+      _webdavServers.map((s) => jsonEncode(s.toJson())).toList(),
+    );
+    notifyListeners();
+  }
+
+  Future<void> addJellyfinServer(JellyfinServerConfig server) async {
+    if (_jellyfinServers.any((s) => s.url == server.url)) return;
+    _jellyfinServers = [..._jellyfinServers, server];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _kJellyfinServersKey,
+      _jellyfinServers.map((s) => jsonEncode(s.toJson())).toList(),
+    );
+    notifyListeners();
+  }
+
+  Future<void> removeJellyfinServer(String id) async {
+    _jellyfinServers = _jellyfinServers.where((s) => s.id != id).toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _kJellyfinServersKey,
+      _jellyfinServers.map((s) => jsonEncode(s.toJson())).toList(),
+    );
+    notifyListeners();
+  }
+
   void setAccentColor(Color color) async {
     _accentColor = color;
     final prefs = await SharedPreferences.getInstance();
@@ -173,4 +292,104 @@ class SettingsModel extends ChangeNotifier {
     }
     return removed;
   }
+
+  Future<void> pinNetworkFolder(PinnedNetworkFolder folder) async {
+    if (_pinnedFolders.any((f) => f.id == folder.id)) return;
+    _pinnedFolders = [..._pinnedFolders, folder];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _kPinnedFoldersKey,
+      _pinnedFolders.map((f) => jsonEncode(f.toJson())).toList(),
+    );
+    notifyListeners();
+  }
+
+  Future<void> unpinNetworkFolder(String id) async {
+    _pinnedFolders = _pinnedFolders.where((f) => f.id != id).toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _kPinnedFoldersKey,
+      _pinnedFolders.map((f) => jsonEncode(f.toJson())).toList(),
+    );
+    notifyListeners();
+  }
+
+  Future<void> updatePinnedNetworkFolder(
+    String id, {
+    String? name,
+    String? artworkPath,
+    int? artworkColor,
+  }) async {
+    _pinnedFolders = _pinnedFolders.map((f) {
+      if (f.id == id) {
+        return PinnedNetworkFolder(
+          id: f.id,
+          name: name ?? f.name,
+          type: f.type,
+          serverId: f.serverId,
+          serverName: f.serverName,
+          path: f.path,
+          controlUrl: f.controlUrl,
+          artworkPath: artworkPath ?? f.artworkPath,
+          artworkColor: artworkColor ?? f.artworkColor,
+        );
+      }
+      return f;
+    }).toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _kPinnedFoldersKey,
+      _pinnedFolders.map((f) => jsonEncode(f.toJson())).toList(),
+    );
+    notifyListeners();
+  }
 }
+
+class PinnedNetworkFolder {
+  final String id;
+  final String name;
+  final String type; // 'upnp', 'webdav', or 'jellyfin'
+  final String serverId;
+  final String serverName;
+  final String path;
+  final String? controlUrl; // for UPnP
+  final String? artworkPath;
+  final int? artworkColor;
+
+  PinnedNetworkFolder({
+    required this.id,
+    required this.name,
+    required this.type,
+    required this.serverId,
+    required this.serverName,
+    required this.path,
+    this.controlUrl,
+    this.artworkPath,
+    this.artworkColor,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'type': type,
+        'serverId': serverId,
+        'serverName': serverName,
+        'path': path,
+        'controlUrl': controlUrl,
+        'artworkPath': artworkPath,
+        'artworkColor': artworkColor,
+      };
+
+  factory PinnedNetworkFolder.fromJson(Map<String, dynamic> json) => PinnedNetworkFolder(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        type: json['type'] as String,
+        serverId: json['serverId'] as String,
+        serverName: json['serverName'] as String,
+        path: json['path'] as String,
+        controlUrl: json['controlUrl'] as String?,
+        artworkPath: json['artworkPath'] as String?,
+        artworkColor: json['artworkColor'] as int?,
+      );
+}
+
