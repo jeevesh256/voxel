@@ -523,7 +523,6 @@ class _ArtistPageState extends State<ArtistPage> {
                         VoxelToast.show(
                           context,
                           'This album is not in your library',
-                          bottomPadding: bottomPad,
                         );
                       },
                       child: Column(
@@ -1092,7 +1091,7 @@ class _ArtistPageState extends State<ArtistPage> {
       if (mounted) setState(() {});
       if (mounted) {
         final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
-        VoxelToast.show(context, 'Metadata updated', bottomPadding: bottomPad);
+        VoxelToast.show(context, 'Metadata updated');
       }
       return editedSong;
     }

@@ -61,18 +61,15 @@ class _MusicSourcesPageState extends State<MusicSourcesPage> {
       if (result == null || !mounted) return;
       final settings = context.read<SettingsModel>();
       if (settings.sourcePaths.contains(result)) {
-        VoxelToast.show(context, 'Folder already added',
-            bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+        VoxelToast.show(context, 'Folder already added');
         return;
       }
       await settings.addSourcePath(result);
       if (!mounted) return;
-      VoxelToast.show(context, 'Added: ${_basename(result)}',
-          bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+      VoxelToast.show(context, 'Added: ${_basename(result)}');
     } catch (e) {
       if (!mounted) return;
-      VoxelToast.show(context, 'Could not open folder picker: $e',
-          bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+      VoxelToast.show(context, 'Could not open folder picker: $e');
     }
   }
 
@@ -88,12 +85,10 @@ class _MusicSourcesPageState extends State<MusicSourcesPage> {
       if (!mounted) return;
       context.read<AudioPlayerService>().loadOfflineFiles(files);
       VoxelToast.show(context,
-          'Found ${files.length} audio file${files.length == 1 ? '' : 's'}',
-          bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+          'Found ${files.length} audio file${files.length == 1 ? '' : 's'}');
     } catch (e) {
       if (!mounted) return;
-      VoxelToast.show(context, 'Scan failed: $e',
-          bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+      VoxelToast.show(context, 'Scan failed: $e');
     } finally {
       if (mounted) setState(() => _isScanning = false);
     }
@@ -199,8 +194,7 @@ class _MusicSourcesPageState extends State<MusicSourcesPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _isSearchingDevices = false);
-        VoxelToast.show(context, 'Discovery error: $e',
-            bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+        VoxelToast.show(context, 'Discovery error: $e');
       }
     }
   }
@@ -334,8 +328,7 @@ class _MusicSourcesPageState extends State<MusicSourcesPage> {
                     onPressed: () async {
                       await settings.resetSourcePaths();
                       if (!context.mounted) return;
-                      VoxelToast.show(context, 'Reset to defaults',
-                          bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+                      VoxelToast.show(context, 'Reset to defaults');
                     },
                     child: Text(
                       'Reset',
@@ -402,81 +395,133 @@ class _MusicSourcesPageState extends State<MusicSourcesPage> {
                 return CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
+                    // Subtle Top Action Bar
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                        child: Text(
-                          'Voxel scans these folders to find your audio files. Changes take effect after rescanning.',
-                          style: TextStyle(fontSize: 13.5, color: scheme.onSurfaceVariant, height: 1.45),
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: SizedBox(
+                                height: 50,
+                                child: FilledButton.icon(
+                                  icon: const Icon(Icons.create_new_folder_rounded, size: 20),
+                                  label: const Text('Add Folder', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5)),
+                                  onPressed: _pickDirectory,
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: scheme.primary,
+                                    foregroundColor: scheme.onPrimary,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                    elevation: 0,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              flex: 2,
+                              child: SizedBox(
+                                height: 50,
+                                child: FilledButton.tonalIcon(
+                                  icon: _isScanning
+                                      ? SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: scheme.onSecondaryContainer,
+                                          ),
+                                        )
+                                      : const Icon(Icons.sync_rounded, size: 19),
+                                  label: Text(_isScanning ? 'Scanning' : 'Rescan', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                                  onPressed: _isScanning ? null : _rescanLibrary,
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: scheme.secondaryContainer,
+                                    foregroundColor: scheme.onSecondaryContainer,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                    elevation: 0,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                        child: FilledButton.icon(
-                          icon: const Icon(Icons.folder_open_rounded),
-                          label: const Text('Browse & Add Folder'),
-                          onPressed: _pickDirectory,
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(52),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          ),
-                        ),
-                      ),
-                    ),
+
+                    // Quick Suggestions Pill Row
                     if (availableSuggestions.isNotEmpty)
                       SliverToBoxAdapter(
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'QUICK ADD',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: scheme.onSurfaceVariant,
-                                  letterSpacing: 1.0,
+                              Padding(
+                                padding: const EdgeInsets.only(left: 4, bottom: 8),
+                                child: Text(
+                                  'QUICK ADD',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: scheme.onSurfaceVariant,
+                                    letterSpacing: 0.9,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 8),
                               Wrap(
                                 spacing: 8,
-                                runSpacing: 6,
-                                children: availableSuggestions
-                                    .map((s) => ActionChip(
-                                          avatar: Icon(s.icon, size: 16, color: scheme.primary),
-                                          label: Text(s.label),
-                                          onPressed: () async {
-                                            await settings.addSourcePath(s.path);
-                                          },
-                                        ))
-                                    .toList(),
+                                runSpacing: 8,
+                                children: availableSuggestions.map((s) {
+                                  return ActionChip(
+                                    avatar: Icon(s.icon, size: 15, color: scheme.primary),
+                                    label: Text(
+                                      s.label,
+                                      style: TextStyle(
+                                        color: scheme.onSurface,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    backgroundColor: scheme.surfaceContainerHigh,
+                                    side: BorderSide.none,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(19),
+                                    ),
+                                    onPressed: () async {
+                                      HapticFeedback.lightImpact();
+                                      await settings.addSourcePath(s.path);
+                                      if (mounted) {
+                                        VoxelToast.show(context, 'Added ${s.label}');
+                                      }
+                                    },
+                                  );
+                                }).toList(),
                               ),
                             ],
                           ),
                         ),
                       ),
 
+                    // Section Title
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+                        padding: const EdgeInsets.fromLTRB(20, 10, 20, 8),
                         child: Row(
                           children: [
                             Text(
-                              'CONFIGURED FOLDERS',
+                              'INDEXED FOLDERS',
                               style: TextStyle(
                                 fontSize: 11,
-                                fontWeight: FontWeight.w700,
+                                fontWeight: FontWeight.bold,
                                 color: scheme.onSurfaceVariant,
-                                letterSpacing: 1.0,
+                                letterSpacing: 0.9,
                               ),
                             ),
                             const SizedBox(width: 8),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
                                 color: scheme.primaryContainer,
                                 borderRadius: BorderRadius.circular(10),
@@ -485,7 +530,7 @@ class _MusicSourcesPageState extends State<MusicSourcesPage> {
                                 '${paths.length}',
                                 style: TextStyle(
                                   fontSize: 11,
-                                  fontWeight: FontWeight.w700,
+                                  fontWeight: FontWeight.bold,
                                   color: scheme.onPrimaryContainer,
                                 ),
                               ),
@@ -494,99 +539,129 @@ class _MusicSourcesPageState extends State<MusicSourcesPage> {
                         ),
                       ),
                     ),
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final path = paths[index];
-                          final dirExists = Directory(path).existsSync();
-                          final suggestion = _suggestions.firstWhere(
-                            (s) => s.path == path,
-                            orElse: () => _SuggestedPath(path, _basename(path), Icons.folder_rounded),
-                          );
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: scheme.surfaceContainerHigh,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: scheme.outlineVariant.withOpacity(0.2),
-                                  width: 1,
+
+                    // Empty State
+                    if (paths.isEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                          child: Column(
+                            children: [
+                              Icon(Icons.folder_off_rounded, size: 56, color: scheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                              const SizedBox(height: 12),
+                              Text(
+                                'No folders configured',
+                                style: TextStyle(
+                                  color: scheme.onSurface,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              child: Material(
-                                type: MaterialType.transparency,
-                                child: ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                                  leading: Container(
-                                    width: 44,
-                                    height: 44,
-                                    decoration: BoxDecoration(
-                                      color: dirExists ? scheme.primaryContainer : scheme.errorContainer,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Icon(suggestion.icon,
-                                        color: dirExists ? scheme.onPrimaryContainer : scheme.onErrorContainer, size: 22),
-                                  ),
-                                  title: Text(suggestion.label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                                  subtitle: Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      dirExists ? path : '$path\n(folder not found)',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontFamily: 'monospace',
-                                        color: dirExists ? scheme.onSurfaceVariant : scheme.error,
-                                        height: 1.4,
-                                      ),
-                                    ),
-                                  ),
-                                  trailing: IconButton(
-                                    icon: Icon(Icons.remove_circle_outline_rounded, color: scheme.error.withValues(alpha: 0.8)),
-                                    tooltip: 'Remove',
-                                    onPressed: () async {
-                                      final confirmed = await _confirmRemove(settings, path);
-                                      if (confirmed && mounted) {
-                                        await settings.removeSourcePath(path);
-                                        if (!mounted) return;
-                                        VoxelToast.show(
-                                          context,
-                                          'Removed: ${suggestion.label}',
-                                          bottomPadding: MediaQuery.of(context).padding.bottom + 85.0,
-                                        );
-                                      }
-                                    },
-                                  ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Tap Add Folder above to select music directories.',
+                                style: TextStyle(
+                                  color: scheme.onSurfaceVariant,
+                                  fontSize: 13,
                                 ),
+                                textAlign: TextAlign.center,
                               ),
-                            ),
-                          );
-                        },
-                        childCount: paths.length,
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-                        child: FilledButton.tonalIcon(
-                          icon: _isScanning
-                              ? SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: scheme.onSecondaryContainer,
-                                  ))
-                              : const Icon(Icons.refresh_rounded),
-                          label: Text(_isScanning ? 'Scanning…' : 'Rescan Library'),
-                          onPressed: _isScanning ? null : _rescanLibrary,
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(48),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ],
                           ),
                         ),
+                      )
+                    else
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final path = paths[index];
+                            final dirExists = Directory(path).existsSync();
+                            final suggestion = _suggestions.firstWhere(
+                              (s) => s.path == path,
+                              orElse: () => _SuggestedPath(path, _basename(path), Icons.folder_rounded),
+                            );
+
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                decoration: BoxDecoration(
+                                  color: scheme.surfaceContainerHigh,
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: dirExists
+                                        ? scheme.outlineVariant.withValues(alpha: 0.25)
+                                        : scheme.error.withValues(alpha: 0.4),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Material(
+                                  type: MaterialType.transparency,
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                                    leading: Container(
+                                      width: 46,
+                                      height: 46,
+                                      decoration: BoxDecoration(
+                                        color: dirExists ? scheme.primaryContainer : scheme.errorContainer,
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: Icon(
+                                        suggestion.icon,
+                                        color: dirExists ? scheme.onPrimaryContainer : scheme.onErrorContainer,
+                                        size: 22,
+                                      ),
+                                    ),
+                                    title: Text(
+                                      suggestion.label,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                        color: scheme.onSurface,
+                                      ),
+                                    ),
+                                    subtitle: Padding(
+                                      padding: const EdgeInsets.only(top: 3),
+                                      child: Text(
+                                        dirExists ? path : '$path\n(folder missing)',
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          fontFamily: 'monospace',
+                                          color: dirExists ? scheme.onSurfaceVariant : scheme.error,
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                    ),
+                                    trailing: IconButton(
+                                      icon: Icon(
+                                        Icons.delete_outline_rounded,
+                                        color: scheme.error.withValues(alpha: 0.8),
+                                        size: 21,
+                                      ),
+                                      tooltip: 'Remove',
+                                      onPressed: () async {
+                                        HapticFeedback.lightImpact();
+                                        final confirmed = await _confirmRemove(settings, path);
+                                        if (confirmed && mounted) {
+                                          await settings.removeSourcePath(path);
+                                          if (!mounted) return;
+                                          VoxelToast.show(
+                                            context,
+                                            'Removed ${suggestion.label}',
+                                          );
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                          childCount: paths.length,
+                        ),
                       ),
-                    ),
+
                     SliverToBoxAdapter(child: SizedBox(height: bottomPad)),
                   ],
                 );
@@ -608,10 +683,108 @@ class _MusicSourcesPageState extends State<MusicSourcesPage> {
                 return CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
-                    // UPnP/DLNA Discovery Header
+                    // 1. Jellyfin Servers Section Header
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'JELLYFIN SERVERS',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: scheme.primary,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                            TextButton.icon(
+                              icon: const Icon(Icons.add_rounded, size: 16),
+                              label: const Text('Add Jellyfin', style: TextStyle(fontSize: 12)),
+                              onPressed: _addJellyfinServerDialog,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Configured Jellyfin Servers List
+                    if (jellyfinServers.isEmpty)
+                      const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                          child: Text(
+                            'No Jellyfin servers configured yet. Add a Jellyfin connection to stream music library.',
+                            style: TextStyle(fontSize: 12.5, color: Colors.grey),
+                          ),
+                        ),
+                      )
+                    else
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final server = jellyfinServers[index];
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: scheme.surfaceContainerHigh,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: scheme.outlineVariant.withOpacity(0.2),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Material(
+                                  type: MaterialType.transparency,
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                    leading: Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        color: scheme.primaryContainer,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Icon(Icons.music_video_rounded, color: scheme.onPrimaryContainer, size: 22),
+                                    ),
+                                    title: Text(server.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                                    subtitle: Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        '${server.url} (${server.username})',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                                      ),
+                                    ),
+                                    trailing: IconButton(
+                                      icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                                      color: scheme.error.withValues(alpha: 0.8),
+                                      onPressed: () => _confirmRemoveServer(server.name, server.id, isJellyfin: true),
+                                    ),
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => NetworkBrowserPage(jellyfinConfig: server),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                          childCount: jellyfinServers.length,
+                        ),
+                      ),
+
+                    // 2. UPnP/DLNA Discovery Header
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -709,7 +882,7 @@ class _MusicSourcesPageState extends State<MusicSourcesPage> {
                         ),
                       ),
 
-                    // File Servers Section Header
+                    // 3. Remote File Servers (WebDAV) Section Header
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
@@ -804,104 +977,6 @@ class _MusicSourcesPageState extends State<MusicSourcesPage> {
                             );
                           },
                           childCount: webdavServers.length,
-                        ),
-                      ),
-
-                    // Jellyfin Servers Section Header
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'JELLYFIN SERVERS',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: scheme.primary,
-                                letterSpacing: 1.0,
-                              ),
-                            ),
-                            TextButton.icon(
-                              icon: const Icon(Icons.add_rounded, size: 16),
-                              label: const Text('Add Jellyfin', style: TextStyle(fontSize: 12)),
-                              onPressed: _addJellyfinServerDialog,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // Configured Jellyfin Servers List
-                    if (jellyfinServers.isEmpty)
-                      const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                          child: Text(
-                            'No Jellyfin servers configured yet. Add a Jellyfin connection to stream music library.',
-                            style: TextStyle(fontSize: 12.5, color: Colors.grey),
-                          ),
-                        ),
-                      )
-                    else
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final server = jellyfinServers[index];
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: scheme.surfaceContainerHigh,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: scheme.outlineVariant.withOpacity(0.2),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Material(
-                                  type: MaterialType.transparency,
-                                  child: ListTile(
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                                    leading: Container(
-                                      width: 44,
-                                      height: 44,
-                                      decoration: BoxDecoration(
-                                        color: scheme.primaryContainer,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Icon(Icons.music_video_rounded, color: scheme.onPrimaryContainer, size: 22),
-                                    ),
-                                    title: Text(server.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                                    subtitle: Padding(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      child: Text(
-                                        '${server.url} (${server.username})',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-                                      ),
-                                    ),
-                                    trailing: IconButton(
-                                      icon: const Icon(Icons.delete_outline_rounded, size: 20),
-                                      color: scheme.error.withValues(alpha: 0.8),
-                                      onPressed: () => _confirmRemoveServer(server.name, server.id, isJellyfin: true),
-                                    ),
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => NetworkBrowserPage(jellyfinConfig: server),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                          childCount: jellyfinServers.length,
                         ),
                       ),
 
@@ -1030,8 +1105,7 @@ class _WebdavServerDialogState extends State<_WebdavServerDialog> {
                       final name = nameController.text.trim();
                       final url = urlController.text.trim();
                       if (name.isEmpty || url.isEmpty) {
-                        VoxelToast.show(context, 'Please fill in name and URL',
-                            bottomPadding: 16);
+                        VoxelToast.show(context, 'Please fill in name and URL');
                         return;
                       }
                       
@@ -1167,8 +1241,7 @@ class _JellyfinServerDialogState extends State<_JellyfinServerDialog> {
                             final password = passController.text;
 
                             if (url.isEmpty || username.isEmpty) {
-                              VoxelToast.show(context, 'Please fill in URL and Username',
-                                  bottomPadding: 16);
+                              VoxelToast.show(context, 'Please fill in URL and Username');
                               return;
                             }
 
@@ -1184,14 +1257,12 @@ class _JellyfinServerDialogState extends State<_JellyfinServerDialog> {
                               if (!mounted) return;
                               await context.read<SettingsModel>().addJellyfinServer(config);
                               if (mounted) {
-                                VoxelToast.show(context, 'Jellyfin connected successfully!',
-                                    bottomPadding: 16);
+                                VoxelToast.show(context, 'Jellyfin connected successfully!');
                                 Navigator.pop(context);
                               }
                             } catch (e) {
                               if (mounted) {
-                                VoxelToast.show(context, 'Authentication failed: $e',
-                                    bottomPadding: 16);
+                                VoxelToast.show(context, 'Authentication failed: $e');
                               }
                             } finally {
                               if (mounted) {

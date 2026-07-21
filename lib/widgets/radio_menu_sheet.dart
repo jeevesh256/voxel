@@ -33,7 +33,6 @@ class _RadioMenuSheetState extends State<RadioMenuSheet> {
     VoxelToast.show(
       context,
       message,
-      bottomPadding: MediaQuery.of(context).size.height * 0.45,
     );
   }
 
@@ -168,8 +167,7 @@ class _RadioMenuSheetState extends State<RadioMenuSheet> {
                                             kBottomNavigationBarHeight +
                                             (miniPlayerActive ? 70.0 : 0.0);
                                     if (context.mounted) {
-                                      VoxelToast.show(context, blockReason,
-                                          bottomPadding: bottomPad);
+                                      VoxelToast.show(context, blockReason);
                                     }
                                     return;
                                   }

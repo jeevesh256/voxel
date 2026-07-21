@@ -1804,13 +1804,14 @@ class _PressableArtworkState extends State<_PressableArtwork>
                           children: [
                             if (progress > 0.0)
                               Positioned.fill(
-                                child: Transform.scale(
-                                  scale: 2.5,
-                                  child: ImageFiltered(
-                                    imageFilter: ImageFilter.blur(sigmaX: 30.0, sigmaY: 30.0),
-                                    child: Opacity(
-                                      opacity: 0.65,
-                                      child: child!,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    gradient: RadialGradient(
+                                      colors: [
+                                        Theme.of(context).primaryColor.withOpacity(0.4 * progress),
+                                        Colors.transparent,
+                                      ],
+                                      radius: 0.8,
                                     ),
                                   ),
                                 ),

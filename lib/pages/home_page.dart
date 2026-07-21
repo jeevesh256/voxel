@@ -130,7 +130,6 @@ class _HomePageState extends State<HomePage> {
                     VoxelToast.show(
                       context,
                       blockReason,
-                      bottomPadding: bottomPad,
                     );
                     return;
                   }
@@ -455,6 +454,14 @@ class _HomePageState extends State<HomePage> {
     final audioService = context.watch<AudioPlayerService>();
     final likedFiles = audioService.getPlaylistSongs('liked').reversed.toList();
     final customPlaylists = audioService.customPlaylists;
+    final scheme = Theme.of(context).colorScheme;
+
+    // Same blending helpers as Recently Played row
+    Color themedColor(Color raw) => Color.lerp(raw, scheme.surface, 0.70) ?? raw;
+    Color gradientEnd(Color base) {
+      final mixed = Color.lerp(base, scheme.primary, 0.15) ?? base;
+      return Color.lerp(mixed, Colors.black, 0.20) ?? base;
+    }
 
     final items = <_RecentlyPlayedItem>[];
 
@@ -464,7 +471,7 @@ class _HomePageState extends State<HomePage> {
           title: 'Liked Songs',
           subtitle: '${likedFiles.length} song${likedFiles.length == 1 ? '' : 's'}',
           icon: Icons.favorite,
-          color: Theme.of(context).colorScheme.primaryContainer,
+          color: themedColor(scheme.primaryContainer),
           onTap: () {
             pushMaterialPage(
               context,
@@ -484,14 +491,16 @@ class _HomePageState extends State<HomePage> {
       final songs = audioService.getPlaylistSongs(playlist.id);
       if (songs.isEmpty) continue;
 
+      final rawColor = playlist.artworkColor != null
+          ? Color(playlist.artworkColor!)
+          : scheme.tertiaryContainer;
+
       items.add(
         _RecentlyPlayedItem(
           title: playlist.name,
           subtitle: '${songs.length} song${songs.length == 1 ? '' : 's'}',
           icon: Icons.queue_music,
-          color: playlist.artworkColor != null
-              ? Color(playlist.artworkColor!)
-              : Theme.of(context).colorScheme.tertiaryContainer,
+          color: themedColor(rawColor),
           imagePath: playlist.artworkPath,
           onTap: () {
             pushMaterialPage(
@@ -547,7 +556,7 @@ class _HomePageState extends State<HomePage> {
                                     gradient: LinearGradient(
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
-                                      colors: [item.color, item.color.withOpacity(0.5)],
+                                      colors: [item.color, gradientEnd(item.color)],
                                     ),
                                   ),
                                   child: Icon(item.icon,
@@ -563,7 +572,7 @@ class _HomePageState extends State<HomePage> {
                                 gradient: LinearGradient(
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
-                                  colors: [item.color, item.color.withOpacity(0.5)],
+                                  colors: [item.color, gradientEnd(item.color)],
                                 ),
                               ),
                               child: Icon(item.icon,
@@ -610,9 +619,21 @@ class _HomePageState extends State<HomePage> {
       return const SizedBox.shrink();
     }
 
-    final primaryContainer = Theme.of(context).colorScheme.primaryContainer;
-    final secondaryContainer = Theme.of(context).colorScheme.secondaryContainer;
-    final tertiaryContainer = Theme.of(context).colorScheme.tertiaryContainer;
+    final scheme = Theme.of(context).colorScheme;
+    final primaryContainer = scheme.primaryContainer;
+    final secondaryContainer = scheme.secondaryContainer;
+    final tertiaryContainer = scheme.tertiaryContainer;
+    final surface = scheme.surface;
+    final primary = scheme.primary;
+
+    // Helper: blend raw color with theme surface (70%) so it feels native to dark/light theme
+    Color themedColor(Color raw) =>
+        Color.lerp(raw, surface, 0.70) ?? raw;
+    // Helper: gradient end — blend toward theme primary then darken slightly
+    Color gradientEnd(Color base) {
+      final mixed = Color.lerp(base, primary, 0.15) ?? base;
+      return Color.lerp(mixed, Colors.black, 0.20) ?? base;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -644,7 +665,7 @@ class _HomePageState extends State<HomePage> {
                     final blockReason = await RadioPlaybackGuard.blockingMessage();
                     if (blockReason != null) {
                       final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
-                      VoxelToast.show(context, blockReason, bottomPadding: bottomPad);
+                      VoxelToast.show(context, blockReason);
                       return;
                     }
                     audioService.playRadioStation(item.radioStation!);
@@ -666,7 +687,12 @@ class _HomePageState extends State<HomePage> {
                   fallbackBgColor = secondaryContainer;
                 } else {
                   fallbackIcon = Icons.queue_music;
-                  fallbackBgColor = tertiaryContainer;
+                  // Resolve dynamic playlist color, blended with theme surface
+                  final playlistObj = audioService.getCustomPlaylist(item.id);
+                  final rawColor = playlistObj?.artworkColor != null
+                      ? Color(playlistObj!.artworkColor!)
+                      : tertiaryContainer;
+                  fallbackBgColor = themedColor(rawColor);
                 }
               } else if (item.type == 'radio') {
                 fallbackIcon = Icons.radio_rounded;
@@ -712,7 +738,7 @@ class _HomePageState extends State<HomePage> {
                             gradient: LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
-                              colors: [fallbackBgColor, fallbackBgColor.withOpacity(0.5)],
+                              colors: [fallbackBgColor, gradientEnd(fallbackBgColor)],
                             ),
                           ),
                           child: Icon(fallbackIcon, color: Colors.white, size: 40),
@@ -746,7 +772,7 @@ class _HomePageState extends State<HomePage> {
                             gradient: LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
-                              colors: [fallbackBgColor, fallbackBgColor.withOpacity(0.5)],
+                              colors: [fallbackBgColor, gradientEnd(fallbackBgColor)],
                             ),
                           ),
                           child: Icon(fallbackIcon, color: Colors.white, size: 40),
@@ -760,7 +786,7 @@ class _HomePageState extends State<HomePage> {
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [fallbackBgColor, fallbackBgColor.withOpacity(0.5)],
+                      colors: [fallbackBgColor, gradientEnd(fallbackBgColor)],
                     ),
                   ),
                   child: Icon(fallbackIcon, color: Colors.white, size: 40),

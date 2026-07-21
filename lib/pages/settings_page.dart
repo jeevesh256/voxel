@@ -270,7 +270,6 @@ class SettingsPage extends StatelessWidget {
                   VoxelToast.show(
                     context,
                     'Clearing app cache...',
-                    bottomPadding: bottomPad,
                   );
                   final settings = context.read<SettingsModel>();
                   final removed = await settings.clearAppCache();
@@ -283,7 +282,6 @@ class SettingsPage extends StatelessWidget {
                   VoxelToast.show(
                     context,
                     'Cleared $removed cached entries and all song metadata',
-                    bottomPadding: bottomPad,
                   );
                 },
               ),
@@ -302,7 +300,6 @@ class SettingsPage extends StatelessWidget {
                   VoxelToast.show(
                     context,
                     'Updating all song metadata... (this may take a while)',
-                    bottomPadding: bottomPad,
                   );
                   final audioService = context.read<AudioPlayerService>();
                   final metadataService = MetadataService();
@@ -321,7 +318,6 @@ class SettingsPage extends StatelessWidget {
                   VoxelToast.show(
                     context,
                     'Updated metadata for $updated songs',
-                    bottomPadding: bottomPad,
                   );
                 },
               ),

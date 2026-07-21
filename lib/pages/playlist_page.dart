@@ -1413,8 +1413,11 @@ class _PlaylistPageState extends State<PlaylistPage> {
   }
 
   Future<void> _showEditPlaylistDialog(CustomPlaylist playlist) async {
-    final result = await showDialog<Map<String, dynamic>>(
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
       builder: (context) {
         return CreatePlaylistDialog(
           initialName: playlist.name,

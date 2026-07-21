@@ -116,6 +116,7 @@ class _NetworkBrowserPageState extends State<NetworkBrowserPage> {
 
 
   Future<void> _loadCurrentDirectory() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _error = null;
@@ -261,7 +262,6 @@ class _NetworkBrowserPageState extends State<NetworkBrowserPage> {
       VoxelToast.show(
         context,
         'Cannot open file',
-        bottomPadding: MediaQuery.of(context).padding.bottom + 85.0,
       );
       return;
     }
@@ -298,7 +298,6 @@ class _NetworkBrowserPageState extends State<NetworkBrowserPage> {
       VoxelToast.show(
         context,
         'Streaming: ${item.name}',
-        bottomPadding: MediaQuery.of(context).padding.bottom + 85.0,
       );
     }
   }
@@ -378,17 +377,14 @@ class _NetworkBrowserPageState extends State<NetworkBrowserPage> {
             icon: Icons.queue_music_rounded,
             title: 'Add to queue',
             onTap: () {
-              Navigator.pop(ctx);
               audioService.addToQueue(virtualSong);
-              VoxelToast.show(context, 'Added to queue',
-                  bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+              VoxelToast.show(context, 'Added to queue');
             },
           ),
           SongMenuOption(
             icon: Icons.playlist_add_rounded,
             title: 'Add to custom playlist',
             onTap: () {
-              Navigator.pop(ctx);
               _showAddToPlaylistSheet(virtualSong);
             },
           ),
@@ -396,14 +392,15 @@ class _NetworkBrowserPageState extends State<NetworkBrowserPage> {
             icon: Icons.edit_note_rounded,
             title: 'Edit metadata',
             onTap: () async {
-              Navigator.pop(ctx);
               await EditMetadataSheet.show(
                 context,
                 virtualSong,
                 File(virtualSong.filePath),
                 Theme.of(context).colorScheme.primary,
               );
-              _loadCurrentDirectory();
+              if (mounted) {
+                _loadCurrentDirectory();
+              }
             },
           ),
         ],
@@ -543,8 +540,6 @@ class _NetworkBrowserPageState extends State<NetworkBrowserPage> {
                                       VoxelToast.show(
                                         context,
                                         'File hidden',
-                                        bottomPadding:
-                                            MediaQuery.of(context).padding.bottom + 85.0,
                                       );
                                     },
                                     style: FilledButton.styleFrom(
@@ -634,8 +629,7 @@ class _NetworkBrowserPageState extends State<NetworkBrowserPage> {
                         Navigator.pop(ctx);
                         await audioService.addSongToCustomPlaylist(playlist.id, File(song.filePath));
                         if (mounted) {
-                          VoxelToast.show(context, 'Added to ${playlist.name}',
-                              bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+                          VoxelToast.show(context, 'Added to ${playlist.name}');
                         }
                       },
                     );
@@ -681,8 +675,7 @@ class _NetworkBrowserPageState extends State<NetworkBrowserPage> {
       final newPlaylist = await audioService.createCustomPlaylist(name);
       await audioService.addSongToCustomPlaylist(newPlaylist.id, File(song.filePath));
       if (mounted) {
-        VoxelToast.show(context, 'Created and added to $name',
-            bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+        VoxelToast.show(context, 'Created and added to $name');
       }
     }
   }
@@ -702,9 +695,8 @@ class _NetworkBrowserPageState extends State<NetworkBrowserPage> {
         : _currentFolderName;
     final pf = widget.pinnedFolder;
 
-
-    final artworkPath = pf?.artworkPath?.isNotEmpty == true ? pf!.artworkPath : null;
-    final artworkColor = pf?.artworkColor != null ? Color(pf!.artworkColor!) : null;
+    final artworkPath = (isAtRoot && pf?.artworkPath?.isNotEmpty == true) ? pf!.artworkPath : null;
+    final artworkColor = (isAtRoot && pf?.artworkColor != null) ? Color(pf!.artworkColor!) : null;
 
     return PopScope(
       canPop: isAtRoot,
@@ -757,18 +749,17 @@ class _NetworkBrowserPageState extends State<NetworkBrowserPage> {
                                         ? '${widget.webdavConfig!.id}_${_webdavUrlStack.isNotEmpty ? _webdavUrlStack.last : ""}'
                                         : '${widget.jellyfinConfig!.id}_${_jellyfinIdStack.isNotEmpty ? _jellyfinIdStack.last : ""}';
                                 final isPinned = settings.pinnedFolders.any((f) => f.id == folderId);
-                                return IconButton(
-                                  icon: Icon(
-                                    isPinned ? Icons.turned_in_rounded : Icons.turned_in_not_rounded,
-                                    color: Colors.white,
-                                  ),
-                                  tooltip: isPinned ? 'Remove Bookmark' : 'Bookmark Folder',
+                                  return IconButton(
+                                    icon: Icon(
+                                      isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                                      color: Colors.white,
+                                    ),
+                                  tooltip: isPinned ? 'Unpin Folder' : 'Pin Folder',
                                   onPressed: () async {
                                     if (isPinned) {
                                       await settings.unpinNetworkFolder(folderId);
                                       if (mounted) {
-                                        VoxelToast.show(context, 'Folder bookmark removed',
-                                            bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+                                        VoxelToast.show(context, 'Folder unpinned from Library');
                                       }
                                     } else {
                                       final randColor = kPlaylistColors[math.Random().nextInt(kPlaylistColors.length)];
@@ -796,8 +787,7 @@ class _NetworkBrowserPageState extends State<NetworkBrowserPage> {
                                       );
                                       await settings.pinNetworkFolder(folder);
                                       if (mounted) {
-                                        VoxelToast.show(context, 'Folder bookmarked to Library',
-                                            bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+                                        VoxelToast.show(context, 'Folder pinned to Library');
                                       }
                                     }
                                   },

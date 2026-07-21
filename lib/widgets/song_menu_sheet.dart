@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../models/song.dart';
 import '../models/settings_model.dart';
 import '../services/audio_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'voxel_toast.dart';
 import 'squishy_action_button.dart';
 import 'player_theme_wrapper.dart';
@@ -101,7 +102,6 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
     VoxelToast.show(
       context,
       message,
-      bottomPadding: MediaQuery.of(context).size.height * 0.45,
     );
   }
 
@@ -266,7 +266,23 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          if (_song.albumArt.isNotEmpty && File(_song.albumArt).existsSync())
+                          if (_song.albumArt.isNotEmpty && (_song.albumArt.startsWith('http://') || _song.albumArt.startsWith('https://')))
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              clipBehavior: Clip.antiAlias,
+                              child: Container(
+                                color: const Color(0xFF121212),
+                                child: CachedNetworkImage(
+                                  imageUrl: _song.albumArt,
+                                  width: 54,
+                                  height: 54,
+                                  fit: BoxFit.cover,
+                                  placeholder: (_, __) => Container(color: Colors.white.withOpacity(0.05)),
+                                  errorWidget: (_, __, ___) => Icon(Icons.music_note_rounded, size: 28, color: scheme.onPrimaryContainer),
+                                ),
+                              ),
+                            )
+                          else if (_song.albumArt.isNotEmpty && File(_song.albumArt).existsSync())
                             ClipRRect(
                               borderRadius: BorderRadius.circular(12),
                               clipBehavior: Clip.antiAlias,
@@ -280,8 +296,10 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
                                 ),
                               ),
                             )
-                          else
-                            Container(
+                          else () {
+                            final isPlaylist = _song.artist.toLowerCase() == 'playlist';
+                            final fallbackIcon = isPlaylist ? Icons.queue_music_rounded : Icons.music_note_rounded;
+                            return Container(
                               width: 54,
                               height: 54,
                               decoration: BoxDecoration(
@@ -290,11 +308,12 @@ class _SongMenuSheetState extends State<SongMenuSheet> {
                               ),
                               alignment: Alignment.center,
                               child: Icon(
-                                Icons.music_note_rounded,
+                                fallbackIcon,
                                 size: 28,
                                 color: scheme.onPrimaryContainer,
                               ),
-                            ),
+                            );
+                          }(),
                           const SizedBox(width: 16),
                           Expanded(
                             child: Column(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:audio_session/audio_session.dart';
@@ -333,6 +334,7 @@ class _MusicAppState extends State<MusicApp> {
   late final List<Widget> _pages;
   bool _stackRefreshScheduled = false;
   DateTime? _lastBackTime;
+  StreamSubscription<String>? _radioErrorSub;
 
   late final List<_OverlayNavigatorObserver> _navigatorObservers;
 
@@ -377,6 +379,31 @@ class _MusicAppState extends State<MusicApp> {
       LibraryPage(key: _libraryKey),
       SettingsPage(),
     ];
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Wire up global radio error toast — do once after context is available
+    if (_radioErrorSub == null) {
+      final audioService = context.read<AudioPlayerService>();
+      _radioErrorSub = audioService.radioErrorStream.listen((msg) {
+        if (!mounted) return;
+        final bottomPad = MediaQuery.of(context).padding.bottom + kBottomNavigationBarHeight + 8.0;
+        VoxelToast.show(
+          context,
+          msg,
+          duration: const Duration(milliseconds: 2500),
+          icon: Icons.wifi_off_rounded,
+        );
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _radioErrorSub?.cancel();
+    super.dispose();
   }
 
   Future<dynamic> _handleBackChannel(MethodCall call) async {
@@ -448,7 +475,6 @@ class _MusicAppState extends State<MusicApp> {
           VoxelToast.show(
             context,
             'Press back again to exit',
-            bottomPadding: bottomPad,
           );
         }
         await logToFile('exit toast shown');

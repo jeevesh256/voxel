@@ -333,7 +333,6 @@ class _FavouriteRadiosPageState extends State<FavouriteRadiosPage> {
                                 VoxelToast.show(
                                   context,
                                   blockReason,
-                                  bottomPadding: bottomPad,
                                 );
                                 return;
                               }

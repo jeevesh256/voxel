@@ -164,7 +164,6 @@ class _EditMetadataSheetState extends State<EditMetadataSheet> {
       VoxelToast.show(
         context,
         'Auto update failed: $e',
-        bottomPadding: bottomMargin,
       );
     } finally {
       if (mounted) {
@@ -194,7 +193,6 @@ class _EditMetadataSheetState extends State<EditMetadataSheet> {
       VoxelToast.show(
         context,
         'Original metadata loaded. Tap Save Changes to apply.',
-        bottomPadding: bottomMargin,
       );
     }
   }

@@ -227,7 +227,6 @@ class _AllStationsPageState extends State<AllStationsPage> {
                         VoxelToast.show(
                           context,
                           blockReason,
-                          bottomPadding: bottomPad,
                         );
                         return;
                       }

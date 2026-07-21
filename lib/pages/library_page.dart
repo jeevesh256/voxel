@@ -76,6 +76,9 @@ class LibraryPageState extends State<LibraryPage>
   final StorageService _storageService = StorageService();
   final SongMetadataCache _metadataCache = SongMetadataCache();
   late TabController _tabController;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
+  double? _dragStartX;
   String? _appDocumentsPath;
 
   // Per-tab filters are no longer driven by an inline search bar;
@@ -230,11 +233,24 @@ class LibraryPageState extends State<LibraryPage>
       ),
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
+        onHorizontalDragStart: (details) {
+          _dragStartX = details.globalPosition.dx;
+        },
         onHorizontalDragEnd: (details) {
+          // If the swipe started from the edge, it's an OS back navigation gesture.
+          // Ignore it entirely so we don't accidentally switch tabs.
+          if (_dragStartX != null) {
+            final screenWidth = MediaQuery.of(context).size.width;
+            if (_dragStartX! < 40.0 || _dragStartX! > screenWidth - 40.0) {
+              return;
+            }
+          }
+
           final vx = details.primaryVelocity ?? 0;
           final current = _tabController.index;
           final int next;
-          const thresholdVelocity = 650.0;
+          // Higher threshold to avoid accidental tab switches
+          const thresholdVelocity = 900.0;
           if (vx < -thresholdVelocity && current < 2) {
             next = current + 1;
           } else if (vx > thresholdVelocity && current > 0) {
@@ -406,7 +422,6 @@ class LibraryPageState extends State<LibraryPage>
           VoxelToast.show(
             context,
             blockReason,
-            bottomPadding: bottomPad,
           );
           return;
         }
@@ -837,73 +852,176 @@ class LibraryPageState extends State<LibraryPage>
     );
   }
 
+  /// Blends an artwork color with the current app theme surface for a cohesive look.
+  Color _themedAccentColor(Color rawColor) {
+    final surface = Theme.of(context).colorScheme.surface;
+    // Pull rawColor 70% toward theme surface — retains 30% of raw color identity
+    return Color.lerp(rawColor, surface, 0.70) ?? rawColor;
+  }
+
   /// Thumbnail for a custom playlist — artwork if available, colored box otherwise.
   Widget _playlistThumbnail(dynamic playlist, AudioPlayerService audioService) {
-    final accentColor = playlist.artworkColor != null
+    final scheme = Theme.of(context).colorScheme;
+    final rawColor = playlist.artworkColor != null
         ? Color(playlist.artworkColor as int)
-        : Theme.of(context).colorScheme.tertiaryContainer;
+        : scheme.tertiaryContainer;
+    final accentColor = _themedAccentColor(rawColor);
+    // Second gradient stop: blend toward theme primary for more cohesion
+    final gradientEnd = Color.lerp(accentColor, scheme.primary, 0.15) != null
+        ? Color.lerp(Color.lerp(accentColor, scheme.primary, 0.15)!, Colors.black, 0.20)!
+        : accentColor;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: SizedBox(
-        width: 56,
-        height: 56,
-        child: playlist.artworkPath != null &&
-                (playlist.artworkPath as String).isNotEmpty
-            ? Image.file(
-                File(playlist.artworkPath as String),
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) =>
-                    _coloredPlaylistThumb(accentColor),
-              )
-            : _coloredPlaylistThumb(accentColor),
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: accentColor.withOpacity(0.25),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: accentColor.withOpacity(0.12),
+            blurRadius: 8,
+            spreadRadius: 0,
+          )
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: SizedBox(
+          width: 56,
+          height: 56,
+          child: playlist.artworkPath != null &&
+                  (playlist.artworkPath as String).isNotEmpty
+              ? Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.file(
+                      File(playlist.artworkPath as String),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _coloredPlaylistThumb(accentColor, gradientEnd),
+                    ),
+                    // Subtle overlay tinted toward the theme surface
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            scheme.surface.withOpacity(0.08),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : _coloredPlaylistThumb(accentColor, gradientEnd),
+        ),
       ),
     );
   }
 
-  Widget _coloredPlaylistThumb(Color color) {
+  Widget _coloredPlaylistThumb(Color color, Color colorEnd) {
     return Container(
-      color: color,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [color, colorEnd],
+        ),
+      ),
       child: Center(
         child: Icon(
           Icons.queue_music_rounded,
-          color: color.computeLuminance() > 0.5 ? Colors.black : Colors.white,
-          size: 32,
+          color: color.computeLuminance() > 0.5 ? Colors.black87 : Colors.white,
+          size: 26,
         ),
       ),
     );
   }
 
   Widget _pinnedFolderThumbnail(PinnedNetworkFolder folder) {
-    final accentColor = folder.artworkColor != null
+    final scheme = Theme.of(context).colorScheme;
+    final rawColor = folder.artworkColor != null
         ? Color(folder.artworkColor!)
-        : Theme.of(context).colorScheme.primaryContainer;
+        : scheme.primaryContainer;
+    final accentColor = _themedAccentColor(rawColor);
+    final gradientEnd = Color.lerp(
+          Color.lerp(accentColor, scheme.primary, 0.15),
+          Colors.black,
+          0.20,
+        ) ?? accentColor;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: SizedBox(
-        width: 56,
-        height: 56,
-        child: folder.artworkPath != null && folder.artworkPath!.isNotEmpty
-            ? Image.file(
-                File(folder.artworkPath!),
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) =>
-                    _coloredPinnedFolderThumb(accentColor, folder.type),
-              )
-            : _coloredPinnedFolderThumb(accentColor, folder.type),
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: accentColor.withOpacity(0.25),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: accentColor.withOpacity(0.12),
+            blurRadius: 8,
+            spreadRadius: 0,
+          )
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: SizedBox(
+          width: 56,
+          height: 56,
+          child: folder.artworkPath != null && folder.artworkPath!.isNotEmpty
+              ? Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.file(
+                      File(folder.artworkPath!),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _coloredPinnedFolderThumb(accentColor, gradientEnd, folder.type),
+                    ),
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            scheme.surface.withOpacity(0.08),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : _coloredPinnedFolderThumb(accentColor, gradientEnd, folder.type),
+        ),
       ),
     );
   }
 
-  Widget _coloredPinnedFolderThumb(Color color, String type) {
+  Widget _coloredPinnedFolderThumb(Color color, Color colorEnd, String type) {
     return Container(
-      color: color,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [color, colorEnd],
+        ),
+      ),
       child: Center(
         child: Icon(
           type == 'upnp' ? Icons.dns_rounded : Icons.cloud_rounded,
-          color: color.computeLuminance() > 0.5 ? Colors.black : Colors.white,
-          size: 28,
+          color: color.computeLuminance() > 0.5 ? Colors.black87 : Colors.white,
+          size: 26,
         ),
       ),
     );
@@ -1362,8 +1480,7 @@ class LibraryPageState extends State<LibraryPage>
   }
 
   Future<void> _playPinnedFolder(PinnedNetworkFolder folder, WebdavServerConfig? webdavConfig, JellyfinServerConfig? jellyfinConfig) async {
-    VoxelToast.show(context, 'Loading network tracks...',
-        bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+    VoxelToast.show(context, 'Loading network tracks...');
     try {
       final List<Song> songList = [];
       if (folder.type == 'upnp') {
@@ -1407,8 +1524,7 @@ class LibraryPageState extends State<LibraryPage>
 
       if (songList.isEmpty) {
         if (mounted) {
-          VoxelToast.show(context, 'No audio files found in folder',
-              bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+          VoxelToast.show(context, 'No audio files found in folder');
         }
         return;
       }
@@ -1424,8 +1540,7 @@ class LibraryPageState extends State<LibraryPage>
       await audioService.playFileInContext(files.first, files);
     } catch (e) {
       if (mounted) {
-        VoxelToast.show(context, 'Failed to load tracks: $e',
-            bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+        VoxelToast.show(context, 'Failed to load tracks: $e');
       }
     }
   }
@@ -1479,7 +1594,7 @@ class LibraryPageState extends State<LibraryPage>
       builder: (ctx) => SongMenuSheet(
         song: folderSong,
         accentColor: accentColor,
-        rightButtonIcon: Icons.turned_in_rounded,
+        rightButtonIcon: Icons.push_pin_rounded,
         rightButtonColor: Colors.red.shade400,
         onPlayTap: () {
           Navigator.pop(ctx);
@@ -1491,8 +1606,7 @@ class LibraryPageState extends State<LibraryPage>
           if (mounted) {
             VoxelToast.show(
               context,
-              'Folder bookmark removed',
-              bottomPadding: MediaQuery.of(context).padding.bottom + 85.0,
+              'Folder unpinned from Library',
             );
           }
         },
@@ -1508,8 +1622,7 @@ class LibraryPageState extends State<LibraryPage>
             icon: Icons.queue_music_rounded,
             title: 'Add folder to queue',
             onTap: () async {
-              VoxelToast.show(context, 'Loading network tracks...',
-                  bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+              VoxelToast.show(context, 'Loading network tracks...');
               try {
                 final List<Song> songList = [];
                 if (folder.type == 'upnp') {
@@ -1553,8 +1666,7 @@ class LibraryPageState extends State<LibraryPage>
 
                 if (songList.isEmpty) {
                   if (context.mounted) {
-                    VoxelToast.show(context, 'No audio files found in folder',
-                        bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+                    VoxelToast.show(context, 'No audio files found in folder');
                   }
                   return;
                 }
@@ -1570,13 +1682,11 @@ class LibraryPageState extends State<LibraryPage>
                   await audioService.addToQueue(song);
                 }
                 if (context.mounted) {
-                  VoxelToast.show(context, 'Added ${songList.length} tracks to queue',
-                      bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+                  VoxelToast.show(context, 'Added ${songList.length} tracks to queue');
                 }
               } catch (e) {
                 if (context.mounted) {
-                  VoxelToast.show(context, 'Failed to load tracks: $e',
-                      bottomPadding: MediaQuery.of(context).padding.bottom + 85.0);
+                  VoxelToast.show(context, 'Failed to load tracks: $e');
                 }
               }
 
@@ -1585,23 +1695,22 @@ class LibraryPageState extends State<LibraryPage>
           ),
           SongMenuOption(
             icon: Icons.edit_rounded,
-            title: 'Edit folder bookmark',
+            title: 'Edit pinned folder',
             color: accentColor,
             onTap: () {
               _showEditPinnedFolderDialog(folder, settings);
             },
           ),
           SongMenuOption(
-            icon: Icons.turned_in_rounded,
-            title: 'Remove bookmark',
+            icon: Icons.push_pin_rounded,
+            title: 'Unpin folder',
             color: Colors.red.shade400,
             onTap: () async {
               await settings.unpinNetworkFolder(folder.id);
               if (mounted) {
                 VoxelToast.show(
                   context,
-                  'Folder bookmark removed',
-                  bottomPadding: MediaQuery.of(context).padding.bottom + 85.0,
+                  'Folder unpinned from Library',
                 );
               }
             },
@@ -1612,8 +1721,11 @@ class LibraryPageState extends State<LibraryPage>
   }
 
   Future<void> _showEditPinnedFolderDialog(PinnedNetworkFolder folder, SettingsModel settings) async {
-    final result = await showDialog<Map<String, dynamic>>(
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
       builder: (context) {
         return CreatePlaylistDialog(
           initialName: folder.name,
@@ -1636,8 +1748,11 @@ class LibraryPageState extends State<LibraryPage>
   }
 
   Future<void> _showEditPlaylistDialog(dynamic playlist) async {
-    final result = await showDialog<Map<String, dynamic>>(
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
       builder: (context) {
         return CreatePlaylistDialog(
           initialName: playlist.name,

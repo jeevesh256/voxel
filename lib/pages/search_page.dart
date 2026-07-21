@@ -87,6 +87,7 @@ class SearchPageState extends State<SearchPage>
   static const Color _categoryIconColor = Color(0x24FFFFFF); // white @ 0.14
   String _query = '';
   late TabController _tabController;
+  double? _dragStartX;
   List<RadioStation> _stations = [];
   List<ITunesTrack> _tracks = [];
   List<ITunesArtist> _itunesArtists = [];
@@ -517,7 +518,7 @@ class SearchPageState extends State<SearchPage>
     if (!mounted) return;
 
     final bottomPad = MediaQuery.of(context).padding.bottom + 8.0;
-    VoxelToast.show(context, message, bottomPadding: bottomPad);
+    VoxelToast.show(context, message);
   }
 
   @override
@@ -606,12 +607,24 @@ class SearchPageState extends State<SearchPage>
       ),
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
+        onHorizontalDragStart: (details) {
+          _dragStartX = details.globalPosition.dx;
+        },
         onHorizontalDragEnd: (details) {
+          // If the swipe started from the edge, it's an OS back navigation gesture.
+          // Ignore it entirely so we don't accidentally switch tabs.
+          if (_dragStartX != null) {
+            final screenWidth = MediaQuery.of(context).size.width;
+            if (_dragStartX! < 40.0 || _dragStartX! > screenWidth - 40.0) {
+              return;
+            }
+          }
+
           final vx = details.primaryVelocity ?? 0;
           final current = _tabController.index;
           final int next;
-          // Set a high velocity threshold so only fast/aggressive swipes switch tabs
-          const thresholdVelocity = 650.0;
+          // Higher threshold to avoid accidental tab switches
+          const thresholdVelocity = 900.0;
           if (vx < -thresholdVelocity && current < 3) {
             next = current + 1;
           } else if (vx > thresholdVelocity && current > 0) {

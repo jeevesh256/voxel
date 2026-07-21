@@ -12,21 +12,16 @@ class VoxelToast {
   static OverlayEntry? _entry;
   static Timer? _timer;
 
-  /// Show a toast pill.
-  ///
-  /// [bottomPadding] — distance from bottom of screen.
-  /// [icon] — optional leading icon inside the pill.
+  /// Show a toast pill above the bottom nav bar.
+  /// Position is always computed from the root overlay context — no manual
+  /// bottomPadding needed. All callers get the exact same location.
   static void show(
     BuildContext context,
     String message, {
     Duration duration = const Duration(seconds: 2),
-    double? bottomPadding,
     IconData? icon,
   }) {
     _timer?.cancel();
-
-    final resolvedPadding =
-        bottomPadding ?? (MediaQuery.of(context).padding.bottom + kBottomNavigationBarHeight + 8.0);
 
     final state = _key.currentState;
     if (state != null) {
@@ -35,11 +30,10 @@ class VoxelToast {
     } else {
       _entry?.remove();
       _entry = OverlayEntry(
-        builder: (_) => _VoxelToastWidget(
+        builder: (overlayCtx) => _VoxelToastWidget(
           key: _key,
           initialMessage: message,
           initialIcon: icon,
-          bottomPadding: resolvedPadding,
           onDismissed: _cleanup,
         ),
       );
@@ -60,7 +54,6 @@ class VoxelToast {
 class _VoxelToastWidget extends StatefulWidget {
   final String initialMessage;
   final IconData? initialIcon;
-  final double? bottomPadding;
   final VoidCallback onDismissed;
 
   const _VoxelToastWidget({
@@ -68,7 +61,6 @@ class _VoxelToastWidget extends StatefulWidget {
     required this.initialMessage,
     required this.onDismissed,
     this.initialIcon,
-    this.bottomPadding,
   });
 
   @override
@@ -123,8 +115,8 @@ class _VoxelToastWidgetState extends State<_VoxelToastWidget>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final bottom = widget.bottomPadding ??
-        MediaQuery.of(context).padding.bottom + kBottomNavigationBarHeight + 8.0;
+    // Always compute from MediaQuery — guaranteed consistent position everywhere
+    final bottom = MediaQuery.of(context).padding.bottom + kBottomNavigationBarHeight + 8.0;
 
     return Positioned(
       left: 0,

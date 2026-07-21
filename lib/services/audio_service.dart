@@ -79,10 +79,20 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
   // Replays the current media instantly to new subscribers.
   final BehaviorSubject<MediaItem?> _currentMediaSubject = BehaviorSubject.seeded(null);
 
+  // PublishSubject for radio playback errors — fires once per failure, no replay.
+  final PublishSubject<String> _radioErrorSubject = PublishSubject<String>();
+
+  /// Stream of user-facing radio error messages.
+  /// Listen to this at the top-level scaffold to show toasts.
+  Stream<String> get radioErrorStream => _radioErrorSubject.stream;
+
   /// Tracks whether ExoPlayer has emitted a real (file-parsed) duration for
   /// the current song. Resets when the song changes. Used to reject
   /// 180000ms tag re-emissions that occur after queue structural changes.
   bool _durationConfirmedReal = false;
+
+  /// Tracks whether radio was actively playing, used to detect stream drops.
+  bool _radioWasPlaying = false;
 
   /// A stable duration stream. Always emits the last known good duration;
   /// never regresses to Duration.zero or null during queue modifications.
@@ -1300,10 +1310,13 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
     try {
       if (!await _hasNetworkConnection()) {
         debugPrint('Radio playback blocked: no network connection');
+        _radioErrorSubject.add('No internet connection — cannot play \'${station.name}\'.');
         return;
       }
 
-      // Cleanly stop and reset player to terminate any pending operations
+      // Clear previous radio state BEFORE stopping to avoid race with playerStateStream
+      _radioWasPlaying = false;
+      _currentRadioStation = null;
       await _player.stop();
 
       _currentRadioStation = station;
@@ -1331,14 +1344,26 @@ class AudioPlayerService extends ChangeNotifier implements AudioQueueManager {
           ),
         );
       } catch (e) {
-        debugPrint('Error setting audio source: $e');
+        debugPrint('Error setting radio audio source: $e');
+        _radioErrorSubject.add(
+          'Cannot connect to \'${station.name}\' — stream may be offline.',
+        );
+        _currentRadioStation = null;
+        notifyListeners();
+        return;
       }
       _updateCurrentMediaSubject();
-      await _player.play();
+      try {
+        await _player.play();
+      } catch (e) {
+        debugPrint('Error starting radio playback: $e');
+        _radioErrorSubject.add('\'${station.name}\' failed to start.');
+      }
       _updateCurrentMediaSubject();
       notifyListeners();
     } catch (e) {
       debugPrint('Error playing radio: $e');
+      _radioErrorSubject.add('Radio playback failed. Please try again.');
     }
   }
 

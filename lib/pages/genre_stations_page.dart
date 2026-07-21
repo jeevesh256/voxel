@@ -184,7 +184,6 @@ class _GenreStationsPageState extends State<GenreStationsPage> {
                         VoxelToast.show(
                           context,
                           blockReason,
-                          bottomPadding: bottomPad,
                         );
                         return;
                       }
